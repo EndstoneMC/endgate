@@ -18,6 +18,19 @@ find_package(spdlog REQUIRED)
 find_package(libdeflate REQUIRED)
 find_package(Snappy REQUIRED)
 
+add_library(endgate_raknet STATIC
+        src/endgate/network/raknet/ReliabilityLayer.cpp
+        src/endgate/network/raknet/CCRakNetSlidingWindow.cpp
+        src/endgate/network/raknet/BitStream.cpp
+        src/endgate/network/raknet/GetTime.cpp
+        src/endgate/network/raknet/RakMemoryOverride.cpp
+        src/endgate/network/raknet/RakNetTypes.cpp
+)
+
+target_include_directories(endgate_raknet PUBLIC src/endgate/network/raknet)
+target_compile_definitions(endgate_raknet PRIVATE _RAKNET_LIB)
+target_compile_options(endgate_raknet PRIVATE -w)
+
 add_executable(endgate
         src/main.cpp
         src/endgate/config.cpp
@@ -34,6 +47,7 @@ target_include_directories(endgate PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}/gener
 target_compile_definitions(endgate PRIVATE ENDGATE_VERSION="${PROJECT_VERSION}")
 
 target_link_libraries(endgate PRIVATE
+        endgate_raknet
         asio::asio
         glaze::glaze
         LibDataChannel::LibDataChannel

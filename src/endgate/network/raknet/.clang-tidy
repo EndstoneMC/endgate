@@ -1,0 +1,3 @@
+# Vendored RakNet port — see CLAUDE.md. Not subject to endgate's style rules.
+Checks: '-*'
+InheritParentConfig: false
