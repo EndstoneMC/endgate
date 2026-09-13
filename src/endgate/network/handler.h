@@ -2,9 +2,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <utility>
 
 #include "endgate/network/buffer.h"
+
+struct libdeflate_compressor;
+struct libdeflate_decompressor;
 
 namespace endgate {
 
@@ -48,11 +52,12 @@ public:
  */
 class CompressionHandler {
 public:
-    void setCompressionEnabled(bool enabled, PacketCompressionAlgorithm algorithm)
-    {
-        enabled_ = enabled;
-        algorithm_ = algorithm;
-    }
+    CompressionHandler();
+    ~CompressionHandler();
+    CompressionHandler(CompressionHandler &&other) noexcept;
+    CompressionHandler &operator=(CompressionHandler &&other) noexcept;
+
+    void setCompressionEnabled(bool enabled, PacketCompressionAlgorithm algorithm, std::uint16_t threshold);
 
     template <typename Context>
     void read(Context &context, ByteBuf batch)
@@ -61,18 +66,28 @@ public:
             context.fireRead(std::move(batch));
             return;
         }
-        context.fireRead(std::move(batch));
+        context.fireRead(decompress(batch));
     }
 
     template <typename Context>
     void write(Context &context, ByteBuf batch)
     {
-        context.write(std::move(batch));
+        if (!enabled_) {
+            context.write(std::move(batch));
+            return;
+        }
+        context.write(compress(batch));
     }
 
 private:
+    [[nodiscard]] ByteBuf decompress(const ByteBuf &batch);
+    [[nodiscard]] ByteBuf compress(const ByteBuf &batch);
+
     bool enabled_{false};
     PacketCompressionAlgorithm algorithm_{PacketCompressionAlgorithm::None};
+    std::uint16_t threshold_{0};
+    std::unique_ptr<libdeflate_compressor, void (*)(libdeflate_compressor *)> compressor_;
+    std::unique_ptr<libdeflate_decompressor, void (*)(libdeflate_decompressor *)> decompressor_;
 };
 
 /**

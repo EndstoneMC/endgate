@@ -93,6 +93,25 @@ public:
         readable_ += added;
     }
 
+    [[nodiscard]] std::span<const std::byte> contiguous() const
+    {
+        if (segments_.size() != 1) {
+            return {};
+        }
+        const auto &segment = segments_.front();
+        return {segment.storage->data() + segment.offset, segment.length};
+    }
+
+    void copyTo(std::span<std::byte> out) const
+    {
+        std::size_t written = 0;
+        for (const auto &segment : segments_) {
+            const auto take = std::min(segment.length, out.size() - written);
+            std::copy_n(segment.storage->data() + segment.offset, take, out.begin() + written);
+            written += take;
+        }
+    }
+
     [[nodiscard]] std::vector<asio::const_buffer> toBufferSequence() const
     {
         std::vector<asio::const_buffer> buffers;
