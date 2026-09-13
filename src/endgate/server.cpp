@@ -1,6 +1,9 @@
 #include "endgate/server.h"
 
+#include <charconv>
 #include <utility>
+
+#include <asio/ip/address.hpp>
 
 #include "endgate/logging/manager.h"
 
@@ -10,7 +13,7 @@ namespace {
 constexpr auto config_path = "endgate.toml";
 }  // namespace
 
-ProxyServer::ProxyServer() : logger_(LogManager::getLogger()), console_(*this) {}
+ProxyServer::ProxyServer() : logger_(LogManager::getLogger()), cm_(*this), console_(*this) {}
 
 bool ProxyServer::start()
 {
@@ -23,6 +26,31 @@ bool ProxyServer::start()
         return false;
     }
     configuration_ = std::move(*configuration);
+
+    cm_.logChannelInformation();
+
+    const auto &bind = configuration_.getBind();
+    const auto colon = bind.rfind(':');
+    if (colon == std::string::npos) {
+        logger_.error("Invalid bind address: {}", bind);
+        return false;
+    }
+
+    asio::error_code ec;
+    const auto address = asio::ip::make_address(bind.substr(0, colon), ec);
+    const auto digits = bind.substr(colon + 1);
+    std::uint16_t port{};
+    if (ec || std::from_chars(digits.data(), digits.data() + digits.size(), port).ec != std::errc{}) {
+        logger_.error("Invalid bind address: {}", bind);
+        return false;
+    }
+
+    if (!cm_.bind(address, port)) {
+        return false;
+    }
+    cm_.lanSignalingBind(address);
+
+    cm_.start();
     return true;
 }
 
@@ -34,17 +62,13 @@ void ProxyServer::shutdown(bool explicit_exit)
     }
 
     logger_.info("Shutting down the proxy...");
-    {
-        const std::scoped_lock lock(shutdown_mutex_);
-        shutdown_.store(true);
-    }
-    shutdown_cv_.notify_all();
+    cm_.shutdown();
+    shutdown_.store(true);
 }
 
 void ProxyServer::awaitProxyShutdown()
 {
-    std::unique_lock lock(shutdown_mutex_);
-    shutdown_cv_.wait(lock, [this] { return shutdown_.load(); });
+    cm_.awaitTermination();
 }
 
 bool ProxyServer::isShutdown() const

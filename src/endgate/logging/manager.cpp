@@ -6,6 +6,7 @@
 #include <mutex>
 #include <vector>
 
+#include <spdlog/cfg/env.h>
 #include <spdlog/spdlog.h>
 
 #include "endgate/logging/appender.h"
@@ -23,6 +24,7 @@ spdlog::logger &LogManager::getLogger(const std::string &name)
         spdlog::set_level(spdlog::level::info);
         spdlog::flush_on(spdlog::level::err);
         spdlog::flush_every(std::chrono::seconds(3));
+        spdlog::cfg::load_env_levels();
         return appenders;
     }();
 

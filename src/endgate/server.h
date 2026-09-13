@@ -1,13 +1,12 @@
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
-#include <mutex>
 
 #include <spdlog/logger.h>
 
 #include "endgate/config.h"
 #include "endgate/console.h"
+#include "endgate/network/manager.h"
 #include "endgate/version.h"
 
 namespace endgate {
@@ -34,12 +33,11 @@ public:
 
 private:
     spdlog::logger &logger_;
+    ConnectionManager cm_;
     Console console_;
     ProxyConfig configuration_;
     std::atomic_bool shutdown_in_progress_{false};
     std::atomic_bool shutdown_{false};
-    std::mutex shutdown_mutex_;
-    std::condition_variable shutdown_cv_;
 };
 
 }  // namespace endgate

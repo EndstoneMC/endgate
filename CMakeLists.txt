@@ -25,6 +25,7 @@ add_executable(endgate
         src/endgate/logging/appender.cpp
         src/endgate/logging/formatter.cpp
         src/endgate/logging/manager.cpp
+        src/endgate/network/manager.cpp
 )
 
 target_include_directories(endgate PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}/generated)
