@@ -113,6 +113,7 @@ public:
     CompressionHandler &operator=(CompressionHandler &&other) noexcept;
 
     void setCompressionEnabled(bool enabled, PacketCompressionAlgorithm algorithm, std::uint16_t threshold);
+    void setHybridCompressionEnabled(bool enabled);
 
     template <typename Context>
     void read(Context &context, ByteBuf batch)
@@ -151,6 +152,7 @@ private:
     bool enabled_{false};
     PacketCompressionAlgorithm algorithm_{PacketCompressionAlgorithm::None};
     std::uint16_t threshold_{0};
+    bool hybrid_{true};
     std::unique_ptr<libdeflate_compressor, void (*)(libdeflate_compressor *)> compressor_;
     std::unique_ptr<libdeflate_decompressor, void (*)(libdeflate_decompressor *)> decompressor_;
 };

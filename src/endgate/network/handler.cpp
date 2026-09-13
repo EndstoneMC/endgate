@@ -43,6 +43,11 @@ void CompressionHandler::setCompressionEnabled(bool enabled, PacketCompressionAl
     threshold_ = threshold;
 }
 
+void CompressionHandler::setHybridCompressionEnabled(bool enabled)
+{
+    hybrid_ = enabled;
+}
+
 std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf &batch)
 {
     constexpr std::size_t max_decompressed_size = 64 * 1024 * 1024;
@@ -53,8 +58,9 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf
         return std::unexpected(DecodeError::EmptyBatch);
     }
 
-    const CompressionHeader header{std::to_integer<std::uint8_t>(input.front())};
-    const auto payload = input.subspan(CompressionHeader::SIZE);
+    const CompressionHeader header =
+        hybrid_ ? CompressionHeader{std::to_integer<std::uint8_t>(input.front())} : CompressionHeader{algorithm_};
+    const auto payload = input.subspan(hybrid_ ? CompressionHeader::SIZE : 0);
 
     if (header.isCompressedWith(PacketCompressionAlgorithm::None)) {
         return ByteBuf::copyOf(payload);
@@ -104,42 +110,47 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::compress(const ByteBuf &
     std::vector<std::byte> scratch;
     const auto input = gather(batch, scratch);
 
-    const auto algorithm = input.size() < threshold_ ? PacketCompressionAlgorithm::None : algorithm_;
+    const auto algorithm = hybrid_ && input.size() < threshold_ ? PacketCompressionAlgorithm::None : algorithm_;
     const auto header = static_cast<std::byte>(CompressionHeader{algorithm}.getRaw());
+    const std::size_t prefix = hybrid_ ? CompressionHeader::SIZE : 0;
 
     if (algorithm == PacketCompressionAlgorithm::None) {
-        auto out = ByteBuf::allocate(input.size() + CompressionHeader::SIZE);
+        auto out = ByteBuf::allocate(input.size() + prefix);
         auto writable = out.writable();
-        writable[0] = header;
-        std::copy(input.begin(), input.end(), writable.begin() + CompressionHeader::SIZE);
-        out.advanceWriter(input.size() + CompressionHeader::SIZE);
+        if (hybrid_) {
+            writable[0] = header;
+        }
+        std::copy(input.begin(), input.end(), writable.begin() + prefix);
+        out.advanceWriter(input.size() + prefix);
         return out;
     }
 
     if (algorithm == PacketCompressionAlgorithm::Snappy) {
-        auto out = ByteBuf::allocate(snappy::MaxCompressedLength(input.size()) + CompressionHeader::SIZE);
+        auto out = ByteBuf::allocate(snappy::MaxCompressedLength(input.size()) + prefix);
         auto writable = out.writable();
-        writable[0] = header;
+        if (hybrid_) {
+            writable[0] = header;
+        }
 
         std::size_t produced = 0;
         snappy::RawCompress(reinterpret_cast<const char *>(input.data()), input.size(),
-                            reinterpret_cast<char *>(writable.data() + CompressionHeader::SIZE), &produced);
-        out.advanceWriter(produced + CompressionHeader::SIZE);
+                            reinterpret_cast<char *>(writable.data() + prefix), &produced);
+        out.advanceWriter(produced + prefix);
         return out;
     }
 
-    auto out =
-        ByteBuf::allocate(libdeflate_deflate_compress_bound(compressor_.get(), input.size()) + CompressionHeader::SIZE);
+    auto out = ByteBuf::allocate(libdeflate_deflate_compress_bound(compressor_.get(), input.size()) + prefix);
     auto writable = out.writable();
-    writable[0] = header;
+    if (hybrid_) {
+        writable[0] = header;
+    }
 
     const auto produced = libdeflate_deflate_compress(compressor_.get(), input.data(), input.size(),
-                                                      writable.data() + CompressionHeader::SIZE,
-                                                      writable.size() - CompressionHeader::SIZE);
+                                                      writable.data() + prefix, writable.size() - prefix);
     if (produced == 0) {
         return std::unexpected(DecodeError::CompressionFailed);
     }
-    out.advanceWriter(produced + CompressionHeader::SIZE);
+    out.advanceWriter(produced + prefix);
     return out;
 }
 
