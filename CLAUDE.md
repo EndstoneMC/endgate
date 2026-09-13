@@ -12,6 +12,12 @@ Endgate is a modern, high-performance proxy for Minecraft: Bedrock Edition. Its 
 - Server switching is seamless. It uses neither the dimension change packet nor the transfer packet — both put a loading screen in front of the player. Use camera packets to fade the screen out and back in instead.
 - The switch happens behind that fade: while the screen is dark, resend everything the client holds per-server — chunks, actors, and the rest of the world state.
 
+## Bedrock facts
+
+- Never infer how the game behaves. Anything touching the protocol, the wire format, or BDS's own types is checked against a real source before it is written: `~/bedrock-headers` for BDS's headers, the IDA databases for the bodies those headers omit, `~/endstone/src/bedrock` for reconstructions already cross-checked, `~/protocol-docs` for dumps taken from a running server, `~/bedrock-protocol` for schemas with golden bytes, `~/nethernet` for NetherNet.
+- Two independent sources beat one plausible pattern. A header that declares without defining is a gap to take to the disassembly, not one to fill with something that reads correctly.
+- When a source is unavailable, say so and leave the question open rather than guessing past it.
+
 ## Pipeline
 
 - Packets move through a statically typed handler chain. Each stage declares what it reads and what it emits, so a chain wired wrong fails to build. Netty erases every message to `Object` and finds out at runtime; wangle's `Handler<Rin, Rout, Win, Wout>` is the shape worth copying.
@@ -37,7 +43,8 @@ Endgate is a modern, high-performance proxy for Minecraft: Bedrock Edition. Its 
 - **RakNet** — vendored, not a Conan dependency. This is the one exception to "no vendored copies": we take RakNet's reliability layer as a *port* we own, not a library we consume. `src/endgate/network/raknet/` holds `ReliabilityLayer`, `CCRakNetSlidingWindow` and `BitStream`, carried over from `raknet/4.081-mojang` in the endstone recipe with all six of its patches applied — including the ACK/NAK range bound, which is a security fix. Re-derive from that recipe, never from the upstream tarball.
   - Upstream filenames are kept so each file traces back to its RakNet counterpart.
   - `RakNetSocket2` and `RakNetRandom` are gone: the layer sends through `endgate::raknet::DatagramSink` (`sink.h`), and the session owns the peer address.
-  - `shim.cpp` supplies what RakNet expected from its own runtime — allocators backed by the default allocator, a `std::chrono` clock.
+  - Every file keeps its upstream name, including the three we reimplemented: `GetTime.cpp` is a `std::chrono` clock, `RakMemoryOverride.cpp` backs RakNet's allocator hooks with the default allocator, `RakNetTypes.cpp` holds the one `SystemAddress` constructor still needed.
+  - clang-tidy is off for the folder (`.clang-tidy` with `Checks: '-*'`). Vendored code is not held to endgate's style rules — reformatting it would destroy traceability to upstream.
   - `PluginInterface2` is retained deliberately. It is the reliability layer's observability seam: 23 of its 31 call sites report malformed datagrams, which is how the ACK/NAK bound surfaces an attack.
 
 ## Approach

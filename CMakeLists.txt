@@ -16,6 +16,7 @@ find_package(LibDataChannel REQUIRED)
 find_package(replxx REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(libdeflate REQUIRED)
+find_package(Snappy REQUIRED)
 
 add_executable(endgate
         src/main.cpp
@@ -25,6 +26,7 @@ add_executable(endgate
         src/endgate/logging/appender.cpp
         src/endgate/logging/formatter.cpp
         src/endgate/logging/manager.cpp
+        src/endgate/network/handler.cpp
         src/endgate/network/manager.cpp
 )
 
@@ -38,4 +40,5 @@ target_link_libraries(endgate PRIVATE
         replxx::replxx
         spdlog::spdlog
         libdeflate::libdeflate
+        Snappy::snappy
 )
