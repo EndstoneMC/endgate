@@ -22,20 +22,13 @@
 #include "RakNetDefines.h"
 
 namespace RakNet {
-#if __GET_TIME_64BIT == 1
 typedef uint64_t Time;
 typedef uint32_t TimeMS;
 typedef uint64_t TimeUS;
-#else
-typedef uint32_t Time;
-typedef uint32_t TimeMS;
-typedef uint64_t TimeUS;
-#endif
 }  // namespace RakNet
 
 namespace RakNet {
 /// Same as GetTimeMS
-/// Holds the time in either a 32 or 64 bit variable, depending on __GET_TIME_64BIT
 RakNet::Time GetTime(void);
 
 /// Return the time as 32 bit

@@ -33,13 +33,8 @@
 #include "RakNetStatistics.h"
 #include "sink.h"
 
-#if USE_SLIDING_WINDOW_CONGESTION_CONTROL != 1
-#include "CCRakNetUDT.h"
-#define INCLUDE_TIMESTAMP_WITH_DATAGRAMS 1
-#else
 #include "CCRakNetSlidingWindow.h"
 #define INCLUDE_TIMESTAMP_WITH_DATAGRAMS 0
-#endif
 
 /// Number of ordered streams available. You can use up to 32 ordered streams
 #define NUMBER_OF_ORDERED_STREAMS 32  // 2^5
@@ -61,15 +56,8 @@ struct SplitPacketChannel  //<SplitPacketChannel>
 
     DataStructures::List<InternalPacket *> splitPacketList;
 
-#if PREALLOCATE_LARGE_MESSAGES == 1
-    InternalPacket *returnedPacket;
-    bool gotFirstPacket;
-    unsigned int stride;
-    unsigned int splitPacketsArrived;
-#else
     // This is here for progress notifications, since progress notifications return the first packet data, if available
     InternalPacket *firstPacket;
-#endif
 };
 int SplitPacketChannelComp(SplitPacketIdType const &key, SplitPacketChannel *const &data);
 
@@ -524,11 +512,7 @@ private:
 
     CCTimeType nextAckTimeToSend;
 
-#if USE_SLIDING_WINDOW_CONGESTION_CONTROL == 1
     RakNet::CCRakNetSlidingWindow congestionManager;
-#else
-    RakNet::CCRakNetUDT congestionManager;
-#endif
 
     uint32_t unacknowledgedBytes;
 

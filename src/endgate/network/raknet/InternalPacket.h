@@ -22,11 +22,7 @@
 #include "RakMemoryOverride.h"
 #include "RakNetDefines.h"
 #include "RakNetTypes.h"
-#if USE_SLIDING_WINDOW_CONGESTION_CONTROL != 1
-#include "CCRakNetUDT.h"
-#else
 #include "CCRakNetSlidingWindow.h"
-#endif
 
 namespace RakNet {
 

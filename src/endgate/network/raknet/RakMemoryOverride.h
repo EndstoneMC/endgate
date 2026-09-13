@@ -9,7 +9,7 @@
  */
 
 /// \file
-/// \brief If _USE_RAK_MEMORY_OVERRIDE is defined, memory allocations go through rakMalloc, rakRealloc, and rakFree
+/// rief Memory allocations go through rakMalloc, rakRealloc and rakFree.
 ///
 
 #ifndef __RAK_MEMORY_H
@@ -20,7 +20,6 @@
 
 #include "RakNetDefines.h"
 
-// #if _USE_RAK_MEMORY_OVERRIDE==1
 // 	#if defined(new)
 // 		#pragma push_macro("new")
 // 		#undef new
@@ -70,71 +69,41 @@ namespace RakNet {
 template <class Type>
 Type *OP_NEW(const char *file, unsigned int line)
 {
-#if _USE_RAK_MEMORY_OVERRIDE == 1
-    char *buffer = (char *)(GetMalloc_Ex())(sizeof(Type), file, line);
-    Type *t = new (buffer) Type;
-    return t;
-#else
     (void)file;
     (void)line;
     return new Type;
-#endif
 }
 
 template <class Type, class P1>
 Type *OP_NEW_1(const char *file, unsigned int line, const P1 &p1)
 {
-#if _USE_RAK_MEMORY_OVERRIDE == 1
-    char *buffer = (char *)(GetMalloc_Ex())(sizeof(Type), file, line);
-    Type *t = new (buffer) Type(p1);
-    return t;
-#else
     (void)file;
     (void)line;
     return new Type(p1);
-#endif
 }
 
 template <class Type, class P1, class P2>
 Type *OP_NEW_2(const char *file, unsigned int line, const P1 &p1, const P2 &p2)
 {
-#if _USE_RAK_MEMORY_OVERRIDE == 1
-    char *buffer = (char *)(GetMalloc_Ex())(sizeof(Type), file, line);
-    Type *t = new (buffer) Type(p1, p2);
-    return t;
-#else
     (void)file;
     (void)line;
     return new Type(p1, p2);
-#endif
 }
 
 template <class Type, class P1, class P2, class P3>
 Type *OP_NEW_3(const char *file, unsigned int line, const P1 &p1, const P2 &p2, const P3 &p3)
 {
-#if _USE_RAK_MEMORY_OVERRIDE == 1
-    char *buffer = (char *)(GetMalloc_Ex())(sizeof(Type), file, line);
-    Type *t = new (buffer) Type(p1, p2, p3);
-    return t;
-#else
     (void)file;
     (void)line;
     return new Type(p1, p2, p3);
-#endif
 }
 
 template <class Type, class P1, class P2, class P3, class P4>
 Type *OP_NEW_4(const char *file, unsigned int line, const P1 &p1, const P2 &p2, const P3 &p3, const P4 &p4)
 {
-#if _USE_RAK_MEMORY_OVERRIDE == 1
-    char *buffer = (char *)(GetMalloc_Ex())(sizeof(Type), file, line);
-    Type *t = new (buffer) Type(p1, p2, p3, p4);
-    return t;
-#else
     (void)file;
     (void)line;
     return new Type(p1, p2, p3, p4);
-#endif
 }
 
 template <class Type>
@@ -144,58 +113,25 @@ Type *OP_NEW_ARRAY(const int count, const char *file, unsigned int line)
         return 0;
     }
 
-#if _USE_RAK_MEMORY_OVERRIDE == 1
-    //		Type *t;
-    char *buffer = (char *)(GetMalloc_Ex())(sizeof(int) + sizeof(Type) * count, file, line);
-    ((int *)buffer)[0] = count;
-    for (int i = 0; i < count; i++) {
-        // t =
-        new (buffer + sizeof(int) + i * sizeof(Type)) Type;
-    }
-    return (Type *)(buffer + sizeof(int));
-#else
     (void)file;
     (void)line;
     return new Type[count];
-#endif
 }
 
 template <class Type>
 void OP_DELETE(Type *buff, const char *file, unsigned int line)
 {
-#if _USE_RAK_MEMORY_OVERRIDE == 1
-    if (buff == 0) {
-        return;
-    }
-    buff->~Type();
-    (GetFree_Ex())((char *)buff, file, line);
-#else
     (void)file;
     (void)line;
     delete buff;
-#endif
 }
 
 template <class Type>
 void OP_DELETE_ARRAY(Type *buff, const char *file, unsigned int line)
 {
-#if _USE_RAK_MEMORY_OVERRIDE == 1
-    if (buff == 0) {
-        return;
-    }
-
-    int count = ((int *)((char *)buff - sizeof(int)))[0];
-    Type *t;
-    for (int i = 0; i < count; i++) {
-        t = buff + i;
-        t->~Type();
-    }
-    (GetFree_Ex())((char *)buff - sizeof(int), file, line);
-#else
     (void)file;
     (void)line;
     delete[] buff;
-#endif
 }
 
 void *_RakMalloc(size_t size);
@@ -221,7 +157,6 @@ void UseRaknetFixedHeap(size_t initialCapacity, void *(*yourMMapFunction)(size_t
 // Free memory allocated from UseRaknetFixedHeap
 void FreeRakNetFixedHeap(void);
 
-// #if _USE_RAK_MEMORY_OVERRIDE==1
 // 	#if defined(RMO_NEW_UNDEF)
 // 	#pragma pop_macro("new")
 // 	#undef RMO_NEW_UNDEF

@@ -153,7 +153,6 @@ struct SocketDescriptor {
     /// bandwidth. On the positive side, NAT Punchthrough is not needed and should not be used with IPV6 because there
     /// are enough addresses that routers do not need to create address mappings. RakPeer::Startup() will fail if this
     /// IP version is not supported.
-    /// \pre RAKNET_SUPPORT_IPV6 must be set to 1 in RakNetDefines.h for AF_INET6
     short socketFamily;
 
     unsigned short remotePortRakNetWasStartedOn_PS3_PSP2;
@@ -181,13 +180,11 @@ struct SystemAddress {
     SystemAddress(const char *str);
     SystemAddress(const char *str, unsigned short port);
 
-    /// SystemAddress, with RAKNET_SUPPORT_IPV6 defined, holds both an sockaddr_in6 and a sockaddr_in
+/// SystemAddress holds both a sockaddr_in6 and a sockaddr_in
     union  // In6OrIn4
     {
-#if RAKNET_SUPPORT_IPV6 == 1
         struct sockaddr_storage sa_stor;
         sockaddr_in6 addr6;
-#endif
 
         sockaddr_in addr4;
     } address;
@@ -287,9 +284,7 @@ struct SystemAddress {
     SystemIndex systemIndex;
 
 private:
-#if RAKNET_SUPPORT_IPV6 == 1
     void ToString_New(bool writePort, char *dest, char portDelineator) const;
-#endif
 };
 
 /// Uniquely identifies an instance of RakPeer. Use RakPeer::GetGuidFromSystemAddress() and

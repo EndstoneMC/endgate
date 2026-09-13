@@ -519,12 +519,6 @@ public:
     /// sure you didn't leave any data left over void
     void AssertStreamEmpty(void);
 
-    /// \brief RAKNET_DEBUG_PRINTF the bits in the stream.  Great for debugging.
-    void PrintBits(char *out) const;
-    void PrintBits(void) const;
-    void PrintHex(char *out) const;
-    void PrintHex(void) const;
-
     /// \brief Ignore data we don't intend to read
     /// \param[in] numberOfBits The number of bits to ignore
     void IgnoreBits(const BitSize_t numberOfBits);
@@ -1160,10 +1154,8 @@ inline void BitStream::Write(const SystemAddress &inTemplateVar)
         WriteBits((unsigned char *)&p, sizeof(unsigned short) * 8, true);
     }
     else {
-#if RAKNET_SUPPORT_IPV6 == 1
         // Don't endian swap
         WriteBits((const unsigned char *)&inTemplateVar.address.addr6, sizeof(inTemplateVar.address.addr6) * 8, true);
-#endif
     }
 }
 
@@ -1437,14 +1429,10 @@ inline bool BitStream::Read(SystemAddress &outTemplateVar)
         return b;
     }
     else {
-#if RAKNET_SUPPORT_IPV6 == 1
         bool b =
             ReadBits((unsigned char *)&outTemplateVar.address.addr6, sizeof(outTemplateVar.address.addr6) * 8, true);
         outTemplateVar.debugPort = ntohs(outTemplateVar.address.addr6.sin6_port);
         return b;
-#else
-        return false;
-#endif
     }
 }
 

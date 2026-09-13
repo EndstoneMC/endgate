@@ -10,7 +10,6 @@
 
 #include "CCRakNetSlidingWindow.h"
 
-#if USE_SLIDING_WINDOW_CONGESTION_CONTROL == 1
 
 static const double UNSET_TIME_US = -1;
 
@@ -371,4 +370,3 @@ bool CCRakNetSlidingWindow::IsInSlowStart(void) const
     return cwnd <= ssThresh || ssThresh == 0;
 }
 // ----------------------------------------------------------------------------------------------------------------------------
-#endif
