@@ -25,9 +25,9 @@ void OfflineMessageHandler::setPingResponder(std::uint16_t port)
 
     const auto ping = server_.getServerListPingHandler().getInitialPing();
     offline_ping_response_ = std::format(
-        "MCPE;{};{};{};{};{};{};{};{};{};{};{};{};", ping.getDescription(), ping.getVersion().getProtocol(),
-        ping.getVersion().getName(), ping.getPlayers().getOnline(), ping.getPlayers().getMax(), guid_.g,
-        ping.getLevelName(), toString(ping.getGameType()), joinable_through_server_screen, port, port, editor_world);
+        "MCPE;{};{};{};{};{};{};{};{};{};{};{};{};", ping.getVersion().getName(), ping.getVersion().getProtocol(),
+        ping.getDescription(), ping.getPlayers().getOnline(), ping.getPlayers().getMax(), guid_.g, ping.getLevelName(),
+        toString(ping.getGameType()), joinable_through_server_screen, port, port, editor_world);
 }
 
 ByteBuf OfflineMessageHandler::handle(std::span<const std::byte> datagram) const
