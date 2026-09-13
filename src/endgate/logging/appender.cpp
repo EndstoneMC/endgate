@@ -17,10 +17,6 @@
 namespace endgate {
 
 namespace {
-constexpr auto reset = "\033[m";
-constexpr auto red = "\033[31m";
-constexpr auto yellow = "\033[33m";
-constexpr int compression_level = 6;
 
 std::atomic<Console *> reader{nullptr};
 
@@ -52,6 +48,8 @@ bool rename(const std::filesystem::path &src, const std::filesystem::path &targe
 
 bool compress(const std::filesystem::path &src, const std::filesystem::path &target)
 {
+    constexpr int compression_level = 6;
+
     std::error_code ec;
     std::filesystem::remove(target, ec);
 
@@ -95,6 +93,9 @@ bool compress(const std::filesystem::path &src, const std::filesystem::path &tar
 TerminalConsoleAppender::TerminalConsoleAppender(std::FILE *target_file, spdlog::color_mode mode)
     : target_file_(target_file)
 {
+    constexpr auto red = "\033[31m";
+    constexpr auto yellow = "\033[33m";
+
     setColorMode(mode);
     for (auto &formatter : formatters_) {
         formatter.add_flag<LevelFormatter>('L');
@@ -128,6 +129,8 @@ void TerminalConsoleAppender::setReader(Console *console)
 
 void TerminalConsoleAppender::sink_it_(const spdlog::details::log_msg &msg)
 {
+    constexpr auto reset = "\033[m";
+
     msg.color_range_start = 0;
     msg.color_range_end = 0;
 

@@ -18,9 +18,6 @@ namespace endgate {
 
 namespace {
 constexpr auto history_file = ".console_history";
-constexpr auto prompt = "> ";
-constexpr auto whitespace = " \t\r\n";
-constexpr std::size_t max_history_size = 1000;
 
 bool isInteractive()
 {
@@ -34,6 +31,8 @@ bool isInteractive()
 
 Console::Console(ProxyServer &server) : server_(server), logger_(LogManager::getLogger())
 {
+    constexpr std::size_t max_history_size = 1000;
+
     if (isInteractive()) {
         rx_ = replxx::Replxx{};
         rx_->bind_key_internal(replxx::Replxx::KEY::control('J'), "commit_line");
@@ -51,6 +50,9 @@ Console::~Console()
 
 void Console::start()
 {
+    constexpr auto prompt = "> ";
+    constexpr auto whitespace = " \t\r\n";
+
     TerminalConsoleAppender::setReader(this);
 
     while (isRunning()) {

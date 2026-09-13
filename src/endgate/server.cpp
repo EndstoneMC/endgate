@@ -9,14 +9,12 @@
 
 namespace endgate {
 
-namespace {
-constexpr auto config_path = "endgate.toml";
-}  // namespace
-
 ProxyServer::ProxyServer() : logger_(LogManager::getLogger()), cm_(*this), console_(*this) {}
 
 bool ProxyServer::start()
 {
+    constexpr auto config_path = "endgate.toml";
+
     const auto version = getVersion();
     logger_.info("Booting up {} {}...", version.getName(), version.getVersion());
 
