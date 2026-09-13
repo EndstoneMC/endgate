@@ -20,7 +20,9 @@ namespace {
 constexpr std::size_t max_datagram_size = 1500;
 constexpr std::size_t stun_header_size = 20;
 constexpr std::uint32_t stun_magic_cookie = 0x2112A442;
-constexpr std::uint16_t lan_signaling_port = 7551;
+constexpr std::uint16_t lan_discovery_port = 7551;
+constexpr std::uint8_t dtls_content_type_min = 20;
+constexpr std::uint8_t dtls_content_type_max = 63;
 }  // namespace
 
 ConnectionManager::ConnectionManager(ProxyServer &server)
@@ -75,11 +77,11 @@ void ConnectionManager::lanDiscoveryBind(const asio::ip::address &address)
     asio::error_code ec;
 
     asio::ip::udp::socket socket(io_context_);
-    const asio::ip::udp::endpoint local{address, lan_signaling_port};
+    const asio::ip::udp::endpoint local{address, lan_discovery_port};
     if (socket.open(local.protocol(), ec) || socket.set_option(asio::socket_base::reuse_address(true), ec) ||
         socket.set_option(asio::socket_base::broadcast(true), ec) || socket.bind(local, ec)) {
         logger_.warn("Can't bind to {}:{}: {}. LAN discovery will be unavailable.", address.to_string(),
-                     lan_signaling_port, ec.message());
+                     lan_discovery_port, ec.message());
         return;
     }
 
@@ -155,13 +157,15 @@ asio::awaitable<void> ConnectionManager::receive(asio::ip::udp::socket &socket)
             continue;
         }
 
+        const auto content_type = std::to_integer<std::uint8_t>(buffer[0]);
         const bool is_stun =
-            size >= stun_header_size && (std::to_integer<std::uint8_t>(buffer[0]) & 0xC0U) == 0 &&
+            size >= stun_header_size &&
             (std::to_integer<std::uint32_t>(buffer[4]) << 24U | std::to_integer<std::uint32_t>(buffer[5]) << 16U |
              std::to_integer<std::uint32_t>(buffer[6]) << 8U | std::to_integer<std::uint32_t>(buffer[7])) ==
                 stun_magic_cookie;
+        const bool is_dtls = content_type >= dtls_content_type_min && content_type <= dtls_content_type_max;
 
-        logger_.debug("Received {} bytes of {} from {}:{}", size, is_stun ? "NetherNet" : "RakNet",
+        logger_.debug("Received {} bytes of {} from {}:{}", size, is_stun || is_dtls ? "NetherNet" : "RakNet",
                       sender.address().to_string(), sender.port());
     }
 }
