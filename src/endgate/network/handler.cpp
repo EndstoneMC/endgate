@@ -12,7 +12,6 @@ namespace endgate {
 
 namespace {
 constexpr int default_compression_level = 6;
-constexpr std::size_t max_decompressed_size = 8 * 1024 * 1024;
 
 std::span<const std::byte> gather(const ByteBuf &batch, std::vector<std::byte> &scratch)
 {
@@ -46,6 +45,8 @@ void CompressionHandler::setCompressionEnabled(bool enabled, PacketCompressionAl
 
 std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf &batch)
 {
+    constexpr std::size_t max_decompressed_size = 64 * 1024 * 1024;
+
     std::vector<std::byte> scratch;
     const auto input = gather(batch, scratch);
     if (input.empty()) {
