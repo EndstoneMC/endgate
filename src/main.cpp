@@ -12,13 +12,17 @@
  */
 int main()
 {
+    auto &logger = endgate::LogManager::getLogger();
     const auto start_time = std::chrono::steady_clock::now();
 
     endgate::ProxyServer server;
-    server.start();
+    if (!server.start()) {
+        spdlog::shutdown();
+        return 1;
+    }
 
     const std::chrono::duration<double> boot_time = std::chrono::steady_clock::now() - start_time;
-    endgate::LogManager::getLogger().info("Done ({:.2f}s)!", boot_time.count());
+    logger.info("Done ({:.2f}s)!", boot_time.count());
 
     server.getConsoleCommandSource().start();
     server.awaitProxyShutdown();

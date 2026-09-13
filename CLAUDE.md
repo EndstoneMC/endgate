@@ -36,6 +36,7 @@ Endgate is a modern, high-performance proxy for Minecraft: Bedrock Edition. Its 
 
 - Target C++23. Reach for what the standard gives us — ranges, `std::expected`, `std::span`, `constexpr`, deducing `this` — instead of older idioms or hand-rolled equivalents.
 - Follow modern C++ best practice: value semantics, RAII, no raw owning pointers, no manual resource cleanup.
+- Resolve shared services once and hold them. A class that logs takes a `spdlog::logger &` member initialised in its constructor, mirroring Velocity's `private static final Logger logger` — never call `LogManager::getLogger()` from a method that runs more than once. The same goes for anything else looked up by name.
 - Best practice is a moving target. These conventions are expected to evolve as the code grows — when a better pattern proves itself, adopt it and record it here.
 
 ## Files

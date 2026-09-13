@@ -1,10 +1,11 @@
 #pragma once
 
 #include <optional>
+#include <replxx.hxx>
 #include <string>
 #include <string_view>
 
-#include <replxx.hxx>
+#include <spdlog/logger.h>
 
 namespace endgate {
 
@@ -30,6 +31,7 @@ private:
     void shutdown();
 
     ProxyServer &server_;
+    spdlog::logger &logger_;
     std::optional<replxx::Replxx> rx_;
 };
 

@@ -1,15 +1,29 @@
 #include "endgate/server.h"
 
+#include <utility>
+
 #include "endgate/logging/manager.h"
 
 namespace endgate {
 
-ProxyServer::ProxyServer() : console_(*this) {}
+namespace {
+constexpr auto config_path = "endgate.toml";
+}  // namespace
 
-void ProxyServer::start()
+ProxyServer::ProxyServer() : logger_(LogManager::getLogger()), console_(*this) {}
+
+bool ProxyServer::start()
 {
     const auto version = getVersion();
-    LogManager::getLogger().info("Booting up {} {}...", version.getName(), version.getVersion());
+    logger_.info("Booting up {} {}...", version.getName(), version.getVersion());
+
+    auto configuration = ProxyConfig::read(config_path);
+    if (!configuration) {
+        logger_.error("Unable to read the configuration: {}", configuration.error());
+        return false;
+    }
+    configuration_ = std::move(*configuration);
+    return true;
 }
 
 void ProxyServer::shutdown(bool explicit_exit)
@@ -19,7 +33,7 @@ void ProxyServer::shutdown(bool explicit_exit)
         return;
     }
 
-    LogManager::getLogger().info("Shutting down the proxy...");
+    logger_.info("Shutting down the proxy...");
     {
         const std::scoped_lock lock(shutdown_mutex_);
         shutdown_.store(true);
@@ -51,6 +65,11 @@ ProxyVersion ProxyServer::getVersion() const
 Console &ProxyServer::getConsoleCommandSource()
 {
     return console_;
+}
+
+const ProxyConfig &ProxyServer::getConfiguration() const
+{
+    return configuration_;
 }
 
 }  // namespace endgate

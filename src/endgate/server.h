@@ -4,6 +4,9 @@
 #include <condition_variable>
 #include <mutex>
 
+#include <spdlog/logger.h>
+
+#include "endgate/config.h"
 #include "endgate/console.h"
 #include "endgate/version.h"
 
@@ -19,7 +22,7 @@ class ProxyServer {
 public:
     ProxyServer();
 
-    void start();
+    bool start();
     void shutdown(bool explicit_exit);
     void awaitProxyShutdown();
 
@@ -27,9 +30,12 @@ public:
     [[nodiscard]] bool isShuttingDown() const;
     [[nodiscard]] ProxyVersion getVersion() const;
     [[nodiscard]] Console &getConsoleCommandSource();
+    [[nodiscard]] const ProxyConfig &getConfiguration() const;
 
 private:
+    spdlog::logger &logger_;
     Console console_;
+    ProxyConfig configuration_;
     std::atomic_bool shutdown_in_progress_{false};
     std::atomic_bool shutdown_{false};
     std::mutex shutdown_mutex_;

@@ -32,7 +32,7 @@ bool isInteractive()
 }
 }  // namespace
 
-Console::Console(ProxyServer &server) : server_(server)
+Console::Console(ProxyServer &server) : server_(server), logger_(LogManager::getLogger())
 {
     if (isInteractive()) {
         rx_ = replxx::Replxx{};
@@ -71,7 +71,8 @@ void Console::start()
         }
 
         const auto first = line.find_first_not_of(whitespace);
-        line = first == std::string::npos ? std::string{} : line.substr(first, line.find_last_not_of(whitespace) - first + 1);
+        line = first == std::string::npos ? std::string{}
+                                          : line.substr(first, line.find_last_not_of(whitespace) - first + 1);
         if (line.empty()) {
             continue;
         }
@@ -87,7 +88,7 @@ void Console::start()
 
 void Console::sendMessage(std::string_view message)
 {
-    LogManager::getLogger().info("{}", message);
+    logger_.info("{}", message);
 }
 
 void Console::printAbove(std::string_view message)

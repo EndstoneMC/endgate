@@ -1,0 +1,9 @@
+#pragma once
+
+#include <string_view>
+
+namespace endgate {
+
+constexpr std::string_view default_config = R"toml(@ENDGATE_DEFAULT_CONFIG@)toml";
+
+}  // namespace endgate
