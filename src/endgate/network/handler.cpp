@@ -11,8 +11,6 @@
 namespace endgate {
 
 namespace {
-constexpr int default_compression_level = 6;
-
 std::span<const std::byte> gather(const ByteBuf &batch, std::vector<std::byte> &scratch)
 {
     if (const auto contiguous = batch.contiguous(); !contiguous.empty()) {
@@ -25,15 +23,12 @@ std::span<const std::byte> gather(const ByteBuf &batch, std::vector<std::byte> &
 }  // namespace
 
 CompressionHandler::CompressionHandler(int compression_level)
-    : compressor_(libdeflate_alloc_compressor(compression_level < 0 ? default_compression_level : compression_level),
-                  libdeflate_free_compressor),
-      decompressor_(libdeflate_alloc_decompressor(), libdeflate_free_decompressor)
 {
+    constexpr int default_compression_level = 6;
+    compressor_ = {libdeflate_alloc_compressor(compression_level < 0 ? default_compression_level : compression_level),
+                   libdeflate_free_compressor};
+    decompressor_ = {libdeflate_alloc_decompressor(), libdeflate_free_decompressor};
 }
-
-CompressionHandler::~CompressionHandler() = default;
-CompressionHandler::CompressionHandler(CompressionHandler &&other) noexcept = default;
-CompressionHandler &CompressionHandler::operator=(CompressionHandler &&other) noexcept = default;
 
 void CompressionHandler::setCompressionEnabled(bool enabled, PacketCompressionAlgorithm algorithm,
                                                std::uint16_t threshold)
@@ -66,6 +61,10 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf
         return ByteBuf::copyOf(payload);
     }
 
+    if (!header.isCompressedWith(algorithm_)) {
+        return std::unexpected(DecodeError::UnknownCompressionAlgorithm);
+    }
+
     if (header.isCompressedWith(PacketCompressionAlgorithm::Snappy)) {
         std::size_t size = 0;
         if (!snappy::GetUncompressedLength(reinterpret_cast<const char *>(payload.data()), payload.size(), &size)) {
@@ -85,7 +84,7 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf
     }
 
     if (header.isCompressedWith(PacketCompressionAlgorithm::ZLib)) {
-        for (std::size_t capacity = std::max<std::size_t>(payload.size() * 4, 1024); capacity <= max_decompressed_size;
+        for (std::size_t capacity = std::max<std::size_t>(payload.size() * 6, 1024); capacity <= max_decompressed_size;
              capacity *= 2) {
             auto out = ByteBuf::allocate(capacity);
             std::size_t produced = 0;
@@ -109,48 +108,47 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::compress(const ByteBuf &
 {
     std::vector<std::byte> scratch;
     const auto input = gather(batch, scratch);
-
-    const auto algorithm = hybrid_ && input.size() < threshold_ ? PacketCompressionAlgorithm::None : algorithm_;
-    const auto header = static_cast<std::byte>(CompressionHeader{algorithm}.getRaw());
     const std::size_t prefix = hybrid_ ? CompressionHeader::SIZE : 0;
 
-    if (algorithm == PacketCompressionAlgorithm::None) {
-        auto out = ByteBuf::allocate(input.size() + prefix);
-        auto writable = out.writable();
-        if (hybrid_) {
-            writable[0] = header;
-        }
-        std::copy(input.begin(), input.end(), writable.begin() + prefix);
-        out.advanceWriter(input.size() + prefix);
-        return out;
-    }
+    const bool worth_compressing = !hybrid_ || (threshold_ > 0 && input.size() >= threshold_);
+    if (worth_compressing) {
+        const auto bound = algorithm_ == PacketCompressionAlgorithm::Snappy
+                             ? snappy::MaxCompressedLength(input.size())
+                             : libdeflate_deflate_compress_bound(compressor_.get(), input.size());
 
-    if (algorithm == PacketCompressionAlgorithm::Snappy) {
-        auto out = ByteBuf::allocate(snappy::MaxCompressedLength(input.size()) + prefix);
+        auto out = ByteBuf::allocate(bound + prefix);
         auto writable = out.writable();
-        if (hybrid_) {
-            writable[0] = header;
-        }
-
         std::size_t produced = 0;
-        snappy::RawCompress(reinterpret_cast<const char *>(input.data()), input.size(),
-                            reinterpret_cast<char *>(writable.data() + prefix), &produced);
-        out.advanceWriter(produced + prefix);
-        return out;
+
+        if (algorithm_ == PacketCompressionAlgorithm::Snappy) {
+            snappy::RawCompress(reinterpret_cast<const char *>(input.data()), input.size(),
+                                reinterpret_cast<char *>(writable.data() + prefix), &produced);
+        }
+        else {
+            produced = libdeflate_deflate_compress(compressor_.get(), input.data(), input.size(),
+                                                   writable.data() + prefix, writable.size() - prefix);
+        }
+
+        if (produced > 0 && (produced < input.size() || !hybrid_)) {
+            if (hybrid_) {
+                writable[0] = static_cast<std::byte>(CompressionHeader{algorithm_}.getRaw());
+            }
+            out.advanceWriter(produced + prefix);
+            return out;
+        }
+
+        if (!hybrid_) {
+            return std::unexpected(DecodeError::CompressionFailed);
+        }
     }
 
-    auto out = ByteBuf::allocate(libdeflate_deflate_compress_bound(compressor_.get(), input.size()) + prefix);
+    auto out = ByteBuf::allocate(input.size() + prefix);
     auto writable = out.writable();
     if (hybrid_) {
-        writable[0] = header;
+        writable[0] = static_cast<std::byte>(CompressionHeader{PacketCompressionAlgorithm::None}.getRaw());
     }
-
-    const auto produced = libdeflate_deflate_compress(compressor_.get(), input.data(), input.size(),
-                                                      writable.data() + prefix, writable.size() - prefix);
-    if (produced == 0) {
-        return std::unexpected(DecodeError::CompressionFailed);
-    }
-    out.advanceWriter(produced + prefix);
+    std::copy(input.begin(), input.end(), writable.begin() + prefix);
+    out.advanceWriter(input.size() + prefix);
     return out;
 }
 
