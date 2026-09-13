@@ -1,0 +1,13 @@
+[requires]
+asio/1.38.2
+glaze/8.3.0
+libdatachannel/0.24.0
+replxx/0.0.4
+spdlog/1.17.0
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[layout]
+cmake_layout
