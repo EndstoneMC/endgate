@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <span>
 #include <utility>
@@ -15,99 +14,144 @@ namespace endgate {
 /**
  * A reference counted, chainable byte buffer.
  *
- * Segments share their storage, so a slice copies nothing, a header is prepended without moving the
- * payload, and the whole chain converts straight into a scatter-gather write.
+ * Each element of the chain lays its storage out as headroom, data, tailroom, so a header goes in
+ * front without moving the payload and a slice copies nothing. The whole chain converts straight into
+ * a scatter-gather write. folly keeps the chain in a linked list of buffers; ours holds it in one
+ * object, the way Netty's composite does.
  *
- * @see io.netty.buffer.ByteBuf
+ * @see folly::IOBuf
  * @see io.netty.buffer.CompositeByteBuf
  */
 class ByteBuf {
 public:
     ByteBuf() = default;
 
-    static ByteBuf allocate(std::size_t capacity)
+    /**
+     * @see folly::IOBuf::create
+     */
+    static ByteBuf create(std::size_t capacity)
     {
         ByteBuf buf;
-        buf.storage_ = std::make_shared<std::vector<std::byte>>(capacity);
+        buf.elements_.push_back({std::make_shared<std::vector<std::byte>>(capacity), 0, 0});
         return buf;
     }
 
-    static ByteBuf copyOf(std::span<const std::byte> data)
+    /**
+     * @see folly::IOBuf::copyBuffer
+     */
+    static ByteBuf copyBuffer(std::span<const std::byte> data)
     {
         ByteBuf buf;
-        buf.storage_ = std::make_shared<std::vector<std::byte>>(data.begin(), data.end());
-        buf.segments_.push_back({buf.storage_, 0, data.size()});
-        buf.readable_ = data.size();
+        buf.elements_.push_back({std::make_shared<std::vector<std::byte>>(data.begin(), data.end()), 0, data.size()});
+        buf.length_ = data.size();
         return buf;
     }
 
-    [[nodiscard]] std::size_t readableBytes() const { return readable_ - reader_index_; }
+    /**
+     * @see folly::IOBuf::computeChainDataLength
+     */
+    [[nodiscard]] std::size_t length() const { return length_; }
 
-    [[nodiscard]] bool empty() const { return readableBytes() == 0; }
+    [[nodiscard]] bool empty() const { return length_ == 0; }
 
-    [[nodiscard]] std::span<std::byte> writable()
+    /**
+     * @see folly::IOBuf::writableTail
+     */
+    [[nodiscard]] std::span<std::byte> writableTail()
     {
-        return {storage_->data() + readable_, storage_->size() - readable_};
+        if (elements_.empty()) {
+            return {};
+        }
+        const auto &last = elements_.back();
+        const auto tail = last.offset + last.length;
+        return {last.storage->data() + tail, last.storage->size() - tail};
     }
 
-    void advanceWriter(std::size_t count)
+    /**
+     * @see folly::IOBuf::tailroom
+     */
+    [[nodiscard]] std::size_t tailroom() const
     {
-        segments_.push_back({storage_, readable_, count});
-        readable_ += count;
+        if (elements_.empty()) {
+            return 0;
+        }
+        const auto &last = elements_.back();
+        return last.storage->size() - last.offset - last.length;
     }
 
+    /**
+     * @see folly::IOBuf::append
+     */
+    void append(std::size_t count)
+    {
+        elements_.back().length += count;
+        length_ += count;
+    }
+
+    /**
+     * @see folly::IOBuf::appendToChain
+     */
+    void appendToChain(ByteBuf buf)
+    {
+        for (auto &element : buf.elements_) {
+            length_ += element.length;
+            elements_.push_back(std::move(element));
+        }
+    }
+
+    /**
+     * @see folly::IOBuf::prependChain
+     */
+    void prependChain(ByteBuf buf)
+    {
+        length_ += buf.length_;
+        elements_.insert(elements_.begin(), buf.elements_.begin(), buf.elements_.end());
+    }
+
+    /**
+     * Shares the storage rather than copying it, so a batch fans out into packets for free.
+     *
+     * @see io.netty.buffer.ByteBuf.retainedSlice
+     */
     [[nodiscard]] ByteBuf retainedSlice(std::size_t index, std::size_t length) const
     {
         ByteBuf slice;
-        slice.storage_ = storage_;
         std::size_t skipped = 0;
-        for (const auto &segment : segments_) {
-            if (skipped + segment.length <= index) {
-                skipped += segment.length;
+        for (const auto &element : elements_) {
+            if (skipped + element.length <= index) {
+                skipped += element.length;
                 continue;
             }
             const auto offset = index > skipped ? index - skipped : 0;
-            const auto take = std::min(segment.length - offset, length - slice.readable_);
-            slice.segments_.push_back({segment.storage, segment.offset + offset, take});
-            slice.readable_ += take;
-            if (slice.readable_ == length) {
+            const auto take = std::min(element.length - offset, length - slice.length_);
+            slice.elements_.push_back({element.storage, element.offset + offset, take});
+            slice.length_ += take;
+            if (slice.length_ == length) {
                 break;
             }
-            skipped += segment.length;
+            skipped += element.length;
         }
         return slice;
     }
 
-    void addComponent(ByteBuf component)
+    /**
+     * @see folly::IOBuf::coalesce
+     */
+    [[nodiscard]] std::span<const std::byte> coalesce() const
     {
-        for (auto &segment : component.segments_) {
-            readable_ += segment.length;
-            segments_.push_back(std::move(segment));
-        }
-    }
-
-    void prependComponent(ByteBuf component)
-    {
-        const auto added = component.readableBytes();
-        segments_.insert(segments_.begin(), component.segments_.begin(), component.segments_.end());
-        readable_ += added;
-    }
-
-    [[nodiscard]] std::span<const std::byte> contiguous() const
-    {
-        if (segments_.size() != 1) {
+        if (elements_.size() != 1) {
             return {};
         }
-        const auto &segment = segments_.front();
-        return {segment.storage->data() + segment.offset, segment.length};
+        const auto &element = elements_.front();
+        return {element.storage->data() + element.offset, element.length};
     }
 
     void copyTo(std::span<std::byte> out) const
     {
         std::size_t written = 0;
-        for (const auto &segment : segments_) {
-            const auto take = std::min(segment.length, out.size() - written);
-            std::copy_n(segment.storage->data() + segment.offset, take, out.begin() + written);
+        for (const auto &element : elements_) {
+            const auto take = std::min(element.length, out.size() - written);
+            std::copy_n(element.storage->data() + element.offset, take, out.begin() + written);
             written += take;
         }
     }
@@ -115,24 +159,22 @@ public:
     [[nodiscard]] std::vector<asio::const_buffer> toBufferSequence() const
     {
         std::vector<asio::const_buffer> buffers;
-        buffers.reserve(segments_.size());
-        for (const auto &segment : segments_) {
-            buffers.emplace_back(segment.storage->data() + segment.offset, segment.length);
+        buffers.reserve(elements_.size());
+        for (const auto &element : elements_) {
+            buffers.emplace_back(element.storage->data() + element.offset, element.length);
         }
         return buffers;
     }
 
 private:
-    struct Segment {
+    struct Element {
         std::shared_ptr<std::vector<std::byte>> storage;
         std::size_t offset;
         std::size_t length;
     };
 
-    std::shared_ptr<std::vector<std::byte>> storage_;
-    std::vector<Segment> segments_;
-    std::size_t readable_{0};
-    std::size_t reader_index_{0};
+    std::vector<Element> elements_;
+    std::size_t length_{0};
 };
 
 }  // namespace endgate

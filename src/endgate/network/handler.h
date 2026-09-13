@@ -85,8 +85,8 @@ public:
     void read(Context &context, ByteBuf batch)
     {
         std::size_t offset = 0;
-        while (offset < batch.readableBytes()) {
-            const auto length = batch.readableBytes() - offset;
+        while (offset < batch.length()) {
+            const auto length = batch.length() - offset;
             context.fireRead(batch.retainedSlice(offset, length));
             offset += length;
         }

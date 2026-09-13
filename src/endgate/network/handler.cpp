@@ -13,10 +13,10 @@ namespace endgate {
 namespace {
 std::span<const std::byte> gather(const ByteBuf &batch, std::vector<std::byte> &scratch)
 {
-    if (const auto contiguous = batch.contiguous(); !contiguous.empty()) {
+    if (const auto contiguous = batch.coalesce(); !contiguous.empty()) {
         return contiguous;
     }
-    scratch.resize(batch.readableBytes());
+    scratch.resize(batch.length());
     batch.copyTo(scratch);
     return scratch;
 }
@@ -58,7 +58,7 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf
     const auto payload = input.subspan(hybrid_ ? CompressionHeader::SIZE : 0);
 
     if (header.isCompressedWith(PacketCompressionAlgorithm::None)) {
-        return ByteBuf::copyOf(payload);
+        return ByteBuf::copyBuffer(payload);
     }
 
     if (!header.isCompressedWith(algorithm_)) {
@@ -74,24 +74,24 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf
             return std::unexpected(DecodeError::DecompressedSizeExceeded);
         }
 
-        auto out = ByteBuf::allocate(size);
+        auto out = ByteBuf::create(size);
         if (!snappy::RawUncompress(reinterpret_cast<const char *>(payload.data()), payload.size(),
-                                   reinterpret_cast<char *>(out.writable().data()))) {
+                                   reinterpret_cast<char *>(out.writableTail().data()))) {
             return std::unexpected(DecodeError::CorruptCompressedData);
         }
-        out.advanceWriter(size);
+        out.append(size);
         return out;
     }
 
     if (header.isCompressedWith(PacketCompressionAlgorithm::ZLib)) {
         for (std::size_t capacity = std::max<std::size_t>(payload.size() * 6, 1024); capacity <= max_decompressed_size;
              capacity *= 2) {
-            auto out = ByteBuf::allocate(capacity);
+            auto out = ByteBuf::create(capacity);
             std::size_t produced = 0;
             const auto result = libdeflate_deflate_decompress(decompressor_.get(), payload.data(), payload.size(),
-                                                              out.writable().data(), capacity, &produced);
+                                                              out.writableTail().data(), capacity, &produced);
             if (result == LIBDEFLATE_SUCCESS) {
-                out.advanceWriter(produced);
+                out.append(produced);
                 return out;
             }
             if (result != LIBDEFLATE_INSUFFICIENT_SPACE) {
@@ -116,8 +116,8 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::compress(const ByteBuf &
                              ? snappy::MaxCompressedLength(input.size())
                              : libdeflate_deflate_compress_bound(compressor_.get(), input.size());
 
-        auto out = ByteBuf::allocate(bound + prefix);
-        auto writable = out.writable();
+        auto out = ByteBuf::create(bound + prefix);
+        auto writable = out.writableTail();
         std::size_t produced = 0;
 
         if (algorithm_ == PacketCompressionAlgorithm::Snappy) {
@@ -133,7 +133,7 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::compress(const ByteBuf &
             if (hybrid_) {
                 writable[0] = static_cast<std::byte>(CompressionHeader{algorithm_}.getRaw());
             }
-            out.advanceWriter(produced + prefix);
+            out.append(produced + prefix);
             return out;
         }
 
@@ -142,13 +142,13 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::compress(const ByteBuf &
         }
     }
 
-    auto out = ByteBuf::allocate(input.size() + prefix);
-    auto writable = out.writable();
+    auto out = ByteBuf::create(input.size() + prefix);
+    auto writable = out.writableTail();
     if (hybrid_) {
         writable[0] = static_cast<std::byte>(CompressionHeader{PacketCompressionAlgorithm::None}.getRaw());
     }
     std::copy(input.begin(), input.end(), writable.begin() + prefix);
-    out.advanceWriter(input.size() + prefix);
+    out.append(input.size() + prefix);
     return out;
 }
 
