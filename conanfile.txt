@@ -2,6 +2,7 @@
 asio/1.38.2
 glaze/8.3.0
 libdatachannel/0.24.0
+libdeflate/1.25
 replxx/0.0.4
 spdlog/1.17.0
 
