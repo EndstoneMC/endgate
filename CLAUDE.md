@@ -24,6 +24,7 @@ Endgate is a modern, high-performance proxy for Minecraft: Bedrock Edition. Its 
 - **spdlog** — all logging.
 - **asio** — all socket I/O.
 - **libdatachannel** — WebRTC.
+- Take the design, not the dependency. A framework we would use one idea from — folly and wangle for `IOBuf` and their Netty-shaped pipeline, say — is not worth its transitive weight or a second event loop beside asio. Port the idea, name where it came from, and pay only for what we use.
 - **RakNet** — the RakNet protocol only. Do not use its own socket layer; own the socket with asio and feed RakNet the datagrams.
 
 ## Approach
