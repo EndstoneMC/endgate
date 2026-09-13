@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <format>
+#include <span>
 #include <utility>
 
 #include <asio/as_tuple.hpp>
@@ -21,8 +22,9 @@ using DatagramBuffer = std::array<std::byte, 65535>;
 }  // namespace
 
 ConnectionManager::ConnectionManager(ProxyServer &server)
-    : server_(server), logger_(LogManager::getLogger()), work_guard_(asio::make_work_guard(io_context_)),
-      signals_(io_context_, SIGINT, SIGTERM), threads_(std::max(1U, std::thread::hardware_concurrency()))
+    : server_(server), logger_(LogManager::getLogger()), offline_(server), lan_discovery_(server),
+      work_guard_(asio::make_work_guard(io_context_)), signals_(io_context_, SIGINT, SIGTERM),
+      threads_(std::max(1U, std::thread::hardware_concurrency()))
 {
 }
 
@@ -59,6 +61,8 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
     auto &tcp_endpoint = endpoints_.emplace_back(std::move(acceptor), ListenerType::HttpSignaling);
     auto &udp_endpoint = endpoints_.emplace_back(std::move(socket), ListenerType::Gameplay);
 
+    offline_.setPingResponder(port);
+
     logger_.info("Listening on {}", udp_endpoint.getLocalAddress());
     logger_.info("Listening for {} on {}", toString(ListenerType::HttpSignaling), tcp_endpoint.getLocalAddress());
 
@@ -81,6 +85,8 @@ void ConnectionManager::lanDiscoveryBind(const asio::ip::address &address)
                      lan_discovery_port, ec.message());
         return;
     }
+
+    lan_discovery_.cacheDiscoveryResponseData();
 
     auto &endpoint = endpoints_.emplace_back(std::move(socket), ListenerType::LanDiscovery);
     logger_.info("Listening for {} on {}", toString(ListenerType::LanDiscovery), endpoint.getLocalAddress());
@@ -169,6 +175,14 @@ asio::awaitable<void> ConnectionManager::receive(asio::ip::udp::socket &socket)
 
         logger_.debug("Received {} bytes of {} from {}:{}", size, is_stun || is_dtls ? "NetherNet" : "RakNet",
                       sender.address().to_string(), sender.port());
+
+        if (is_stun || is_dtls) {
+            continue;
+        }
+
+        if (const auto pong = offline_.handle(std::span{buffer}.first(size)); !pong.empty()) {
+            co_await socket.async_send_to(pong.toBufferSequence(), sender, asio::as_tuple(asio::use_awaitable));
+        }
     }
 }
 
@@ -189,6 +203,10 @@ asio::awaitable<void> ConnectionManager::receiveLanDiscovery(asio::ip::udp::sock
 
         logger_.debug("Received {} bytes of LAN discovery from {}:{}", size, sender.address().to_string(),
                       sender.port());
+
+        if (const auto response = lan_discovery_.handle(std::span{buffer}.first(size)); !response.empty()) {
+            co_await socket.async_send_to(response.toBufferSequence(), sender, asio::as_tuple(asio::use_awaitable));
+        }
     }
 }
 

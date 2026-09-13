@@ -12,7 +12,9 @@
 #include <asio/signal_set.hpp>
 #include <spdlog/logger.h>
 
+#include "endgate/network/discovery.h"
 #include "endgate/network/endpoint.h"
+#include "endgate/network/offline.h"
 
 namespace endgate {
 
@@ -42,6 +44,8 @@ private:
 
     ProxyServer &server_;
     spdlog::logger &logger_;
+    OfflineMessageHandler offline_;
+    LanDiscoveryHandler lan_discovery_;
     asio::io_context io_context_;
     asio::executor_work_guard<asio::io_context::executor_type> work_guard_;
     asio::signal_set signals_;

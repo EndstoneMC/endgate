@@ -9,7 +9,7 @@
 
 namespace endgate {
 
-ProxyServer::ProxyServer() : logger_(LogManager::getLogger()), cm_(*this), console_(*this) {}
+ProxyServer::ProxyServer() : logger_(LogManager::getLogger()), cm_(*this), console_(*this), ping_handler_(*this) {}
 
 bool ProxyServer::start()
 {
@@ -91,6 +91,11 @@ ProxyVersion ProxyServer::getVersion() const
 Console &ProxyServer::getConsoleCommandSource()
 {
     return console_;
+}
+
+const ServerListPingHandler &ProxyServer::getServerListPingHandler() const
+{
+    return ping_handler_;
 }
 
 const ProxyConfig &ProxyServer::getConfiguration() const

@@ -16,6 +16,7 @@ find_package(LibDataChannel REQUIRED)
 find_package(replxx REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(libdeflate REQUIRED)
+find_package(OpenSSL REQUIRED)
 find_package(Snappy REQUIRED)
 
 add_library(endgate_raknet STATIC
@@ -39,8 +40,11 @@ add_executable(endgate
         src/endgate/logging/appender.cpp
         src/endgate/logging/formatter.cpp
         src/endgate/logging/manager.cpp
+        src/endgate/network/discovery.cpp
         src/endgate/network/handler.cpp
         src/endgate/network/manager.cpp
+        src/endgate/network/offline.cpp
+        src/endgate/network/ping.cpp
 )
 
 target_include_directories(endgate PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}/generated)
@@ -54,5 +58,6 @@ target_link_libraries(endgate PRIVATE
         replxx::replxx
         spdlog::spdlog
         libdeflate::libdeflate
+        OpenSSL::Crypto
         Snappy::snappy
 )

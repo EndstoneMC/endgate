@@ -7,6 +7,7 @@
 #include "endgate/config.h"
 #include "endgate/console.h"
 #include "endgate/network/manager.h"
+#include "endgate/network/ping.h"
 #include "endgate/version.h"
 
 namespace endgate {
@@ -29,6 +30,7 @@ public:
     [[nodiscard]] bool isShuttingDown() const;
     [[nodiscard]] ProxyVersion getVersion() const;
     [[nodiscard]] Console &getConsoleCommandSource();
+    [[nodiscard]] const ServerListPingHandler &getServerListPingHandler() const;
     [[nodiscard]] const ProxyConfig &getConfiguration() const;
 
 private:
@@ -36,6 +38,7 @@ private:
     ConnectionManager cm_;
     Console console_;
     ProxyConfig configuration_;
+    ServerListPingHandler ping_handler_;
     std::atomic_bool shutdown_in_progress_{false};
     std::atomic_bool shutdown_{false};
 };
