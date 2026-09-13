@@ -17,12 +17,7 @@
 namespace endgate {
 
 namespace {
-constexpr std::size_t max_datagram_size = 1500;
-constexpr std::size_t stun_header_size = 20;
-constexpr std::uint32_t stun_magic_cookie = 0x2112A442;
-constexpr std::uint16_t lan_discovery_port = 7551;
-constexpr std::uint8_t dtls_content_type_min = 20;
-constexpr std::uint8_t dtls_content_type_max = 63;
+using DatagramBuffer = std::array<std::byte, 65535>;
 }  // namespace
 
 ConnectionManager::ConnectionManager(ProxyServer &server)
@@ -74,6 +69,8 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
 
 void ConnectionManager::lanDiscoveryBind(const asio::ip::address &address)
 {
+    constexpr std::uint16_t lan_discovery_port = 7551;
+
     asio::error_code ec;
 
     asio::ip::udp::socket socket(io_context_);
@@ -144,7 +141,12 @@ asio::awaitable<void> ConnectionManager::accept(asio::ip::tcp::acceptor &accepto
 
 asio::awaitable<void> ConnectionManager::receive(asio::ip::udp::socket &socket)
 {
-    std::array<std::byte, max_datagram_size> buffer{};
+    constexpr std::size_t stun_header_size = 20;
+    constexpr std::uint32_t stun_magic_cookie = 0x2112A442;
+    constexpr std::uint8_t dtls_content_type_min = 20;
+    constexpr std::uint8_t dtls_content_type_max = 63;
+
+    DatagramBuffer buffer{};
     asio::ip::udp::endpoint sender;
 
     for (;;) {
@@ -172,7 +174,7 @@ asio::awaitable<void> ConnectionManager::receive(asio::ip::udp::socket &socket)
 
 asio::awaitable<void> ConnectionManager::receiveLanDiscovery(asio::ip::udp::socket &socket)
 {
-    std::array<std::byte, max_datagram_size> buffer{};
+    DatagramBuffer buffer{};
     asio::ip::udp::endpoint sender;
 
     for (;;) {
