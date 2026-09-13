@@ -44,7 +44,7 @@ Endgate is a modern, high-performance proxy for Minecraft: Bedrock Edition. Its 
   - Upstream filenames are kept so each file traces back to its RakNet counterpart.
   - `RakNetSocket2` and `RakNetRandom` are gone: the layer sends through `endgate::raknet::DatagramSink` (`sink.h`), and the session owns the peer address.
   - Every file keeps its upstream name, including the three we reimplemented: `GetTime.cpp` is a `std::chrono` clock, `RakMemoryOverride.cpp` backs RakNet's allocator hooks with the default allocator, `RakNetTypes.cpp` holds the one `SystemAddress` constructor still needed.
-  - clang-tidy is off for the folder (`.clang-tidy` with `Checks: '-*'`). Vendored code is not held to endgate's style rules — reformatting it would destroy traceability to upstream.
+  - The port is formatted to endgate's `.clang-format` like any other source — it is code we own, not a dependency we track. clang-tidy stays off for the folder (`.clang-tidy` with `Checks: '-*'`): its checks would demand redesign, not formatting, and the point of the port is to keep RakNet's proven logic intact.
   - `PluginInterface2` is retained deliberately. It is the reliability layer's observability seam: 23 of its 31 call sites report malformed datagrams, which is how the ACK/NAK bound surfaces an attack.
 
 ## Approach

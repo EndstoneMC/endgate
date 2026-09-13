@@ -3,12 +3,11 @@
  *  All rights reserved.
  *
  *  This source code is licensed under the BSD-style license found in the
- *  LICENSE file in the root directory of this source tree. An additional grant 
+ *  LICENSE file in the root directory of this source tree. An additional grant
  *  of patent rights can be found in the PATENTS file in the same directory.
  *
  */
 
 // USER EDITABLE FILE
 #define MAXIMUM_NUMBER_OF_INTERNAL_IDS 20
-#define MAXIMUM_MTU_SIZE 1600
-
+#define MAXIMUM_MTU_SIZE               1600
