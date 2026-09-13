@@ -38,11 +38,25 @@ Endgate is a modern, high-performance proxy for Minecraft: Bedrock Edition. Its 
 - Follow modern C++ best practice: value semantics, RAII, no raw owning pointers, no manual resource cleanup.
 - Best practice is a moving target. These conventions are expected to evolve as the code grows — when a better pattern proves itself, adopt it and record it here.
 
+## Files
+
+- Prefer short file names. Unlike Java, a file need not be named after the class it holds, and one file may hold several related classes.
+- Let the directory carry the context: `ProxyVersion` lives in `version.h`, `ProxyServer` in `server.h`, `RollingRandomAccessFileAppender` in `logging/file_appender.h`.
+
 ## Comments
 
 - Don't write comments. Make the code explain itself: precise names, small functions, explicit types, early returns.
 - If a comment feels necessary, that's a signal to rename or restructure instead.
 - Reasoning about *why* a change was made goes in the commit message, never in the source.
+- The one exception is the link back to Velocity. A class or method that mirrors a Velocity counterpart may carry a Doxygen docstring naming it, so the correspondence is discoverable from the code. Use endstone's style — JAVADOC_AUTOBRIEF, so no `@brief`:
+
+  ```cpp
+  /**
+   * Implements the console, including running commands and receiving messages from plugins.
+   *
+   * @see com.velocitypowered.proxy.console.VelocityConsole
+   */
+  ```
 
 ## Git
 
