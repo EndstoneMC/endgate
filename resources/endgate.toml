@@ -23,3 +23,8 @@ lobby = "127.0.0.1:19133"
 try = [
     "lobby"
 ]
+
+[advanced]
+# How much compression should be done (from 0-9). The default is -1, which uses the
+# default level of 6.
+compression-level = -1

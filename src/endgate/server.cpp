@@ -24,6 +24,10 @@ bool ProxyServer::start()
         return false;
     }
     configuration_ = std::move(*configuration);
+    if (!configuration_.validate()) {
+        logger_.error("Your configuration is invalid. Endgate will not start up until the errors are resolved.");
+        return false;
+    }
 
     cm_.logChannelInformation();
 

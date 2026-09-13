@@ -7,12 +7,23 @@
 #include <variant>
 
 #include <glaze/toml.hpp>
+#include <spdlog/logger.h>
 
 #include "endgate/default_config.h"
+#include "endgate/logging/manager.h"
 
 namespace endgate {
 
 namespace {
+struct Advanced {
+    int compression_level{};
+
+    struct glaze {
+        using T = Advanced;
+        static constexpr auto value = glz::object("compression-level", &T::compression_level);
+    };
+};
+
 struct Document {
     std::string config_version;
     std::string bind;
@@ -20,12 +31,13 @@ struct Document {
     int show_max_players{};
     bool online_mode{};
     std::map<std::string, std::variant<std::string, std::vector<std::string>>> servers;
+    Advanced advanced;
 
     struct glaze {
         using T = Document;
-        static constexpr auto value =
-            glz::object("config-version", &T::config_version, "bind", &T::bind, "motd", &T::motd, "show-max-players",
-                        &T::show_max_players, "online-mode", &T::online_mode, "servers", &T::servers);
+        static constexpr auto value = glz::object("config-version", &T::config_version, "bind", &T::bind, "motd",
+                                                  &T::motd, "show-max-players", &T::show_max_players, "online-mode",
+                                                  &T::online_mode, "servers", &T::servers, "advanced", &T::advanced);
     };
 };
 }  // namespace
@@ -76,7 +88,23 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
             config.attempt_connection_order_ = std::get<std::vector<std::string>>(entry);
         }
     }
+    config.compression_level_ = document.advanced.compression_level;
     return config;
+}
+
+bool ProxyConfig::validate() const
+{
+    static spdlog::logger &logger = LogManager::getLogger();
+
+    bool valid = true;
+    if (compression_level_ < -1 || compression_level_ > 9) {
+        logger.error("Invalid compression level {}", compression_level_);
+        valid = false;
+    }
+    else if (compression_level_ == 0) {
+        logger.warn("ALL packets going through the proxy will be uncompressed. This will increase bandwidth usage.");
+    }
+    return valid;
 }
 
 const std::string &ProxyConfig::getBind() const
@@ -107,6 +135,11 @@ const std::map<std::string, std::string> &ProxyConfig::getServers() const
 const std::vector<std::string> &ProxyConfig::getAttemptConnectionOrder() const
 {
     return attempt_connection_order_;
+}
+
+int ProxyConfig::getCompressionLevel() const
+{
+    return compression_level_;
 }
 
 }  // namespace endgate
