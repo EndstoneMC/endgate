@@ -108,9 +108,10 @@ public:
 class CompressionHandler {
 public:
     explicit CompressionHandler(int compression_level);
-    ~CompressionHandler();
-    CompressionHandler(CompressionHandler &&other) noexcept;
-    CompressionHandler &operator=(CompressionHandler &&other) noexcept;
+    CompressionHandler(const CompressionHandler &other) = delete;
+    CompressionHandler &operator=(const CompressionHandler &other) = delete;
+    CompressionHandler(CompressionHandler &&other) noexcept = default;
+    CompressionHandler &operator=(CompressionHandler &&other) noexcept = default;
 
     void setCompressionEnabled(bool enabled, PacketCompressionAlgorithm algorithm, std::uint16_t threshold);
     void setHybridCompressionEnabled(bool enabled);
@@ -153,8 +154,8 @@ private:
     PacketCompressionAlgorithm algorithm_{PacketCompressionAlgorithm::None};
     std::uint16_t threshold_{0};
     bool hybrid_{true};
-    std::unique_ptr<libdeflate_compressor, void (*)(libdeflate_compressor *)> compressor_;
-    std::unique_ptr<libdeflate_decompressor, void (*)(libdeflate_decompressor *)> decompressor_;
+    std::shared_ptr<libdeflate_compressor> compressor_;
+    std::shared_ptr<libdeflate_decompressor> decompressor_;
 };
 
 /**
