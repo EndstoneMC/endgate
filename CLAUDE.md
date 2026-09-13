@@ -12,6 +12,15 @@ Endgate is a modern, high-performance proxy for Minecraft: Bedrock Edition. Its 
 - Server switching is seamless. It uses neither the dimension change packet nor the transfer packet — both put a loading screen in front of the player. Use camera packets to fade the screen out and back in instead.
 - The switch happens behind that fade: while the screen is dark, resend everything the client holds per-server — chunks, actors, and the rest of the world state.
 
+## Pipeline
+
+- Packets move through a statically typed handler chain. Each stage declares what it reads and what it emits, so a chain wired wrong fails to build. Netty erases every message to `Object` and finds out at runtime; wangle's `Handler<Rin, Rout, Win, Wout>` is the shape worth copying.
+- Stages push, they are never polled. BDS polls because a game server has a tick to drain on, and a proxy has no tick — its only clock is packet arrival, so a poll would add latency to invent one. `fireRead` may be called any number of times for one input, which is how a batch fans out into packets.
+- Stages are never inserted or removed. Runtime pipeline surgery is the part of Netty hardest to reconcile with static typing, so a stage that would be removed is present from the start and gated on a flag, the way BDS gates compression and encryption.
+- Every chain ends in a sink. Neither Netty nor wangle has one — both log that a message reached the end of the pipeline and drop it. Ours is a typed object, so an unterminated chain is a compile error rather than a warning in production.
+- A stage may emit a raw `ByteBuf` or a decoded packet, and the next stage overloads on both. That is how a packet we have no interest in is forwarded without being decoded, which is most of why Velocity is fast.
+- `ByteBuf` keeps Netty's name and folly `IOBuf`'s shape, and is ours: segments over shared storage, so a slice copies nothing, a header goes in front without moving the payload, and the chain hands straight to a scatter-gather write.
+
 ## Build
 
 - CMake with the Ninja generator.
@@ -25,7 +34,11 @@ Endgate is a modern, high-performance proxy for Minecraft: Bedrock Edition. Its 
 - **asio** — all socket I/O.
 - **libdatachannel** — WebRTC.
 - Take the design, not the dependency. A framework we would use one idea from — folly and wangle for `IOBuf` and their Netty-shaped pipeline, say — is not worth its transitive weight or a second event loop beside asio. Port the idea, name where it came from, and pay only for what we use.
-- **RakNet** — the RakNet protocol only. Do not use its own socket layer; own the socket with asio and feed RakNet the datagrams.
+- **RakNet** — vendored, not a Conan dependency. This is the one exception to "no vendored copies": we take RakNet's reliability layer as a *port* we own, not a library we consume. `src/endgate/network/raknet/` holds `ReliabilityLayer`, `CCRakNetSlidingWindow` and `BitStream`, carried over from `raknet/4.081-mojang` in the endstone recipe with all six of its patches applied — including the ACK/NAK range bound, which is a security fix. Re-derive from that recipe, never from the upstream tarball.
+  - Upstream filenames are kept so each file traces back to its RakNet counterpart.
+  - `RakNetSocket2` and `RakNetRandom` are gone: the layer sends through `endgate::raknet::DatagramSink` (`sink.h`), and the session owns the peer address.
+  - `shim.cpp` supplies what RakNet expected from its own runtime — allocators backed by the default allocator, a `std::chrono` clock.
+  - `PluginInterface2` is retained deliberately. It is the reliability layer's observability seam: 23 of its 31 call sites report malformed datagrams, which is how the ACK/NAK bound surfaces an attack.
 
 ## Approach
 
