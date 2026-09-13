@@ -21,8 +21,8 @@ std::string getThreadName()
     static const auto get_thread_description = [] {
         auto *const kernel32 = GetModuleHandleA("Kernel32.dll");
         return kernel32 == nullptr
-                   ? nullptr
-                   : reinterpret_cast<GetThreadDescriptionFn>(GetProcAddress(kernel32, "GetThreadDescription"));
+                 ? nullptr
+                 : reinterpret_cast<GetThreadDescriptionFn>(GetProcAddress(kernel32, "GetThreadDescription"));
     }();
     if (get_thread_description == nullptr) {
         return {};

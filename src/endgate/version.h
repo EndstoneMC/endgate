@@ -17,20 +17,11 @@ public:
     {
     }
 
-    [[nodiscard]] const std::string &getName() const
-    {
-        return name_;
-    }
+    [[nodiscard]] const std::string &getName() const { return name_; }
 
-    [[nodiscard]] const std::string &getVendor() const
-    {
-        return vendor_;
-    }
+    [[nodiscard]] const std::string &getVendor() const { return vendor_; }
 
-    [[nodiscard]] const std::string &getVersion() const
-    {
-        return version_;
-    }
+    [[nodiscard]] const std::string &getVersion() const { return version_; }
 
 private:
     std::string name_;

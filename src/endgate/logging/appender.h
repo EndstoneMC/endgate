@@ -50,8 +50,7 @@ private:
  */
 class RollingRandomAccessFileAppender final : public spdlog::sinks::base_sink<std::mutex> {
 public:
-    RollingRandomAccessFileAppender(std::filesystem::path file_name, std::string file_pattern,
-                                    std::uint16_t max_files);
+    RollingRandomAccessFileAppender(std::filesystem::path file_name, std::string file_pattern, std::uint16_t max_files);
 
 protected:
     void sink_it_(const spdlog::details::log_msg &msg) override;

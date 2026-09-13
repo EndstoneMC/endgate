@@ -1,5 +1,7 @@
 #include "endgate/logging/appender.h"
 
+#include <libdeflate.h>
+
 #include <atomic>
 #include <chrono>
 #include <format>
@@ -8,7 +10,6 @@
 #include <utility>
 
 #include <spdlog/details/os.h>
-#include <libdeflate.h>
 
 #include "endgate/console.h"
 #include "endgate/logging/formatter.h"
