@@ -2,7 +2,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "endgate",
+            "name": "endgate (Windows)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/Debug/endgate.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/bin",
+            "stopAtEntry": false,
+            "environment": [],
+            "preLaunchTask": "build",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "endgate (Linux)",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/Debug/endgate",
@@ -11,7 +23,6 @@
             "stopAtEntry": false,
             "environment": [],
             "preLaunchTask": "build",
-            "console": "integratedTerminal",
             "MIMode": "gdb",
             "setupCommands": [
                 {

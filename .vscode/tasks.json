@@ -2,27 +2,47 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "configure",
-            "type": "shell",
-            "command": "conan install . -s build_type=Debug --build=missing && cmake --preset conan-debug",
+            "label": "install",
+            "type": "process",
+            "command": "conan",
+            "args": [
+                "install",
+                ".",
+                "-s",
+                "build_type=Debug",
+                "-s",
+                "compiler.cppstd=23",
+                "-c",
+                "tools.cmake.cmaketoolchain:generator=Ninja",
+                "--build=missing"
+            ],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": []
         },
         {
+            "label": "configure",
+            "type": "cmake",
+            "command": "configure",
+            "preset": "conan-debug",
+            "dependsOn": "install",
+            "problemMatcher": []
+        },
+        {
             "label": "build",
-            "type": "shell",
-            "command": "cmake --build --preset conan-debug",
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
+            "type": "cmake",
+            "command": "build",
+            "preset": "conan-debug",
             "dependsOn": "configure",
             "group": {
                 "kind": "build",
                 "isDefault": true
             },
-            "problemMatcher": "$gcc"
+            "problemMatcher": [
+                "$gcc",
+                "$msCompile"
+            ]
         }
     ]
 }
