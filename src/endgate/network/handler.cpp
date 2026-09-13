@@ -4,18 +4,14 @@
 #include <snappy.h>
 
 #include <algorithm>
-#include <format>
-#include <stdexcept>
+#include <expected>
 #include <utility>
 #include <vector>
 
 namespace endgate {
 
 namespace {
-constexpr int compression_level = 6;
-constexpr std::uint8_t zlib_header = 0x00;
-constexpr std::uint8_t snappy_header = 0x01;
-constexpr std::uint8_t none_header = 0xFF;
+constexpr int default_compression_level = 6;
 constexpr std::size_t max_decompressed_size = 8 * 1024 * 1024;
 
 std::span<const std::byte> gather(const ByteBuf &batch, std::vector<std::byte> &scratch)
@@ -29,8 +25,9 @@ std::span<const std::byte> gather(const ByteBuf &batch, std::vector<std::byte> &
 }
 }  // namespace
 
-CompressionHandler::CompressionHandler()
-    : compressor_(libdeflate_alloc_compressor(compression_level), libdeflate_free_compressor),
+CompressionHandler::CompressionHandler(int compression_level)
+    : compressor_(libdeflate_alloc_compressor(compression_level < 0 ? default_compression_level : compression_level),
+                  libdeflate_free_compressor),
       decompressor_(libdeflate_alloc_decompressor(), libdeflate_free_decompressor)
 {
 }
@@ -47,40 +44,40 @@ void CompressionHandler::setCompressionEnabled(bool enabled, PacketCompressionAl
     threshold_ = threshold;
 }
 
-ByteBuf CompressionHandler::decompress(const ByteBuf &batch)
+std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf &batch)
 {
     std::vector<std::byte> scratch;
     const auto input = gather(batch, scratch);
     if (input.empty()) {
-        throw std::runtime_error("compressed batch is empty");
+        return std::unexpected(DecodeError::EmptyBatch);
     }
 
-    const auto header = std::to_integer<std::uint8_t>(input.front());
-    const auto payload = input.subspan(1);
+    const CompressionHeader header{std::to_integer<std::uint8_t>(input.front())};
+    const auto payload = input.subspan(CompressionHeader::SIZE);
 
-    switch (header) {
-    case none_header:
+    if (header.isCompressedWith(PacketCompressionAlgorithm::None)) {
         return ByteBuf::copyOf(payload);
+    }
 
-    case snappy_header: {
+    if (header.isCompressedWith(PacketCompressionAlgorithm::Snappy)) {
         std::size_t size = 0;
         if (!snappy::GetUncompressedLength(reinterpret_cast<const char *>(payload.data()), payload.size(), &size)) {
-            throw std::runtime_error("snappy batch has no length prefix");
+            return std::unexpected(DecodeError::CorruptCompressedData);
         }
         if (size > max_decompressed_size) {
-            throw std::runtime_error(std::format("snappy batch expands to {} bytes", size));
+            return std::unexpected(DecodeError::DecompressedSizeExceeded);
         }
 
         auto out = ByteBuf::allocate(size);
         if (!snappy::RawUncompress(reinterpret_cast<const char *>(payload.data()), payload.size(),
                                    reinterpret_cast<char *>(out.writable().data()))) {
-            throw std::runtime_error("snappy batch is corrupt");
+            return std::unexpected(DecodeError::CorruptCompressedData);
         }
         out.advanceWriter(size);
         return out;
     }
 
-    case zlib_header: {
+    if (header.isCompressedWith(PacketCompressionAlgorithm::ZLib)) {
         for (std::size_t capacity = std::max<std::size_t>(payload.size() * 4, 1024); capacity <= max_decompressed_size;
              capacity *= 2) {
             auto out = ByteBuf::allocate(capacity);
@@ -92,60 +89,56 @@ ByteBuf CompressionHandler::decompress(const ByteBuf &batch)
                 return out;
             }
             if (result != LIBDEFLATE_INSUFFICIENT_SPACE) {
-                throw std::runtime_error("deflate batch is corrupt");
+                return std::unexpected(DecodeError::CorruptCompressedData);
             }
         }
-        throw std::runtime_error("deflate batch expands beyond the permitted size");
+        return std::unexpected(DecodeError::DecompressedSizeExceeded);
     }
 
-    default:
-        break;
-    }
-
-    throw std::runtime_error(std::format("unknown compression algorithm {}", header));
+    return std::unexpected(DecodeError::UnknownCompressionAlgorithm);
 }
 
-ByteBuf CompressionHandler::compress(const ByteBuf &batch)
+std::expected<ByteBuf, DecodeError> CompressionHandler::compress(const ByteBuf &batch)
 {
     std::vector<std::byte> scratch;
     const auto input = gather(batch, scratch);
 
     const auto algorithm = input.size() < threshold_ ? PacketCompressionAlgorithm::None : algorithm_;
-    const auto header = static_cast<std::byte>(algorithm == PacketCompressionAlgorithm::Snappy ? snappy_header
-                                               : algorithm == PacketCompressionAlgorithm::ZLib ? zlib_header
-                                                                                               : none_header);
+    const auto header = static_cast<std::byte>(CompressionHeader{algorithm}.getRaw());
 
     if (algorithm == PacketCompressionAlgorithm::None) {
-        auto out = ByteBuf::allocate(input.size() + 1);
+        auto out = ByteBuf::allocate(input.size() + CompressionHeader::SIZE);
         auto writable = out.writable();
         writable[0] = header;
-        std::copy(input.begin(), input.end(), writable.begin() + 1);
-        out.advanceWriter(input.size() + 1);
+        std::copy(input.begin(), input.end(), writable.begin() + CompressionHeader::SIZE);
+        out.advanceWriter(input.size() + CompressionHeader::SIZE);
         return out;
     }
 
     if (algorithm == PacketCompressionAlgorithm::Snappy) {
-        auto out = ByteBuf::allocate(snappy::MaxCompressedLength(input.size()) + 1);
+        auto out = ByteBuf::allocate(snappy::MaxCompressedLength(input.size()) + CompressionHeader::SIZE);
         auto writable = out.writable();
         writable[0] = header;
 
         std::size_t produced = 0;
         snappy::RawCompress(reinterpret_cast<const char *>(input.data()), input.size(),
-                            reinterpret_cast<char *>(writable.data() + 1), &produced);
-        out.advanceWriter(produced + 1);
+                            reinterpret_cast<char *>(writable.data() + CompressionHeader::SIZE), &produced);
+        out.advanceWriter(produced + CompressionHeader::SIZE);
         return out;
     }
 
-    auto out = ByteBuf::allocate(libdeflate_deflate_compress_bound(compressor_.get(), input.size()) + 1);
+    auto out =
+        ByteBuf::allocate(libdeflate_deflate_compress_bound(compressor_.get(), input.size()) + CompressionHeader::SIZE);
     auto writable = out.writable();
     writable[0] = header;
 
     const auto produced = libdeflate_deflate_compress(compressor_.get(), input.data(), input.size(),
-                                                      writable.data() + 1, writable.size() - 1);
+                                                      writable.data() + CompressionHeader::SIZE,
+                                                      writable.size() - CompressionHeader::SIZE);
     if (produced == 0) {
-        throw std::runtime_error("deflate produced no output");
+        return std::unexpected(DecodeError::CompressionFailed);
     }
-    out.advanceWriter(produced + 1);
+    out.advanceWriter(produced + CompressionHeader::SIZE);
     return out;
 }
 

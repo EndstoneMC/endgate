@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <exception>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -31,7 +30,11 @@ public:
         pipeline_.template writeAt<Index>(std::forward<Message>(message));
     }
 
-    void fireExceptionCaught(std::exception_ptr error) { pipeline_.exceptionCaught(error); }
+    template <typename Error>
+    void fireExceptionCaught(Error &&error)
+    {
+        pipeline_.exceptionCaught(std::forward<Error>(error));
+    }
 
 private:
     Pipeline &pipeline_;
@@ -85,7 +88,11 @@ public:
         }
     }
 
-    void exceptionCaught(std::exception_ptr error) { sink_.exceptionCaught(error); }
+    template <typename Error>
+    void exceptionCaught(Error &&error)
+    {
+        sink_.exceptionCaught(std::forward<Error>(error));
+    }
 
     template <std::size_t Index>
     [[nodiscard]] auto &handler()

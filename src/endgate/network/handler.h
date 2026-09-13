@@ -2,7 +2,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <memory>
+#include <string_view>
 #include <utility>
 
 #include "endgate/network/buffer.h"
@@ -12,10 +14,63 @@ struct libdeflate_decompressor;
 
 namespace endgate {
 
+/**
+ * Why a batch could not be turned back into packets.
+ *
+ * @see NetworkPeer::DataStatus::BrokenData
+ */
+enum class DecodeError {
+    EmptyBatch,
+    UnknownCompressionAlgorithm,
+    CorruptCompressedData,
+    DecompressedSizeExceeded,
+    CompressionFailed,
+};
+
+[[nodiscard]] constexpr std::string_view toString(DecodeError error)
+{
+    switch (error) {
+    case DecodeError::EmptyBatch:
+        return "batch is empty";
+    case DecodeError::UnknownCompressionAlgorithm:
+        return "batch names an unknown compression algorithm";
+    case DecodeError::CorruptCompressedData:
+        return "batch is corrupt";
+    case DecodeError::DecompressedSizeExceeded:
+        return "batch expands beyond the permitted size";
+    case DecodeError::CompressionFailed:
+        return "batch could not be compressed";
+    }
+    return "unknown";
+}
+
 enum class PacketCompressionAlgorithm : std::uint16_t {
     ZLib = 0,
     Snappy = 1,
     None = 65535,
+};
+
+/**
+ * The byte in front of a batch naming how it was compressed. Only the algorithm's low byte reaches the
+ * wire, so a batch is matched on the raw byte rather than on the enumerator.
+ *
+ * @see CompressionHeader
+ */
+class CompressionHeader {
+public:
+    static constexpr std::size_t SIZE = 1;
+
+    explicit CompressionHeader(std::uint8_t raw) : raw_(raw) {}
+    explicit CompressionHeader(PacketCompressionAlgorithm algorithm) : raw_(static_cast<std::uint8_t>(algorithm)) {}
+
+    [[nodiscard]] std::uint8_t getRaw() const { return raw_; }
+    [[nodiscard]] bool isCompressedWith(PacketCompressionAlgorithm algorithm) const
+    {
+        return raw_ == static_cast<std::uint8_t>(algorithm);
+    }
+
+private:
+    std::uint8_t raw_;
 };
 
 /**
@@ -52,7 +107,7 @@ public:
  */
 class CompressionHandler {
 public:
-    CompressionHandler();
+    explicit CompressionHandler(int compression_level);
     ~CompressionHandler();
     CompressionHandler(CompressionHandler &&other) noexcept;
     CompressionHandler &operator=(CompressionHandler &&other) noexcept;
@@ -66,7 +121,12 @@ public:
             context.fireRead(std::move(batch));
             return;
         }
-        context.fireRead(decompress(batch));
+        auto decompressed = decompress(batch);
+        if (!decompressed) {
+            context.fireExceptionCaught(decompressed.error());
+            return;
+        }
+        context.fireRead(*std::move(decompressed));
     }
 
     template <typename Context>
@@ -76,12 +136,17 @@ public:
             context.write(std::move(batch));
             return;
         }
-        context.write(compress(batch));
+        auto compressed = compress(batch);
+        if (!compressed) {
+            context.fireExceptionCaught(compressed.error());
+            return;
+        }
+        context.write(*std::move(compressed));
     }
 
 private:
-    [[nodiscard]] ByteBuf decompress(const ByteBuf &batch);
-    [[nodiscard]] ByteBuf compress(const ByteBuf &batch);
+    [[nodiscard]] std::expected<ByteBuf, DecodeError> decompress(const ByteBuf &batch);
+    [[nodiscard]] std::expected<ByteBuf, DecodeError> compress(const ByteBuf &batch);
 
     bool enabled_{false};
     PacketCompressionAlgorithm algorithm_{PacketCompressionAlgorithm::None};
