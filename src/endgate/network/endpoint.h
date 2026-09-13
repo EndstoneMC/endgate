@@ -13,23 +13,24 @@ namespace endgate {
  * The kind of traffic a listener endpoint serves.
  *
  * @see RakPeerHelper::PeerPurpose
+ * @see NetherNet::ILanDiscovery
  * @see com.velocitypowered.api.network.ListenerType
  */
 enum class ListenerType {
     Gameplay,
     HttpSignaling,
-    LanSignaling,
+    LanDiscovery,
 };
 
 [[nodiscard]] constexpr std::string_view toString(ListenerType type)
 {
     switch (type) {
     case ListenerType::Gameplay:
-        return "Minecraft";
+        return "Gameplay";
     case ListenerType::HttpSignaling:
-        return "NetherNet signaling";
-    case ListenerType::LanSignaling:
-        return "NetherNet LAN signaling";
+        return "HTTP signaling";
+    case ListenerType::LanDiscovery:
+        return "LAN discovery";
     }
     return "Unknown";
 }

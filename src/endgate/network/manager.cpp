@@ -70,7 +70,7 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
     return true;
 }
 
-void ConnectionManager::lanSignalingBind(const asio::ip::address &address)
+void ConnectionManager::lanDiscoveryBind(const asio::ip::address &address)
 {
     asio::error_code ec;
 
@@ -78,14 +78,14 @@ void ConnectionManager::lanSignalingBind(const asio::ip::address &address)
     const asio::ip::udp::endpoint local{address, lan_signaling_port};
     if (socket.open(local.protocol(), ec) || socket.set_option(asio::socket_base::reuse_address(true), ec) ||
         socket.set_option(asio::socket_base::broadcast(true), ec) || socket.bind(local, ec)) {
-        logger_.warn("Can't bind to {}:{}: {}. LAN signaling will be unavailable.", address.to_string(),
+        logger_.warn("Can't bind to {}:{}: {}. LAN discovery will be unavailable.", address.to_string(),
                      lan_signaling_port, ec.message());
         return;
     }
 
-    auto &endpoint = endpoints_.emplace_back(std::move(socket), ListenerType::LanSignaling);
-    logger_.info("Listening for {} on {}", toString(ListenerType::LanSignaling), endpoint.getLocalAddress());
-    asio::co_spawn(io_context_, receiveLanSignaling(endpoint.getSocket()), asio::detached);
+    auto &endpoint = endpoints_.emplace_back(std::move(socket), ListenerType::LanDiscovery);
+    logger_.info("Listening for {} on {}", toString(ListenerType::LanDiscovery), endpoint.getLocalAddress());
+    asio::co_spawn(io_context_, receiveLanDiscovery(endpoint.getSocket()), asio::detached);
 }
 
 void ConnectionManager::start()
@@ -166,7 +166,7 @@ asio::awaitable<void> ConnectionManager::receive(asio::ip::udp::socket &socket)
     }
 }
 
-asio::awaitable<void> ConnectionManager::receiveLanSignaling(asio::ip::udp::socket &socket)
+asio::awaitable<void> ConnectionManager::receiveLanDiscovery(asio::ip::udp::socket &socket)
 {
     std::array<std::byte, max_datagram_size> buffer{};
     asio::ip::udp::endpoint sender;
@@ -181,7 +181,7 @@ asio::awaitable<void> ConnectionManager::receiveLanSignaling(asio::ip::udp::sock
             continue;
         }
 
-        logger_.debug("Received {} bytes of LAN signaling from {}:{}", size, sender.address().to_string(),
+        logger_.debug("Received {} bytes of LAN discovery from {}:{}", size, sender.address().to_string(),
                       sender.port());
     }
 }

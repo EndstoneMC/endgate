@@ -48,7 +48,7 @@ bool ProxyServer::start()
     if (!cm_.bind(address, port)) {
         return false;
     }
-    cm_.lanSignalingBind(address);
+    cm_.lanDiscoveryBind(address);
 
     cm_.start();
     return true;

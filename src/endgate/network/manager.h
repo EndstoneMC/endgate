@@ -30,7 +30,7 @@ public:
 
     void logChannelInformation();
     bool bind(const asio::ip::address &address, std::uint16_t port);
-    void lanSignalingBind(const asio::ip::address &address);
+    void lanDiscoveryBind(const asio::ip::address &address);
     void start();
     void shutdown();
     void awaitTermination();
@@ -38,7 +38,7 @@ public:
 private:
     asio::awaitable<void> accept(asio::ip::tcp::acceptor &acceptor);
     asio::awaitable<void> receive(asio::ip::udp::socket &socket);
-    asio::awaitable<void> receiveLanSignaling(asio::ip::udp::socket &socket);
+    asio::awaitable<void> receiveLanDiscovery(asio::ip::udp::socket &socket);
 
     ProxyServer &server_;
     spdlog::logger &logger_;

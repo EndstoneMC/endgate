@@ -31,10 +31,7 @@ public:
         pipeline_.template writeAt<Index>(std::forward<Message>(message));
     }
 
-    void fireExceptionCaught(std::exception_ptr error)
-    {
-        pipeline_.exceptionCaught(error);
-    }
+    void fireExceptionCaught(std::exception_ptr error) { pipeline_.exceptionCaught(error); }
 
 private:
     Pipeline &pipeline_;
@@ -50,10 +47,7 @@ private:
 template <typename Sink, typename... Handlers>
 class Pipeline {
 public:
-    explicit Pipeline(Sink sink, Handlers... handlers)
-        : sink_(std::move(sink)), handlers_(std::move(handlers)...)
-    {
-    }
+    explicit Pipeline(Sink sink, Handlers... handlers) : sink_(std::move(sink)), handlers_(std::move(handlers)...) {}
 
     template <typename Message>
     void read(Message &&message)
@@ -91,10 +85,7 @@ public:
         }
     }
 
-    void exceptionCaught(std::exception_ptr error)
-    {
-        sink_.exceptionCaught(error);
-    }
+    void exceptionCaught(std::exception_ptr error) { sink_.exceptionCaught(error); }
 
     template <std::size_t Index>
     [[nodiscard]] auto &handler()

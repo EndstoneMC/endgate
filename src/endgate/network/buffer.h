@@ -41,15 +41,9 @@ public:
         return buf;
     }
 
-    [[nodiscard]] std::size_t readableBytes() const
-    {
-        return readable_ - reader_index_;
-    }
+    [[nodiscard]] std::size_t readableBytes() const { return readable_ - reader_index_; }
 
-    [[nodiscard]] bool empty() const
-    {
-        return readableBytes() == 0;
-    }
+    [[nodiscard]] bool empty() const { return readableBytes() == 0; }
 
     [[nodiscard]] std::span<std::byte> writable()
     {
