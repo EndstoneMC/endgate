@@ -27,7 +27,6 @@
 #include "InternalPacket.h"
 #include "MTUSize.h"
 #include "PacketPriority.h"
-#include "PluginInterface2.h"
 #include "RakMemoryOverride.h"
 #include "RakNetDefines.h"
 #include "RakNetStatistics.h"
@@ -46,7 +45,6 @@ namespace RakNet {
 using DatagramSink = endgate::raknet::DatagramSink;
 
 /// Forward declarations
-class PluginInterface2;
 typedef uint64_t reliabilityHeapWeightType;
 
 // int SplitPacketIndexComp( SplitPacketIndexType const &key, InternalPacket* const &data );
@@ -133,13 +131,10 @@ public:
     /// \param[in] buffer The socket data
     /// \param[in] length The length of the socket data
     /// \param[in] systemAddress The player that this data is from
-    /// \param[in] messageHandlerList A list of registered plugins
     /// \param[in] MTUSize maximum datagram size
     /// \retval true Success
     /// \retval false Modified packet
-    bool HandleSocketReceiveFromConnectedPlayer(const char *buffer, unsigned int length, SystemAddress &systemAddress,
-                                                DataStructures::List<PluginInterface2 *> &messageHandlerList,
-                                                int MTUSize, DatagramSink *s, CCTimeType timeRead,
+    bool HandleSocketReceiveFromConnectedPlayer(const char *buffer, unsigned int length, SystemAddress &systemAddress, int MTUSize, DatagramSink *s, CCTimeType timeRead,
                                                 BitStream &updateBitStream);
 
     /// This allocates bytes and writes a user-level message to those bytes.
@@ -169,10 +164,8 @@ public:
     /// \param[in] MTUSize maximum datagram size
     /// \param[in] time current system time
     /// \param[in] maxBitsPerSecond if non-zero, enforces that outgoing bandwidth does not exceed this amount
-    /// \param[in] messageHandlerList A list of registered plugins
     void Update(DatagramSink *s, SystemAddress &systemAddress, int MTUSize, CCTimeType time,
-                unsigned bitsPerSecondLimit, DataStructures::List<PluginInterface2 *> &messageHandlerList,
-                BitStream &updateBitStream);
+                unsigned bitsPerSecondLimit, BitStream &updateBitStream);
 
     /// Were you ever unable to deliver a packet despite retries?
     /// \return true means the connection has been lost.  Otherwise not.
@@ -231,8 +224,7 @@ private:
 
     /// Does what the function name says
     unsigned RemovePacketFromResendListAndDeleteOlderReliableSequenced(
-        const MessageNumberType messageNumber, CCTimeType time,
-        DataStructures::List<PluginInterface2 *> &messageHandlerList, const SystemAddress &systemAddress);
+        const MessageNumberType messageNumber, CCTimeType time, const SystemAddress &systemAddress);
 
     /// Acknowledge receipt of the packet with the specified messageNumber
     void SendAcknowledgementPacket(const DatagramSequenceNumberType messageNumber, CCTimeType time);
