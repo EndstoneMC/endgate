@@ -85,7 +85,7 @@ bool ProxyServer::isShuttingDown() const
 
 ProxyVersion ProxyServer::getVersion() const
 {
-    return {"endgate", "EndstoneMC", ENDGATE_VERSION};
+    return {"Endgate", "EndstoneMC", ENDGATE_VERSION};
 }
 
 Console &ProxyServer::getConsoleCommandSource()
