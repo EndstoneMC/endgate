@@ -9,7 +9,7 @@
                 "install",
                 ".",
                 "-s",
-                "build_type=Debug",
+                "&:build_type=RelWithDebInfo",
                 "-s",
                 "compiler.cppstd=23",
                 "-c",
@@ -25,7 +25,7 @@
             "label": "configure",
             "type": "cmake",
             "command": "configure",
-            "preset": "conan-debug",
+            "preset": "conan-relwithdebinfo",
             "dependsOn": "install",
             "problemMatcher": []
         },
@@ -33,7 +33,7 @@
             "label": "build",
             "type": "cmake",
             "command": "build",
-            "preset": "conan-debug",
+            "preset": "conan-relwithdebinfo",
             "dependsOn": "configure",
             "group": {
                 "kind": "build",
