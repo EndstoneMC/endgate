@@ -202,11 +202,6 @@ List<list_type> &List<list_type>::operator=(const List &original_copy)
 template <class list_type>
 inline list_type &List<list_type>::operator[](const unsigned int position) const
 {
-#ifdef _DEBUG
-    if (position >= list_size) {
-        RakAssert(position < list_size);
-    }
-#endif
     return listArray[position];
 }
 
@@ -226,9 +221,6 @@ void List<list_type>::Push(const list_type &input, const char *file, unsigned in
 template <class list_type>
 inline list_type &List<list_type>::Pop(void)
 {
-#ifdef _DEBUG
-    RakAssert(list_size > 0);
-#endif
     --list_size;
     return listArray[list_size];
 }
@@ -236,11 +228,6 @@ inline list_type &List<list_type>::Pop(void)
 template <class list_type>
 void List<list_type>::Insert(const list_type &input, const unsigned int position, const char *file, unsigned int line)
 {
-#ifdef _DEBUG
-    if (position > list_size) {
-        RakAssert(position <= list_size);
-    }
-#endif
 
     // Reallocate list if necessary
     if (list_size == allocation_size) {
@@ -362,12 +349,6 @@ inline void List<list_type>::Replace(const list_type &input, const list_type fil
 
         // Fill in the last element with the new item
         listArray[list_size++] = input;
-
-#ifdef _DEBUG
-
-        RakAssert(list_size == position + 1);
-
-#endif
     }
 }
 
@@ -382,12 +363,6 @@ inline void List<list_type>::Replace(const list_type &input)
 template <class list_type>
 void List<list_type>::RemoveAtIndex(const unsigned int position)
 {
-#ifdef _DEBUG
-    if (position >= list_size) {
-        RakAssert(position < list_size);
-        return;
-    }
-#endif
 
     if (position < list_size) {
         // Compress the array
@@ -404,12 +379,6 @@ void List<list_type>::RemoveAtIndex(const unsigned int position)
 template <class list_type>
 void List<list_type>::RemoveAtIndexFast(const unsigned int position)
 {
-#ifdef _DEBUG
-    if (position >= list_size) {
-        RakAssert(position < list_size);
-        return;
-    }
-#endif
     --list_size;
     listArray[position] = listArray[list_size];
 }
@@ -418,9 +387,6 @@ template <class list_type>
 inline void List<list_type>::RemoveFromEnd(const unsigned num)
 {
     // Delete the last elements on the list.  No compression needed
-#ifdef _DEBUG
-    RakAssert(list_size >= num);
-#endif
     list_size -= num;
 }
 

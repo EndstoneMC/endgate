@@ -114,10 +114,10 @@ public:
     ~ReliabilityLayer();
 
     /// Resets the layer for reuse
-    void Reset(bool resetVariables, int MTUSize, bool _useSecurity);
+    void Reset(bool resetVariables, int MTUSize);
 
     /// Set the time, in MS, to use before considering ourselves disconnected after not being able to deliver a reliable
-    /// packet Default time is 10,000 or 10 seconds in release and 30,000 or 30 seconds in debug.
+    /// packet Default time is 10,000 or 10 seconds.
     /// \param[in] time Time, in MS
     void SetTimeoutTime(RakNet::TimeMS time);
 
@@ -180,13 +180,6 @@ public:
     /// Are we waiting for any data to be sent out or be processed by the player?
     bool IsOutgoingDataWaiting(void);
     bool AreAcksWaiting(void);
-
-    // Set outgoing lag and packet loss properties
-    void ApplyNetworkSimulator(double _maxSendBPS, RakNet::TimeMS _minExtraPing, RakNet::TimeMS _extraPingVariance);
-
-    /// Returns if you previously called ApplyNetworkSimulator
-    /// \return If you previously called ApplyNetworkSimulator
-    bool IsNetworkSimulatorActive(void);
 
     void SetSplitMessageProgressInterval(int interval);
     void SetUnreliableTimeout(RakNet::TimeMS timeoutMS);
@@ -481,24 +474,6 @@ private:
 
     unsigned receivePacketCount;
 
-#ifdef _DEBUG
-    struct DataAndTime  //<InternalPacket>
-    {
-        DatagramSink *s;
-        char data[MAXIMUM_MTU_SIZE];
-        unsigned int length;
-        RakNet::TimeMS sendTime;
-        //	SystemAddress systemAddress;
-        unsigned short remotePortRakNetWasStartedOn_PS3;
-        unsigned int extraSocketOptions;
-    };
-    DataStructures::Queue<DataAndTime *> delayList;
-
-    // Internet simulator
-    double packetloss;
-    RakNet::TimeMS minExtraPing, extraPingVariance;
-#endif
-
     CCTimeType elapsedTimeSinceLastUpdate;
 
     CCTimeType nextAckTimeToSend;
@@ -565,15 +540,6 @@ private:
 
     BPSTracker bpsMetrics[RNS_PER_SECOND_METRICS_COUNT];
     CCTimeType lastBpsClear;
-
-#if LIBCAT_SECURITY == 1
-public:
-    cat::AuthenticatedEncryption *GetAuthenticatedEncryption(void) { return &auth_enc; }
-
-protected:
-    cat::AuthenticatedEncryption auth_enc;
-    bool useSecurity;
-#endif  // LIBCAT_SECURITY
 };
 
 }  // namespace RakNet

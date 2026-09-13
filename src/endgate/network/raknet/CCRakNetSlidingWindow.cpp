@@ -13,11 +13,7 @@
 
 static const double UNSET_TIME_US = -1;
 
-#if CC_TIME_TYPE_BYTES == 4
-static const CCTimeType SYN = 10;
-#else
 static const CCTimeType SYN = 10000;
-#endif
 
 #include <math.h>
 #include <stdio.h>
@@ -285,15 +281,9 @@ CCTimeType CCRakNetSlidingWindow::GetRTOForRetransmission(unsigned char timesSen
 {
     (void)timesSent;
 
-#if CC_TIME_TYPE_BYTES == 4
-    const CCTimeType maxThreshold = 2000;
-    // const CCTimeType minThreshold=100;
-    const CCTimeType additionalVariance = 30;
-#else
     const CCTimeType maxThreshold = 2000000;
     // const CCTimeType minThreshold=100000;
     const CCTimeType additionalVariance = 30000;
-#endif
 
     if (estimatedRTT == UNSET_TIME_US) {
         return maxThreshold;

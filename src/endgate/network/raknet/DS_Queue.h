@@ -103,9 +103,6 @@ Queue<queue_type>::~Queue()
 template <class queue_type>
 inline queue_type Queue<queue_type>::Pop(void)
 {
-#ifdef _DEBUG
-    RakAssert(head != tail);
-#endif
     // head=(head+1) % allocation_size;
 
     if (++head == allocation_size) {
@@ -122,9 +119,6 @@ inline queue_type Queue<queue_type>::Pop(void)
 template <class queue_type>
 inline queue_type Queue<queue_type>::PopTail(void)
 {
-#ifdef _DEBUG
-    RakAssert(head != tail);
-#endif
     if (tail != 0) {
         --tail;
         return (queue_type)array[tail];
@@ -206,9 +200,6 @@ void Queue<queue_type>::PushAtHead(const queue_type &input, unsigned index, cons
 template <class queue_type>
 inline queue_type Queue<queue_type>::Peek(void) const
 {
-#ifdef _DEBUG
-    RakAssert(head != tail);
-#endif
 
     return (queue_type)array[head];
 }
@@ -216,9 +207,6 @@ inline queue_type Queue<queue_type>::Peek(void) const
 template <class queue_type>
 inline queue_type Queue<queue_type>::PeekTail(void) const
 {
-#ifdef _DEBUG
-    RakAssert(head != tail);
-#endif
     if (tail != 0) {
         return (queue_type)array[tail - 1];
     }
@@ -251,9 +239,6 @@ void Queue<queue_type>::Push(const queue_type &input, const char *file, unsigned
         // Need to allocate more memory.
         queue_type *new_array;
         new_array = RakNet::OP_NEW_ARRAY<queue_type>((int)allocation_size * 2, file, line);
-#ifdef _DEBUG
-        RakAssert(new_array);
-#endif
         if (new_array == 0) {
             return;
         }
@@ -413,9 +398,6 @@ void Queue<queue_type>::ClearAndForceAllocation(int size, const char *file, unsi
 template <class queue_type>
 inline queue_type &Queue<queue_type>::operator[](unsigned int position) const
 {
-#ifdef _DEBUG
-    RakAssert(position < Size());
-#endif
     // return array[(head + position) % allocation_size];
 
     if (head + position >= allocation_size) {
@@ -429,10 +411,6 @@ inline queue_type &Queue<queue_type>::operator[](unsigned int position) const
 template <class queue_type>
 void Queue<queue_type>::RemoveAtIndex(unsigned int position)
 {
-#ifdef _DEBUG
-    RakAssert(position < Size());
-    RakAssert(head != tail);
-#endif
 
     if (head == tail || position >= Size()) {
         return;

@@ -15,12 +15,7 @@
 
 #define _FILE_AND_LINE_ __FILE__, __LINE__
 
-#ifdef _DEBUG
-#define RakAssert(x) assert(x);
-#else
-#define RakAssert(x)
-#endif
-
+#define RakAssert(x) assert(x)
 
 #define BITSTREAM_STACK_ALLOCATION_SIZE  256
 #define DATAGRAM_MESSAGE_ID_ARRAY_LENGTH 512

@@ -264,9 +264,6 @@ inline unsigned Heap<weight_type, data_type, isMaxHeap>::RightChild(const unsign
 template <class weight_type, class data_type, bool isMaxHeap>
 inline unsigned Heap<weight_type, data_type, isMaxHeap>::Parent(const unsigned i) const
 {
-#ifdef _DEBUG
-    RakAssert(i != 0);
-#endif
     return (i - 1) / 2;
 }
 
