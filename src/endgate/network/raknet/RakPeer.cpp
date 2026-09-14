@@ -15,20 +15,18 @@
 
 #include "RakPeer.h"
 
-#include <random>
-
-#include "RakNetDefines.h"
-#include "RakNetTypes.h"
-#include "endgate/network/endpoint.h"
-
 #include <ctype.h>  // toupper
 #include <string.h>
 #include <time.h>
 
+#include <random>
+
 #include "GetTime.h"
 #include "MessageIdentifiers.h"
+#include "RakNetDefines.h"
 #include "RakNetTypes.h"
 #include "RakNetVersion.h"
+#include "endgate/network/endpoint.h"
 
 #define REMOTE_SYSTEM_LOOKUP_HASH_MULTIPLE 8
 
@@ -1947,10 +1945,6 @@ void RakPeer::SendBufferedList(const char **data, const int *lengths, const int 
             remoteSystem->connectMode = connectionMode;
         }
     }
-
-    if (priority == IMMEDIATE_PRIORITY) {
-        // Forces pending sends to go out now, rather than waiting to the next update interval
-    }
 }
 bool RakPeer::SendImmediate(char *data, BitSize_t numberOfBitsToSend, PacketPriority priority,
                             PacketReliability reliability, char orderingChannel, const AddressOrGUID systemIdentifier,
@@ -2244,9 +2238,6 @@ bool ProcessOfflineNetworkPacket(SystemAddress systemAddress, const char *data, 
                     if (serverHasSecurity) {
                         // Message does not contain a challenge
                         bsOut.Write((unsigned char)0);
-                    }
-                    else {
-                        // Server does not need security
                     }
 
                     uint16_t mtu;
@@ -2708,10 +2699,6 @@ void RakPeer::HandleReceivedMessages(RemoteSystemStruct *remoteSystem, SystemAdd
                     // Send this info down to the game
                     endpoint->channelActive(systemAddress, remoteSystem->guid);
                     rakFree_Ex(data, _FILE_AND_LINE_);
-                }
-                else {
-                    // Send to game even if already connected. This could happen when connecting to 127.0.0.1
-                    // Ignore, already connected
                 }
             }
             else if ((unsigned char)data[0] == ID_CONNECTED_PONG &&
