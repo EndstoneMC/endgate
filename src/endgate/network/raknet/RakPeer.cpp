@@ -410,7 +410,7 @@ bool RakPeer::GetConnectionList(SystemAddress *remoteSystems, unsigned short *nu
         return false;
     }
 
-    if (remoteSystemList == 0 || isRunning == true) {
+    if (remoteSystemList == 0 || !isRunning) {
         if (numberOfSystems) {
             *numberOfSystems = 0;
         }
@@ -478,7 +478,7 @@ uint32_t RakPeer::Send(const char *data, const int length, PacketPriority priori
         return 0;
     }
 
-    if (remoteSystemList == 0 || isRunning == true) {
+    if (remoteSystemList == 0 || !isRunning) {
         return 0;
     }
 
@@ -524,7 +524,7 @@ uint32_t RakPeer::Send(const RakNet::BitStream *bitStream, PacketPriority priori
         return 0;
     }
 
-    if (remoteSystemList == 0 || isRunning == true) {
+    if (remoteSystemList == 0 || !isRunning) {
         return 0;
     }
 
@@ -588,7 +588,7 @@ uint32_t RakPeer::SendList(const char **data, const int *lengths, const int numP
         return 0;
     }
 
-    if (remoteSystemList == 0 || isRunning == true) {
+    if (remoteSystemList == 0 || !isRunning) {
         return 0;
     }
 
@@ -799,7 +799,7 @@ void RakPeer::GetSystemList(DataStructures::List<SystemAddress> &addresses,
     addresses.Clear(false, _FILE_AND_LINE_);
     guids.Clear(false, _FILE_AND_LINE_);
 
-    if (remoteSystemList == 0 || isRunning == true) {
+    if (remoteSystemList == 0 || !isRunning) {
         return;
     }
 
@@ -1276,7 +1276,7 @@ RakNetStatistics *RakPeer::GetStatistics(const SystemAddress systemAddress, RakN
     else {
         RemoteSystemStruct *rss;
         rss = GetRemoteSystemFromSystemAddress(systemAddress, false, false);
-        if (rss && isRunning == false) {
+        if (rss && isRunning) {
             rss->reliabilityLayer.GetStatistics(systemStats);
             return systemStats;
         }
@@ -1291,7 +1291,7 @@ void RakPeer::GetStatisticsList(DataStructures::List<SystemAddress> &addresses, 
     guids.Clear(false, _FILE_AND_LINE_);
     statistics.Clear(false, _FILE_AND_LINE_);
 
-    if (remoteSystemList == 0 || isRunning == true) {
+    if (remoteSystemList == 0 || !isRunning) {
         return;
     }
 
@@ -1560,7 +1560,7 @@ void RakPeer::NotifyAndFlagForShutdown(const SystemAddress systemAddress, bool p
 }
 unsigned int RakPeer::GetNumberOfRemoteInitiatedConnections(void) const
 {
-    if (remoteSystemList == 0 || isRunning == true) {
+    if (remoteSystemList == 0 || !isRunning) {
         return 0;
     }
 
@@ -1831,7 +1831,7 @@ void RakPeer::CloseConnectionInternal(const AddressOrGUID &systemIdentifier, boo
         return;
     }
 
-    if (remoteSystemList == 0 || isRunning == true) {
+    if (remoteSystemList == 0 || !isRunning) {
         return;
     }
 
