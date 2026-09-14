@@ -40,11 +40,6 @@ RakNet::TimeMS GetTimeMS(void);
 /// \note The maximum delta between returned calls is 1 second - however, RakNet calls this constantly anyway. See
 /// NormalizeTime() in the cpp.
 RakNet::TimeUS GetTimeUS(void);
-
-/// a > b?
-extern bool GreaterThan(RakNet::Time a, RakNet::Time b);
-/// a < b?
-extern bool LessThan(RakNet::Time a, RakNet::Time b);
 }  // namespace RakNet
 
 #endif

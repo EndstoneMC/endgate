@@ -4,21 +4,21 @@
 
 namespace RakNet {
 
-TimeMS GetTimeMS()
+TimeUS GetTimeUS()
 {
     using namespace std::chrono;
-    return static_cast<TimeMS>(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
+    static const auto startup = steady_clock::now();
+    return static_cast<TimeUS>(duration_cast<microseconds>(steady_clock::now() - startup).count());
+}
+
+TimeMS GetTimeMS()
+{
+    return static_cast<TimeMS>(GetTimeUS() / 1000);
 }
 
 Time GetTime()
 {
-    return static_cast<Time>(GetTimeMS());
-}
-
-TimeUS GetTimeUS()
-{
-    using namespace std::chrono;
-    return static_cast<TimeUS>(duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count());
+    return static_cast<Time>(GetTimeUS() / 1000);
 }
 
 }  // namespace RakNet
