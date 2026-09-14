@@ -1,39 +1,10 @@
 #pragma once
 
 #include <string>
-#include <string_view>
-#include <variant>
 
-#include <asio/ip/tcp.hpp>
 #include <asio/ip/udp.hpp>
 
 namespace endgate {
-
-/**
- * The kind of traffic a listener endpoint serves.
- *
- * @see RakPeerHelper::PeerPurpose
- * @see NetherNet::ILanDiscovery
- * @see com.velocitypowered.api.network.ListenerType
- */
-enum class ListenerType {
-    Gameplay,
-    HttpSignaling,
-    LanDiscovery,
-};
-
-[[nodiscard]] constexpr std::string_view toString(ListenerType type)
-{
-    switch (type) {
-    case ListenerType::Gameplay:
-        return "Gameplay";
-    case ListenerType::HttpSignaling:
-        return "HTTP signaling";
-    case ListenerType::LanDiscovery:
-        return "LAN discovery";
-    }
-    return "Unknown";
-}
 
 /**
  * Represents a listener endpoint.
@@ -42,39 +13,24 @@ enum class ListenerType {
  */
 class Endpoint {
 public:
-    Endpoint(asio::ip::tcp::acceptor acceptor, ListenerType type) : channel_(std::move(acceptor)), type_(type) {}
-
-    Endpoint(asio::ip::udp::socket socket, ListenerType type) : channel_(std::move(socket)), type_(type) {}
-
-    [[nodiscard]] ListenerType getType() const { return type_; }
+    explicit Endpoint(asio::ip::udp::socket socket) : socket_(std::move(socket)) {}
 
     [[nodiscard]] std::string getLocalAddress() const
     {
-        return std::visit(
-            [](const auto &channel) {
-                const auto local = channel.local_endpoint();
-                return local.address().to_string() + ":" + std::to_string(local.port());
-            },
-            channel_);
+        const auto local = socket_.local_endpoint();
+        return local.address().to_string() + ":" + std::to_string(local.port());
     }
 
-    [[nodiscard]] asio::ip::tcp::acceptor &getAcceptor() { return std::get<asio::ip::tcp::acceptor>(channel_); }
-
-    [[nodiscard]] asio::ip::udp::socket &getSocket() { return std::get<asio::ip::udp::socket>(channel_); }
+    [[nodiscard]] asio::ip::udp::socket &getSocket() { return socket_; }
 
     void close()
     {
-        std::visit(
-            [](auto &channel) {
-                asio::error_code ignored;
-                channel.close(ignored);
-            },
-            channel_);
+        asio::error_code ignored;
+        socket_.close(ignored);
     }
 
 private:
-    std::variant<asio::ip::tcp::acceptor, asio::ip::udp::socket> channel_;
-    ListenerType type_;
+    asio::ip::udp::socket socket_;
 };
 
 }  // namespace endgate

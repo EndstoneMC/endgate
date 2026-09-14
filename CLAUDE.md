@@ -38,7 +38,6 @@ Endgate is a modern, high-performance proxy for Minecraft: Bedrock Edition. Its 
 - **glaze** — JSON and TOML.
 - **spdlog** — all logging.
 - **asio** — all socket I/O.
-- **libdatachannel** — WebRTC.
 - Take the design, not the dependency. A framework we would use one idea from — folly and wangle for `IOBuf` and their Netty-shaped pipeline, say — is not worth its transitive weight or a second event loop beside asio. Port the idea, name where it came from, and pay only for what we use.
 - **RakNet** — vendored, not a Conan dependency. This is the one exception to "no vendored copies": we take RakNet's reliability layer as a *port* we own, not a library we consume. `src/endgate/network/raknet/` holds `ReliabilityLayer`, `CCRakNetSlidingWindow` and `BitStream`, carried over from `raknet/4.081-mojang` in the endstone recipe with all six of its patches applied — including the ACK/NAK range bound, which is a security fix. Re-derive from that recipe, never from the upstream tarball.
   - Upstream filenames are kept so each file traces back to its RakNet counterpart.

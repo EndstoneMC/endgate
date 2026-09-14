@@ -1,9 +1,7 @@
 [requires]
 asio/1.38.2
 glaze/8.3.0
-libdatachannel/0.24.0
 libdeflate/1.25
-openssl/[>=3 <4]
 replxx/0.0.4
 snappy/1.2.1
 spdlog/1.17.0

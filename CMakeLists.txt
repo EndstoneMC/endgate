@@ -12,11 +12,9 @@ configure_file(cmake/default_config.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/e
 
 find_package(asio REQUIRED)
 find_package(glaze REQUIRED)
-find_package(LibDataChannel REQUIRED)
 find_package(replxx REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(libdeflate REQUIRED)
-find_package(OpenSSL REQUIRED)
 find_package(Snappy REQUIRED)
 
 add_library(endgate_raknet STATIC
@@ -40,7 +38,6 @@ add_executable(endgate
         src/endgate/logging/appender.cpp
         src/endgate/logging/formatter.cpp
         src/endgate/logging/manager.cpp
-        src/endgate/network/discovery.cpp
         src/endgate/network/handler.cpp
         src/endgate/network/manager.cpp
         src/endgate/network/offline.cpp
@@ -54,10 +51,8 @@ target_link_libraries(endgate PRIVATE
         endgate_raknet
         asio::asio
         glaze::glaze
-        LibDataChannel::LibDataChannel
         replxx::replxx
         spdlog::spdlog
         libdeflate::libdeflate
-        OpenSSL::Crypto
         Snappy::snappy
 )
