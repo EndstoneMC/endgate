@@ -2556,8 +2556,10 @@ void ProcessNetworkPacket(SystemAddress systemAddress, const char *data, const i
             // Deliver on the callback that produced them, then transmit. Upstream reached this by having
             // the receive thread signal the update loop awake; there is no loop to wake now.
             rakPeer->HandleReceivedMessages(remoteSystem, systemAddress);
-            remoteSystem->reliabilityLayer.Update(rakPeer, systemAddress, remoteSystem->MTUSize, RakNet::GetTimeUS(),
-                                                  rakPeer->maxOutgoingBPS, updateBitStream);
+            if (remoteSystem->isActive) {
+                remoteSystem->reliabilityLayer.Update(rakPeer, systemAddress, remoteSystem->MTUSize,
+                                                      RakNet::GetTimeUS(), rakPeer->maxOutgoingBPS, updateBitStream);
+            }
         }
     }
 }
