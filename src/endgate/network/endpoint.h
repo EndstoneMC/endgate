@@ -12,6 +12,10 @@
 #include "endgate/network/buffer.h"
 #include "endgate/network/raknet/RakNetTypes.h"
 
+namespace RakNet {
+class RakPeer;
+}  // namespace RakNet
+
 namespace endgate {
 
 class ProxyServer;
@@ -47,6 +51,10 @@ public:
 
     Endpoint(ProxyServer &server, asio::io_context &io_context, asio::ip::udp::socket socket);
 
+    /// The peer whose connections arrive here. Both legs of a proxied player live on this one peer:
+    /// the player connected to us, and the connection we opened to their backend.
+    void setPeer(RakNet::RakPeer *peer) { peer_ = peer; }
+
     [[nodiscard]] std::string getLocalAddress() const;
     [[nodiscard]] const Executor &getExecutor() const { return strand_; }
     [[nodiscard]] asio::ip::udp::socket &getSocket() { return socket_; }
@@ -79,8 +87,17 @@ public:
     [[nodiscard]] static RakNet::SystemAddress fromAsio(const asio::ip::udp::endpoint &endpoint);
 
 private:
+    /// The other leg of a proxied player, keyed by address. A player maps to its backend and the
+    /// backend maps back, so a datagram arriving on either leg knows where it is going.
+    ///
+    /// @see com.velocitypowered.proxy.connection.backend.VelocityServerConnection
+    std::unordered_map<std::string, std::string> counterpart_;
+    std::unordered_map<std::string, RakNet::SystemAddress> addresses_;
+    std::string awaiting_backend_;
+
     ProxyServer &server_;
     spdlog::logger &logger_;
+    RakNet::RakPeer *peer_{nullptr};
     asio::ip::udp::socket socket_;
     Executor strand_;
 };

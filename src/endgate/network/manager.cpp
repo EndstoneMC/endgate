@@ -55,6 +55,7 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
     auto &endpoint = endpoints_.emplace_back(server_, io_context_, std::move(socket));
 
     peer_.SetEndpoint(&endpoint);
+    endpoint.setPeer(&peer_);
     if (peer_.Startup(server_.getConfiguration().getShowMaxPlayers()) != RakNet::RAKNET_STARTED) {
         logger_.error("RakNet failed to start");
         return false;

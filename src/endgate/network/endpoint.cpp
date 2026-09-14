@@ -7,7 +7,10 @@
 
 #include <asio/buffer.hpp>
 
+#include "endgate/config.h"
 #include "endgate/logging/manager.h"
+#include "endgate/network/raknet/PacketPriority.h"
+#include "endgate/network/raknet/RakPeer.h"
 #include "endgate/server.h"
 
 namespace endgate {
@@ -56,12 +59,61 @@ void Endpoint::send(const RakNet::SystemAddress &peer, const ByteBuf &bytes)
 
 void Endpoint::channelActive(const RakNet::SystemAddress &peer, const RakNet::RakNetGUID &guid)
 {
-    logger_.info("Connected: {}:{}", peer.ToString(false), peer.GetPort());
+    const std::string key = peer.ToString(true);
+    addresses_[key] = peer;
+
+    // A backend we opened for a player who is already waiting on it.
+    if (!awaiting_backend_.empty()) {
+        counterpart_[awaiting_backend_] = key;
+        counterpart_[key] = awaiting_backend_;
+        logger_.info("Player {} is now on backend {}", awaiting_backend_, key);
+        awaiting_backend_.clear();
+        return;
+    }
+
+    logger_.info("Connected: {}", key);
+
+    const auto &order = server_.getConfiguration().getAttemptConnectionOrder();
+    const auto &servers = server_.getConfiguration().getServers();
+    if (order.empty()) {
+        logger_.warn("No servers configured to try; {} has nowhere to go", key);
+        return;
+    }
+    const auto entry = servers.find(order.front());
+    if (entry == servers.end()) {
+        logger_.warn("Server \"{}\" is in try but not configured", order.front());
+        return;
+    }
+
+    const auto colon = entry->second.rfind(':');
+    const auto host = entry->second.substr(0, colon);
+    const auto port = static_cast<unsigned short>(std::stoi(entry->second.substr(colon + 1)));
+
+    awaiting_backend_ = key;
+    if (peer_->Connect(host.c_str(), port, nullptr, 0) != RakNet::CONNECTION_ATTEMPT_STARTED) {
+        logger_.warn("Can't reach backend {} for {}", entry->second, key);
+        awaiting_backend_.clear();
+        return;
+    }
+    logger_.info("Opening backend {} for {}", entry->second, key);
 }
 
 void Endpoint::channelRead(const RakNet::SystemAddress &peer, const unsigned char *data, unsigned int length)
 {
-    logger_.debug("Read {} bytes from {}:{}", length, peer.ToString(false), peer.GetPort());
+    const auto pairing = counterpart_.find(peer.ToString(true));
+    if (pairing == counterpart_.end()) {
+        logger_.debug("Dropping {} bytes from {}: no counterpart yet", length, peer.ToString(true));
+        return;
+    }
+
+    const auto target = addresses_.find(pairing->second);
+    if (target == addresses_.end()) {
+        return;
+    }
+
+    logger_.debug("Forwarding {} bytes {} -> {}", length, peer.ToString(true), pairing->second);
+    peer_->Send(reinterpret_cast<const char *>(data), static_cast<int>(length), HIGH_PRIORITY, RELIABLE_ORDERED, 0,
+                target->second, false);
 }
 
 void Endpoint::onReliabilityLayerNotification(const RakNet::SystemAddress &peer, const char *errorMessage, bool isError)
@@ -73,7 +125,21 @@ void Endpoint::onReliabilityLayerNotification(const RakNet::SystemAddress &peer,
 
 void Endpoint::channelInactive(const RakNet::SystemAddress &peer, DisconnectReason reason)
 {
-    logger_.info("Disconnected: {}:{}", peer.ToString(false), peer.GetPort());
+    const std::string key = peer.ToString(true);
+    logger_.info("Disconnected: {}", key);
+
+    if (const auto pairing = counterpart_.find(key); pairing != counterpart_.end()) {
+        const auto other = pairing->second;
+        counterpart_.erase(pairing);
+        counterpart_.erase(other);
+        if (const auto target = addresses_.find(other); target != addresses_.end()) {
+            peer_->CloseConnection(target->second, true);
+        }
+    }
+    addresses_.erase(key);
+    if (awaiting_backend_ == key) {
+        awaiting_backend_.clear();
+    }
 }
 
 void Endpoint::close()
