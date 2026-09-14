@@ -62,9 +62,7 @@ public:
     /// Destructor
     virtual ~RakPeer();
 
-    // --------------------------------------------------------------------------------------------Major Low Level
-    // Functions - Functions needed by most
-    // users--------------------------------------------------------------------------------------------
+    // Major Low Level Functions - Functions needed by most users
     /// \brief Starts the network threads and opens the listen port.
     /// \details You must call this before calling Connect().
     /// \pre On the PS3, call Startup() after Client_Login()
@@ -349,8 +347,7 @@ public:
     /// \return Total number of connections allowed.
     unsigned int GetMaximumNumberOfPeers(void) const;
 
-    // -------------------------------------------------------------------------------------------- Connection
-    // Management Functions--------------------------------------------------------------------------------------------
+    // Connection Management Functions
     /// \brief Close the connection to another host (if we initiated the connection it will disconnect, if they did it
     /// will kick them out).
     /// \details This method closes the connection irrespective of who initiated the connection.
@@ -428,9 +425,7 @@ public:
     /// \param[in] b True to limit connections from the same ip to at most 1 per 100 milliseconds.
     void SetLimitIPConnectionFrequency(bool b);
 
-    // --------------------------------------------------------------------------------------------Pinging Functions -
-    // Functions dealing with the automatic ping
-    // mechanism--------------------------------------------------------------------------------------------
+    // Pinging Functions - Functions dealing with the automatic ping mechanism
     /// Send a ping to the specified connected system.
     /// \pre The sender and recipient must already be started via a successful call to Startup()
     /// \param[in] target Which system to ping
@@ -477,9 +472,7 @@ public:
     /// \param[in] systemIdentifier Which system we are referring to
     RakNet::Time GetClockDifferential(const AddressOrGUID systemIdentifier);
 
-    // --------------------------------------------------------------------------------------------Static Data Functions
-    // - Functions dealing with API defined synchronized
-    // memory--------------------------------------------------------------------------------------------
+    // Static Data Functions - Functions dealing with API defined synchronized memory
     /// \brief Sets the data to send along with a LAN server discovery or offline ping reply.
     /// \param[in] data Block of data to send, or 0 for none
     /// \param[in] length Length of the data in bytes, or 0 for none
@@ -493,9 +486,7 @@ public:
     /// \sa SetOfflinePingResponse
     void GetOfflinePingResponse(char **data, unsigned int *length);
 
-    //--------------------------------------------------------------------------------------------Network Functions -
-    // Functions dealing with the network in
-    // general--------------------------------------------------------------------------------------------
+    // Network Functions - Functions dealing with the network in general
     /// \brief Returns the unique address identifier that represents you or another system on the the network
     /// \note Not supported by the XBOX
     /// \param[in] systemAddress Use UNASSIGNED_SYSTEM_ADDRESS to get your behind-LAN address. Use a connected system to
@@ -629,8 +620,7 @@ public:
     /// \remarks Used for NAT-Punchthrough
     void SendTTL(const char *host, unsigned short remotePort, int ttl, unsigned connectionSocketIndex = 0);
 
-    // -------------------------------------------------------------------------------------------- Plugin
-    // Functions--------------------------------------------------------------------------------------------
+    // Plugin Functions
     /// \brief Attaches a Plugin interface to an instance of the base class (RakPeer or PacketizedTCP) to run code
     /// automatically on message receipt in the Receive call. If the plugin returns false from
     /// PluginInterface::UsesReliabilityLayer(), which is the case for all plugins except PacketLogger, you can call
@@ -647,8 +637,7 @@ public:
     /// \param[in] messageHandler Pointer to a plugin to detach.
     void DetachPlugin(PluginInterface2 *messageHandler);
 
-    // --------------------------------------------------------------------------------------------Miscellaneous
-    // Functions--------------------------------------------------------------------------------------------
+    // Miscellaneous Functions
     /// \brief Puts a message back in the receive queue in case you don't want to deal with it immediately.
     /// \param[in] packet The pointer to the packet you want to push back.
     /// \param[in] pushAtHead True to push the packet at the start of the queue so that the next receive call returns
@@ -700,8 +689,7 @@ public:
     /// RNS2RecvStruct will only remain valid for the duration of the call
     virtual void SetIncomingDatagramEventHandler(bool (*_incomingDatagramEventHandler)(RNS2RecvStruct *));
 
-    // --------------------------------------------------------------------------------------------Network Simulator
-    // Functions--------------------------------------------------------------------------------------------
+    // Network Simulator Functions
     /// Adds simulated ping and packet loss to the outgoing data flow.
     /// To simulate bi-directional ping and packet loss, you should call this on both the sender and the recipient, with
     /// half the total ping and packetloss value on each. You can exclude network simulator code with the _RELEASE
@@ -724,9 +712,7 @@ public:
     /// \return If you previously called ApplyNetworkSimulator
     virtual bool IsNetworkSimulatorActive(void);
 
-    // --------------------------------------------------------------------------------------------Statistical Functions
-    // - Functions dealing with API
-    // performance--------------------------------------------------------------------------------------------
+    // Statistical Functions - Functions dealing with API performance
 
     /// \brief Returns a structure containing a large set of network statistics for the specified system.
     /// You can map this data to a string using the C style StatisticsToString() function
@@ -753,9 +739,7 @@ public:
     /// \Returns how many messages are waiting when you call Receive()
     virtual unsigned int GetReceiveBufferSize(void);
 
-    // --------------------------------------------------------------------------------------------EVERYTHING AFTER THIS
-    // COMMENT IS FOR INTERNAL USE
-    // ONLY--------------------------------------------------------------------------------------------
+    // EVERYTHING AFTER THIS COMMENT IS FOR INTERNAL USE ONLY
 
     /// \internal
     // Call manually if RAKPEER_USER_THREADED==1 at least every 30 milliseconds.
