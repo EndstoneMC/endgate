@@ -139,11 +139,6 @@ StartupResult RakPeer::Startup(unsigned int maxConnections)
         }
     }
 
-    if (myGuid == UNASSIGNED_RAKNET_GUID) {
-    }
-
-    RakAssert(socketDescriptors && socketDescriptorCount >= 1);
-
     RakAssert(maxConnections > 0);
 
     if (maxConnections <= 0) {
@@ -2864,32 +2859,10 @@ bool RakPeer::RunUpdateCycle(BitStream &updateBitStream)
 {
     RakPeer::RemoteSystemStruct *remoteSystem;
     unsigned int activeSystemListIndex;
-    Packet *packet;
-    BitSize_t bitSize;
-    unsigned int byteSize;
-    unsigned char *data;
     SystemAddress systemAddress;
-    bool callerDataAllocationUsed;
     RakNetStatistics *rnss;
     RakNet::TimeUS timeNS = 0;
     RakNet::Time timeMS = 0;
-
-    // This is here so RecvFromBlocking actually gets data from the same thread
-
-#if defined(WINDOWS_STORE_RT)
-#elif defined(_WIN32)
-    if (socketList[0]->GetSocketType() == RNS2T_WINDOWS && ((RNS2_Windows *)socketList[0])->GetSocketLayerOverride()) {
-        int len;
-        SystemAddress sender;
-        char dataOut[MAXIMUM_MTU_SIZE];
-        do {
-            len = ((RNS2_Windows *)socketList[0])->GetSocketLayerOverride()->RakNetRecvFrom(dataOut, &sender, true);
-            if (len > 0) {
-                ProcessNetworkPacket(sender, dataOut, len, this, RakNet::GetTimeUS(), updateBitStream);
-            }
-        } while (len > 0);
-    }
-#endif
 
     if (requestedConnectionQueue.empty() == false) {
         if (timeNS == 0) {
