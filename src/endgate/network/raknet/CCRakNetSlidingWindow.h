@@ -32,11 +32,9 @@ This reenters slow start
 If cwnd < ssthresh, then use slow start
 else use congestion avoidance
 
-
 */
 
 #include "RakNetDefines.h"
-
 
 #ifndef __CONGESTION_CONTROL_SLIDING_WINDOW_H
 #define __CONGESTION_CONTROL_SLIDING_WINDOW_H
@@ -54,11 +52,6 @@ else use congestion avoidance
 #define CC_DEBUG_PRINTF_3(x, y, z)
 #define CC_DEBUG_PRINTF_4(x, y, z, a)
 #define CC_DEBUG_PRINTF_5(x, y, z, a, b)
-// #define CC_DEBUG_PRINTF_1(x) printf(x)
-// #define CC_DEBUG_PRINTF_2(x,y) printf(x,y)
-// #define CC_DEBUG_PRINTF_3(x,y,z) printf(x,y,z)
-// #define CC_DEBUG_PRINTF_4(x,y,z,a) printf(x,y,z,a)
-// #define CC_DEBUG_PRINTF_5(x,y,z,a,b) printf(x,y,z,a,b)
 
 typedef RakNet::TimeUS CCTimeType;
 
@@ -158,7 +151,6 @@ public:
     BytesPerMicrosecond GetLocalSendRate(void) const { return 0; }
     BytesPerMicrosecond GetLocalReceiveRate(CCTimeType currentTime) const;
     BytesPerMicrosecond GetRemoveReceiveRate(void) const { return 0; }
-    // BytesPerMicrosecond GetEstimatedBandwidth(void) const {return B;}
     BytesPerMicrosecond GetEstimatedBandwidth(void) const { return GetLinkCapacityBytesPerSecond() * 1000000.0; }
     double GetLinkCapacityBytesPerSecond(void) const { return 0; }
 
@@ -172,7 +164,6 @@ public:
     static bool GreaterThan(DatagramSequenceNumberType a, DatagramSequenceNumberType b);
     /// Is a < b, accounting for variable overflow?
     static bool LessThan(DatagramSequenceNumberType a, DatagramSequenceNumberType b);
-    //	void SetTimeBetweenSendsLimit(unsigned int bitsPerSecond);
     uint64_t GetBytesPerSecondLimitByCongestionControl(void) const;
 
 protected:
@@ -206,4 +197,3 @@ protected:
 }  // namespace RakNet
 
 #endif
-

@@ -70,7 +70,6 @@ Heap<weight_type, data_type, isMaxHeap>::Heap()
 template <class weight_type, class data_type, bool isMaxHeap>
 Heap<weight_type, data_type, isMaxHeap>::~Heap()
 {
-    // Clear(true, _FILE_AND_LINE_);
 }
 
 template <class weight_type, class data_type, bool isMaxHeap>

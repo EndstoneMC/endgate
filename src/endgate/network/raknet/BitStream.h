@@ -1417,7 +1417,6 @@ inline bool BitStream::Read(SystemAddress &outTemplateVar)
     Read(ipVersion);
     if (ipVersion == 4) {
         outTemplateVar.address.addr4.sin_family = AF_INET;
-        // Read(var.binaryAddress);
         // Don't endian swap the address or port
         uint32_t binaryAddress;
         ReadBits((unsigned char *)&binaryAddress, sizeof(binaryAddress) * 8, true);
@@ -1658,9 +1657,6 @@ void BitStream::WriteVector(templateType x, templateType y, templateType z)
         WriteCompressed((float)(x / magnitude));
         WriteCompressed((float)(y / magnitude));
         WriteCompressed((float)(z / magnitude));
-        //	Write((unsigned short)((x/magnitude+1.0f)*32767.5f));
-        //	Write((unsigned short)((y/magnitude+1.0f)*32767.5f));
-        //	Write((unsigned short)((z/magnitude+1.0f)*32767.5f));
     }
 }
 
@@ -1790,18 +1786,10 @@ template <class templateType>  // templateType for this function must be a float
 bool BitStream::ReadVector(templateType &x, templateType &y, templateType &z)
 {
     float magnitude;
-    // unsigned short sx,sy,sz;
     if (!Read(magnitude)) {
         return false;
     }
     if (magnitude > 0.00001f) {
-        //	Read(sx);
-        //	Read(sy);
-        //	if (!Read(sz))
-        //		return false;
-        //	x=((float)sx / 32767.5f - 1.0f) * magnitude;
-        //	y=((float)sy / 32767.5f - 1.0f) * magnitude;
-        //	z=((float)sz / 32767.5f - 1.0f) * magnitude;
         float cx = 0.0f, cy = 0.0f, cz = 0.0f;
         ReadCompressed(cx);
         ReadCompressed(cy);

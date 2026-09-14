@@ -54,13 +54,10 @@ using namespace RakNet;
 BitStream::BitStream()
 {
     numberOfBitsUsed = 0;
-    // numberOfBitsAllocated = 32 * 8;
     numberOfBitsAllocated = BITSTREAM_STACK_ALLOCATION_SIZE * 8;
     readOffset = 0;
-    // data = ( unsigned char* ) rakMalloc_Ex( 32, _FILE_AND_LINE_ );
     data = (unsigned char *)stackData;
 
-    // memset(data, 0, 32);
     copyData = true;
 }
 
@@ -76,7 +73,6 @@ BitStream::BitStream(const unsigned int initialBytesToAllocate)
         data = (unsigned char *)rakMalloc_Ex((size_t)initialBytesToAllocate, _FILE_AND_LINE_);
         numberOfBitsAllocated = initialBytesToAllocate << 3;
     }
-    // memset(data, 0, initialBytesToAllocate);
     copyData = true;
 }
 
@@ -128,20 +124,10 @@ void BitStream::Reset(void)
     // in places to serialize/deserialize a buffer. Reallocation
     // is a dangerous operation (may result in leaks).
 
-    if (numberOfBitsUsed > 0) {
-        //  memset(data, 0, BITS_TO_BYTES(numberOfBitsUsed));
-    }
-
     // Don't free memory here for speed efficiency
-    // free(data);  // Use realloc and free so we are more efficient than delete and new for resizing
     numberOfBitsUsed = 0;
 
-    // numberOfBitsAllocated=8;
     readOffset = 0;
-
-    // data=(unsigned char*)rakMalloc_Ex(1, _FILE_AND_LINE_);
-    //  if (numberOfBitsAllocated>0)
-    //   memset(data, 0, BITS_TO_BYTES(numberOfBitsAllocated));
 }
 
 // Write an array or casted stream
@@ -197,7 +183,6 @@ void BitStream::Write(BitStream *bitStream, BitSize_t numberOfBits)
             if (bitStream->data[bitStream->readOffset >> 3] & (0x80 >> (bitStream->readOffset & 7))) {
                 data[numberOfBitsUsed >> 3] |= 0x80 >> (numberOfBitsMod8);  // Set the bit to 1
             }
-            // else 0, do nothing
         }
 
         bitStream->readOffset++;
@@ -402,8 +387,6 @@ bool BitStream::ReadAlignedBytesSafeAlloc(char **outByteArray, unsigned int &inp
 // Write numberToWrite bits from the input source
 void BitStream::WriteBits(const unsigned char *inByteArray, BitSize_t numberOfBitsToWrite, const bool rightAlignedBits)
 {
-    //	if (numberOfBitsToWrite<=0)
-    //		return;
 
     AddBitsAndReallocate(numberOfBitsToWrite);
 
@@ -420,9 +403,7 @@ void BitStream::WriteBits(const unsigned char *inByteArray, BitSize_t numberOfBi
     const unsigned char *inputPtr = inByteArray;
 
     // Faster to put the while at the top surprisingly enough
-    while (numberOfBitsToWrite > 0)
-    // do
-    {
+    while (numberOfBitsToWrite > 0) {
         dataByte = *(inputPtr++);
 
         if (numberOfBitsToWrite < 8 &&
@@ -459,7 +440,6 @@ void BitStream::WriteBits(const unsigned char *inByteArray, BitSize_t numberOfBi
             numberOfBitsToWrite = 0;
         }
     }
-    // } while(numberOfBitsToWrite>0);
 }
 
 // Set the stream to some initial data.  For internal use
@@ -500,7 +480,6 @@ void BitStream::WriteCompressed(const unsigned char *inByteArray, const unsigned
             Write(b);
 
             WriteBits(inByteArray, (currentByte + 1) << 3, true);
-            //  currentByte--;
 
             return;
         }
@@ -635,9 +614,7 @@ bool BitStream::ReadCompressed(unsigned char *inOutByteArray, const unsigned int
         }
     }
 
-    // All but the first bytes are byteMatch.  If the upper half of the last byte is a 0 (positive) or 16 (negative)
     // then what we read will be a 1 and the remaining 4 bits. Otherwise we read a 0 and the 8 bytes
-    // RakAssert(readOffset+1 <=numberOfBitsUsed); // If this assert is hit the stream wasn't long enough to read from
     if (readOffset + 1 > numberOfBitsUsed) {
         return false;
     }
@@ -684,7 +661,6 @@ void BitStream::AddBitsAndReallocate(const BitSize_t numberOfBitsToWrite)
             newNumberOfBitsAllocated = numberOfBitsToWrite + numberOfBitsUsed + 1048576;
         }
 
-        //		BitSize_t newByteOffset = BITS_TO_BYTES( numberOfBitsAllocated );
         // Use realloc and free so we are more efficient than delete and new for resizing
         BitSize_t amountToAllocate = BITS_TO_BYTES(newNumberOfBitsAllocated);
         if (data == (unsigned char *)stackData) {
@@ -700,7 +676,6 @@ void BitStream::AddBitsAndReallocate(const BitSize_t numberOfBitsToWrite)
             data = (unsigned char *)rakRealloc_Ex(data, (size_t)amountToAllocate, _FILE_AND_LINE_);
         }
 
-        //  memset(data+newByteOffset, 0,  ((newNumberOfBitsAllocated-1)>>3) - ((numberOfBitsAllocated-1)>>3)); // Set
         //  the new data block to 0
     }
 
@@ -723,31 +698,6 @@ void BitStream::PadWithZeroToByteLength(unsigned int bytes)
     }
 }
 
-/*
-// Julius Goryavsky's version of Harley's algorithm.
-// 17 elementary ops plus an indexed load, if the machine
-// has "and not."
-
-int nlz10b(unsigned x) {
-
-   static char table[64] =
-     {32,20,19, u, u,18, u, 7,  10,17, u, u,14, u, 6, u,
-       u, 9, u,16, u, u, 1,26,   u,13, u, u,24, 5, u, u,
-       u,21, u, 8,11, u,15, u,   u, u, u, 2,27, 0,25, u,
-      22, u,12, u, u, 3,28, u,  23, u, 4,29, u, u,30,31};
-
-   x = x | (x >> 1);    // Propagate leftmost
-   x = x | (x >> 2);    // 1-bit to the right.
-   x = x | (x >> 4);
-   x = x | (x >> 8);
-   x = x & ~(x >> 16);
-   x = x*0xFD7049FF;    // Activate this line or the following 3.
-// x = (x << 9) - x;    // Multiply by 511.
-// x = (x << 11) - x;   // Multiply by 2047.
-// x = (x << 14) - x;   // Multiply by 16383.
-   return table[x >> 26];
-}
-*/
 int BitStream::NumberOfLeadingZeroes(int8_t x)
 {
     return NumberOfLeadingZeroes((uint8_t)x);
@@ -916,49 +866,6 @@ void BitStream::SetWriteOffset(const BitSize_t offset)
     numberOfBitsUsed = offset;
 }
 
-/*
-BitSize_t BitStream::GetWriteOffset( void ) const
-{
-return numberOfBitsUsed;
-}
-
-// Returns the length in bits of the stream
-BitSize_t BitStream::GetNumberOfBitsUsed( void ) const
-{
-return GetWriteOffset();
-}
-
-// Returns the length in bytes of the stream
-BitSize_t BitStream::GetNumberOfBytesUsed( void ) const
-{
-return BITS_TO_BYTES( numberOfBitsUsed );
-}
-
-// Returns the number of bits into the stream that we have read
-BitSize_t BitStream::GetReadOffset( void ) const
-{
-return readOffset;
-}
-
-
-// Sets the read bit index
-void BitStream::SetReadOffset( const BitSize_t newReadOffset )
-{
-readOffset=newReadOffset;
-}
-
-// Returns the number of bits left in the stream that haven't been read
-BitSize_t BitStream::GetNumberOfUnreadBits( void ) const
-{
-return numberOfBitsUsed - readOffset;
-}
-// Exposes the internal data
-unsigned char* BitStream::GetData( void ) const
-{
-return data;
-}
-
-*/
 // If we used the constructor version with copy data off, this makes sure it is set to on and the data pointed to is
 // copied.
 void BitStream::AssertCopyData(void)

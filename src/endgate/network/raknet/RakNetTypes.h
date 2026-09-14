@@ -174,7 +174,7 @@ struct SystemAddress {
     SystemAddress(const char *str);
     SystemAddress(const char *str, unsigned short port);
 
-/// SystemAddress holds both a sockaddr_in6 and a sockaddr_in
+    /// SystemAddress holds both a sockaddr_in6 and a sockaddr_in
     union  // In6OrIn4
     {
         struct sockaddr_storage sa_stor;
@@ -291,7 +291,6 @@ struct RakNetGUID {
         g = _g;
         systemIndex = (SystemIndex)-1;
     }
-    //	uint32_t g[6];
     uint64_t g;
 
     // Return the GUID as a string
@@ -326,10 +325,6 @@ struct RakNetGUID {
 };
 
 /// Index of an invalid SystemAddress
-// const SystemAddress UNASSIGNED_SYSTEM_ADDRESS =
-//{
-//	0xFFFFFFFF, 0xFFFF
-// };
 #ifndef SWIG
 const SystemAddress UNASSIGNED_SYSTEM_ADDRESS;
 const RakNetGUID UNASSIGNED_RAKNET_GUID((uint64_t)-1);

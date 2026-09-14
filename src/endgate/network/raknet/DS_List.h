@@ -163,9 +163,6 @@ List<list_type>::List(const List &original_copy)
             listArray[counter] = original_copy.listArray[counter];
         }
 
-        // Don't call constructors, assignment operators, etc.
-        // memcpy(listArray, original_copy.listArray, original_copy.list_size*sizeof(list_type));
-
         list_size = allocation_size = original_copy.list_size;
     }
 }
@@ -189,9 +186,6 @@ List<list_type> &List<list_type>::operator=(const List &original_copy)
             for (unsigned int counter = 0; counter < original_copy.list_size; ++counter) {
                 listArray[counter] = original_copy.listArray[counter];
             }
-            // Don't call constructors, assignment operators, etc.
-            // memcpy(listArray, original_copy.listArray, original_copy.list_size*sizeof(list_type));
-
             list_size = allocation_size = original_copy.list_size;
         }
     }
@@ -248,9 +242,6 @@ void List<list_type>::Insert(const list_type &input, const unsigned int position
             new_array[counter] = listArray[counter];
         }
 
-        // Don't call constructors, assignment operators, etc.
-        // memcpy(new_array, listArray, list_size*sizeof(list_type));
-
         // set old array to point to the newly allocated and twice as large array
         RakNet::OP_DELETE_ARRAY(listArray, file, line);
 
@@ -261,9 +252,6 @@ void List<list_type>::Insert(const list_type &input, const unsigned int position
     for (unsigned int counter = list_size; counter != position; counter--) {
         listArray[counter] = listArray[counter - 1];
     }
-
-    // Don't call constructors, assignment operators, etc.
-    // memmove(listArray+position+1, listArray+position, (list_size-position)*sizeof(list_type));
 
     // Insert the new item at the correct spot
     listArray[position] = input;
@@ -294,9 +282,6 @@ void List<list_type>::Insert(const list_type &input, const char *file, unsigned 
             for (unsigned int counter = 0; counter < list_size; ++counter) {
                 new_array[counter] = listArray[counter];
             }
-
-            // Don't call constructors, assignment operators, etc.
-            // memcpy(new_array, listArray, list_size*sizeof(list_type));
 
             // set old array to point to the newly allocated and twice as large array
             RakNet::OP_DELETE_ARRAY(listArray, file, line);
@@ -333,9 +318,6 @@ inline void List<list_type>::Replace(const list_type &input, const list_type fil
                 new_array[counter] = listArray[counter];
             }
 
-            // Don't call constructors, assignment operators, etc.
-            // memcpy(new_array, listArray, list_size*sizeof(list_type));
-
             // set old array to point to the newly allocated array
             RakNet::OP_DELETE_ARRAY(listArray, file, line);
 
@@ -369,9 +351,6 @@ void List<list_type>::RemoveAtIndex(const unsigned int position)
         for (unsigned int counter = position; counter < list_size - 1; ++counter) {
             listArray[counter] = listArray[counter + 1];
         }
-        // Don't call constructors, assignment operators, etc.
-        // memmove(listArray+position, listArray+position+1, (list_size-1-position) * sizeof(list_type));
-
         RemoveFromEnd();
     }
 }
@@ -439,9 +418,6 @@ void List<list_type>::Compress(const char *file, unsigned int line)
         new_array[counter] = listArray[counter];
     }
 
-    // Don't call constructors, assignment operators, etc.
-    // memcpy(new_array, listArray, list_size*sizeof(list_type));
-
     // set old array to point to the newly allocated array
     RakNet::OP_DELETE_ARRAY(listArray, file, line);
 
@@ -472,9 +448,6 @@ void List<list_type>::Preallocate(unsigned countNeeded, const char *file, unsign
             for (unsigned int counter = 0; counter < list_size; ++counter) {
                 new_array[counter] = listArray[counter];
             }
-
-            // Don't call constructors, assignment operators, etc.
-            // memcpy(new_array, listArray, list_size*sizeof(list_type));
 
             // set old array to point to the newly allocated and twice as large array
             RakNet::OP_DELETE_ARRAY(listArray, file, line);

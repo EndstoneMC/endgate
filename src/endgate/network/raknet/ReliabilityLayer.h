@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "BitStream.h"
+#include "CCRakNetSlidingWindow.h"
 #include "DS_Heap.h"
 #include "DS_MemoryPool.h"
 #include "DS_RangeList.h"
@@ -31,8 +32,6 @@
 #include "RakNetDefines.h"
 #include "RakNetStatistics.h"
 #include "sink.h"
-
-#include "CCRakNetSlidingWindow.h"
 
 /// Number of ordered streams available. You can use up to 32 ordered streams
 #define NUMBER_OF_ORDERED_STREAMS 32  // 2^5
@@ -46,7 +45,6 @@ using DatagramSink = endgate::raknet::DatagramSink;
 /// Forward declarations
 typedef uint64_t reliabilityHeapWeightType;
 
-// int SplitPacketIndexComp( SplitPacketIndexType const &key, InternalPacket* const &data );
 struct SplitPacketChannel  //<SplitPacketChannel>
 {
     CCTimeType lastUpdateTime;
@@ -68,7 +66,6 @@ struct BPSTracker {
         total1 += value1;
         lastSec1 += value1;
     }
-    //	void Push2(RakNet::TimeUS time, uint64_t value1, uint64_t value2);
     inline uint64_t GetBPS1(CCTimeType time)
     {
         (void)time;
@@ -79,26 +76,19 @@ struct BPSTracker {
         (void)time;
         return lastSec1;
     }
-    //	uint64_t GetBPS2(RakNetTimeUS time);
-    //	void GetBPS1And2(RakNetTimeUS time, uint64_t &out1, uint64_t &out2);
     uint64_t GetTotal1(void) const;
-    //	uint64_t GetTotal2(void) const;
 
     struct TimeAndValue2 {
         TimeAndValue2();
         ~TimeAndValue2();
         TimeAndValue2(CCTimeType t, uint64_t v1);
-        //	TimeAndValue2(RakNet::TimeUS t, uint64_t v1, uint64_t v2);
-        //	uint64_t value1, value2;
         uint64_t value1;
         CCTimeType time;
     };
 
     uint64_t total1, lastSec1;
-    //	uint64_t total2, lastSec2;
     std::deque<TimeAndValue2> dataQueue;
     void ClearExpired1(CCTimeType time);
-    //	void ClearExpired2(RakNet::TimeUS time);
 };
 
 /// Datagram reliable, ordered, unordered and sequenced sends.  Flow control.  Message splitting, reassembly, and
@@ -132,7 +122,8 @@ public:
     /// \param[in] MTUSize maximum datagram size
     /// \retval true Success
     /// \retval false Modified packet
-    bool HandleSocketReceiveFromConnectedPlayer(const char *buffer, unsigned int length, SystemAddress &systemAddress, int MTUSize, DatagramSink *s, CCTimeType timeRead,
+    bool HandleSocketReceiveFromConnectedPlayer(const char *buffer, unsigned int length, SystemAddress &systemAddress,
+                                                int MTUSize, DatagramSink *s, CCTimeType timeRead,
                                                 BitStream &updateBitStream);
 
     /// This allocates bytes and writes a user-level message to those bytes.
@@ -188,12 +179,6 @@ public:
     CCTimeType GetTimeBetweenPackets(void) const;
     RakNet::TimeMS GetTimeLastDatagramArrived(void) const { return timeLastDatagramArrived; }
 
-    // If true, will update time between packets quickly based on ping calculations
-    // void SetDoFastThroughputReactions(bool fast);
-
-    // Encoded as numMessages[unsigned int], message1BitLength[unsigned int], message1Data (aligned), ...
-    // void GetUndeliveredMessages(RakNet::BitStream *messages, int MTUSize);
-
 private:
     /// Send the contents of a bitstream to the socket
     /// \param[in] s The socket used for sending data
@@ -211,8 +196,9 @@ private:
     InternalPacket *CreateInternalPacketFromBitStream(RakNet::BitStream *bitStream, CCTimeType time);
 
     /// Does what the function name says
-    unsigned RemovePacketFromResendListAndDeleteOlderReliableSequenced(
-        const MessageNumberType messageNumber, CCTimeType time, const SystemAddress &systemAddress);
+    unsigned RemovePacketFromResendListAndDeleteOlderReliableSequenced(const MessageNumberType messageNumber,
+                                                                       CCTimeType time,
+                                                                       const SystemAddress &systemAddress);
 
     /// Acknowledge receipt of the packet with the specified messageNumber
     void SendAcknowledgementPacket(const DatagramSequenceNumberType messageNumber, CCTimeType time);
@@ -230,15 +216,6 @@ private:
     BitSize_t GetMaxMessageHeaderLengthBits(void);
     BitSize_t GetMessageHeaderLengthBits(const InternalPacket *const internalPacket);
 
-    /// Search the specified list for sequenced packets on the specified ordering channel, optionally skipping those
-    /// with splitPacketId, and delete them
-    //	void DeleteSequencedPacketsInList( unsigned char orderingChannel, DataStructures::List<InternalPacket*>&theList,
-    //int splitPacketId = -1 );
-
-    /// Search the specified list for sequenced packets with a value less than orderingIndex and delete them
-    //	void DeleteSequencedPacketsInList( unsigned char orderingChannel, DataStructures::Queue<InternalPacket*>&theList
-    //);
-
     /// Returns true if newPacketOrderingIndex is older than the waitingForPacketOrderingIndex
     bool IsOlderOrderedPacket(OrderingIndexType newPacketOrderingIndex,
                               OrderingIndexType waitingForPacketOrderingIndex);
@@ -255,19 +232,11 @@ private:
                                                    SystemAddress &systemAddress, BitStream &updateBitStream);
     InternalPacket *BuildPacketFromSplitPacketList(SplitPacketChannel &splitPacketChannel, CCTimeType time);
 
-    /// Delete any unreliable split packets that have long since expired
-
     /// Creates a copy of the specified internal packet with data copied from the original starting at dataByteOffset
     /// for dataByteLength bytes. Does not copy any split data parameters as that information is always generated does
     /// not have any reason to be copied
     InternalPacket *CreateInternalPacketCopy(InternalPacket *original, int dataByteOffset, int dataByteLength,
                                              CCTimeType time);
-
-    /// Get the specified ordering list
-    // DataStructures::LinkedList<InternalPacket*> *GetOrderingListAtOrderingStream( unsigned char orderingChannel );
-
-    /// Add the internal packet to the ordering list in order based on order index
-    // void AddToOrderingList( InternalPacket * internalPacket );
 
     /// Inserts a packet into the resend list in order
     void InsertPacketIntoResendList(InternalPacket *internalPacket, CCTimeType time, bool firstResend,
@@ -288,12 +257,6 @@ private:
     // Make it so we don't do resends within a minimum threshold of time
     void UpdateNextActionTime(void);
 
-    /// Does this packet number represent a packet that was skipped (out of order?)
-    // unsigned int IsReceivedPacketHole(unsigned int input, RakNet::TimeMS currentTime) const;
-
-    /// Skip an element in the received packets list
-    // unsigned int MakeReceivedPacketHole(unsigned int input) const;
-
     /// How many elements are waiting to be resent?
     unsigned int GetResendListDataSize(void) const;
 
@@ -302,9 +265,6 @@ private:
 
     void CalculateHistogramAckSize(void);
 
-    // Used ONLY for RELIABLE_ORDERED
-    // RELIABLE_SEQUENCED just returns the newest one
-    // DataStructures::List<DataStructures::LinkedList<InternalPacket*>*> orderingList;
     std::deque<InternalPacket *> outputQueue;
     int splitMessageProgressInterval;
     CCTimeType unreliableTimeout;
@@ -349,24 +309,17 @@ private:
     DatagramSequenceNumberType datagramHistoryPopCount;
 
     DataStructures::MemoryPool<InternalPacket> internalPacketPool;
-    // DataStructures::BPlusTree<DatagramSequenceNumberType, InternalPacket*, RESEND_TREE_ORDER> resendTree;
     InternalPacket *resendBuffer[RESEND_BUFFER_ARRAY_LENGTH];
     InternalPacket *resendLinkedListHead;
     InternalPacket *unreliableLinkedListHead;
     void RemoveFromUnreliableLinkedList(InternalPacket *internalPacket);
     void AddToUnreliableLinkedList(InternalPacket *internalPacket);
-    //	unsigned int numPacketsOnResendBuffer;
-    // unsigned int blockWindowIncreaseUntilTime;
-    //	DataStructures::RangeList<DatagramSequenceNumberType> acknowlegements;
-    // Resend list is a tree of packets we need to resend
-
     // Set to the current time when the resend queue is no longer empty
     // Set to zero when it becomes empty
     // Set to the current time if it is not zero, and we get incoming data
     // If the current time - timeResendQueueNonEmpty is greater than a threshold, we are disconnected
     //	CCTimeType timeResendQueueNonEmpty;
     RakNet::TimeMS timeLastDatagramArrived;
-
 
     DataStructures::Heap<reliabilityHeapWeightType, InternalPacket *, false> outgoingPacketBuffer;
     reliabilityHeapWeightType outgoingPacketBufferNextWeights[NUMBER_OF_PRIORITIES];
@@ -415,9 +368,6 @@ private:
     DataStructures::Heap<reliabilityHeapWeightType, InternalPacket *, false> orderingHeaps[NUMBER_OF_ORDERED_STREAMS];
     OrderingIndexType heapIndexOffsets[NUMBER_OF_ORDERED_STREAMS];
 
-    //	CCTimeType histogramStart;
-    //	unsigned histogramBitsSent;
-
     /// Memory-efficient receivedPackets algorithm:
     /// receivedPacketsBaseIndex is the packet number we are expecting
     /// Everything under receivedPacketsBaseIndex is a packet we already got
@@ -427,24 +377,12 @@ private:
     /// up waiting for that packet. If we get a packet number where (receivedPacketsBaseIndex-packetNumber) is less than
     /// half the range of receivedPacketsBaseIndex then it is a duplicate Otherwise, it is a duplicate packet (and
     /// ignore it).
-    // DataStructures::Queue<CCTimeType> hasReceivedPacketQueue;
     std::deque<bool> hasReceivedPacketQueue;
     DatagramSequenceNumberType receivedPacketsBaseIndex;
     bool resetReceivedPackets;
 
     CCTimeType lastUpdateTime;
     CCTimeType timeBetweenPackets, nextSendTime;
-    //	CCTimeType ackPingSamples[ACK_PING_SAMPLES_SIZE]; // Must be range of unsigned char to wrap ackPingIndex
-    //properly
-    CCTimeType ackPingSum;
-    unsigned char ackPingIndex;
-    // CCTimeType nextLowestPingReset;
-    RemoteSystemTimeType remoteSystemTime;
-    //	bool continuousSend;
-    //	CCTimeType lastTimeBetweenPacketsIncrease,lastTimeBetweenPacketsDecrease;
-    // Limit changes in throughput to once per ping - otherwise even if lag starts we don't know about it
-    // In the meantime the connection is flooded and overrun.
-    CCTimeType nextAllowedThroughputSample;
     bool bandwidthExceededStatistic;
 
     // If Update::maxBitsPerSecond > 0, then throughputCapCountdown is used as a timer to prevent sends for some amount

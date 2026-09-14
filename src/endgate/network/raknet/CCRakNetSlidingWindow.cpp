@@ -10,7 +10,6 @@
 
 #include "CCRakNetSlidingWindow.h"
 
-
 static const double UNSET_TIME_US = -1;
 
 static const CCTimeType SYN = 10000;
@@ -164,7 +163,6 @@ void CCRakNetSlidingWindow::OnResend(CCTimeType curTime, RakNet::TimeUS nextActi
 
     if (_isContinuousSend && backoffThisBlock == false && cwnd > MAXIMUM_MTU_INCLUDING_UDP_HEADER * 2) {
         // Spec says 1/2 cwnd, but it never recovers because cwnd increases too slowly
-        // ssThresh=cwnd-8.0 * (MAXIMUM_MTU_INCLUDING_UDP_HEADER*MAXIMUM_MTU_INCLUDING_UDP_HEADER/cwnd);
         ssThresh = cwnd / 2;
         if (ssThresh < MAXIMUM_MTU_INCLUDING_UDP_HEADER) {
             ssThresh = MAXIMUM_MTU_INCLUDING_UDP_HEADER;
@@ -174,9 +172,6 @@ void CCRakNetSlidingWindow::OnResend(CCTimeType curTime, RakNet::TimeUS nextActi
         // Only backoff once per period
         nextCongestionControlBlock = nextDatagramSequenceNumber;
         backoffThisBlock = true;
-
-        // CC PRINTF
-        // printf("-- %.0f (Resend) Enter slow start.\n", cwnd);
     }
 }
 // ----------------------------------------------------------------------------------------------------------------------------
@@ -188,9 +183,6 @@ void CCRakNetSlidingWindow::OnNAK(CCTimeType curTime, DatagramSequenceNumberType
     if (_isContinuousSend && backoffThisBlock == false) {
         // Start congestion avoidance
         ssThresh = cwnd / 2;
-
-        // CC PRINTF
-        // printf("- %.0f (NAK) Set congestion avoidance.\n", cwnd);
     }
 }
 // ----------------------------------------------------------------------------------------------------------------------------
@@ -237,15 +229,9 @@ void CCRakNetSlidingWindow::OnAck(CCTimeType curTime, CCTimeType rtt, bool hasBA
         if (cwnd > ssThresh && ssThresh != 0) {
             cwnd = ssThresh + MAXIMUM_MTU_INCLUDING_UDP_HEADER * MAXIMUM_MTU_INCLUDING_UDP_HEADER / cwnd;
         }
-
-        // CC PRINTF
-        //	printf("++ %.0f Slow start increase.\n", cwnd);
     }
     else if (isNewCongestionControlPeriod) {
         cwnd += MAXIMUM_MTU_INCLUDING_UDP_HEADER * MAXIMUM_MTU_INCLUDING_UDP_HEADER / cwnd;
-
-        // CC PRINTF
-        // printf("+ %.0f Congestion avoidance increase.\n", cwnd);
     }
 }
 // ----------------------------------------------------------------------------------------------------------------------------
@@ -284,14 +270,12 @@ CCTimeType CCRakNetSlidingWindow::GetRTOForRetransmission(unsigned char timesSen
     (void)timesSent;
 
     const CCTimeType maxThreshold = 2000000;
-    // const CCTimeType minThreshold=100000;
     const CCTimeType additionalVariance = 30000;
 
     if (estimatedRTT == UNSET_TIME_US) {
         return maxThreshold;
     }
 
-    // double u=1.0f;
     double u = 2.0f;
     double q = 4.0f;
 

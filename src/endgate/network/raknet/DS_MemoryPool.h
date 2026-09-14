@@ -192,8 +192,7 @@ void MemoryPool<MemoryBlockType>::Clear(const char *file, unsigned int line)
 #ifdef _MSC_VER
 #pragma warning(disable : 4127)  // conditional expression is constant
 #endif
-        while (true)
-        {
+        while (true) {
             rakFree_Ex(cur->availableStack, file, line);
             rakFree_Ex(cur->block, file, line);
             freed = cur;
@@ -208,8 +207,7 @@ void MemoryPool<MemoryBlockType>::Clear(const char *file, unsigned int line)
 
     if (unavailablePagesSize > 0) {
         cur = unavailablePages;
-        while (1)
-        {
+        while (1) {
             rakFree_Ex(cur->availableStack, file, line);
             rakFree_Ex(cur->block, file, line);
             freed = cur;

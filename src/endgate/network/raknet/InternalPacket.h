@@ -18,11 +18,11 @@
 
 #include <cstdint>
 
+#include "CCRakNetSlidingWindow.h"
 #include "PacketPriority.h"
 #include "RakMemoryOverride.h"
 #include "RakNetDefines.h"
 #include "RakNetTypes.h"
-#include "CCRakNetSlidingWindow.h"
 
 namespace RakNet {
 
@@ -38,8 +38,6 @@ typedef uint24_t MessageNumberType;
 /// large enough that if the variables were to wrap, the newly wrapped values would no longer be in use.  Warning: Too
 /// large of a value wastes bandwidth!
 typedef MessageNumberType OrderingIndexType;
-
-typedef RakNet::TimeUS RemoteSystemTimeType;
 
 struct InternalPacketFixedSizeTransmissionHeader {
     /// A unique numerical identifier given to this user message. Used to identify reliable messages on the network
@@ -62,9 +60,6 @@ struct InternalPacketFixedSizeTransmissionHeader {
     BitSize_t dataBitLength;
     /// What type of reliability algorithm to use with this packet
     PacketReliability reliability;
-    // Not endian safe
-    // unsigned char priority : 3;
-    // unsigned char reliability : 5;
 };
 
 /// Used in InternalPacket when pointing to sharedDataBlock, rather than allocating itself
@@ -82,9 +77,6 @@ struct InternalPacket : public InternalPacketFixedSizeTransmissionHeader {
     /// This fixes a bug where pre-determining message numbers and then sending a message on a different channel creates
     /// a huge gap. This causes performance problems and causes those messages to timeout.
     bool messageNumberAssigned;
-    /// Was this packet number used this update to track windowing drops or increases?  Each packet number is only used
-    /// once per update.
-    //	bool allowWindowUpdate;
     /// When this packet was created
     RakNet::TimeUS creationTime;
     /// The resendNext time to take action on this packet

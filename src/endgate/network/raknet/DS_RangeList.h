@@ -144,9 +144,7 @@ void RangeList<range_type>::Insert(range_type index)
 
     auto insertionPoint =
         std::lower_bound(ranges.begin(), ranges.end(), index,
-                         [](const RangeNode<range_type> &node, const range_type &key) {
-                             return node.minIndex < key;
-                         });
+                         [](const RangeNode<range_type> &node, const range_type &key) { return node.minIndex < key; });
     unsigned insertionIndex = (unsigned)(insertionPoint - ranges.begin());
     if (insertionIndex == ranges.size()) {
         if (index == ranges[insertionIndex - 1].maxIndex + (range_type)1) {

@@ -20,13 +20,6 @@
 
 #include "RakNetDefines.h"
 
-// 	#if defined(new)
-// 		#pragma push_macro("new")
-// 		#undef new
-// 		#define RMO_NEW_UNDEF
-// 	#endif
-// #endif
-
 // These pointers are statically and globally defined in RakMemoryOverride.cpp
 // Change them to point to your own allocators if you want.
 // Use the functions for a DLL, or just reassign the variable if using source
@@ -156,11 +149,5 @@ void UseRaknetFixedHeap(size_t initialCapacity, void *(*yourMMapFunction)(size_t
 
 // Free memory allocated from UseRaknetFixedHeap
 void FreeRakNetFixedHeap(void);
-
-// 	#if defined(RMO_NEW_UNDEF)
-// 	#pragma pop_macro("new")
-// 	#undef RMO_NEW_UNDEF
-// 	#endif
-// #endif
 
 #endif
