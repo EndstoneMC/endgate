@@ -30,8 +30,6 @@ double Ceil(double d)
     return (int)(d + 1.0);
 }
 
-// #define _DEBUG_LOGGER
-
 static const CCTimeType MAX_TIME_BETWEEN_PACKETS = 350000;  // 350 milliseconds
 // static const CCTimeType HISTOGRAM_RESTART_CYCLE=10000000; // Every 10 seconds reset the histogram
 static const CCTimeType STARTING_TIME_BETWEEN_PACKETS = MAX_TIME_BETWEEN_PACKETS;
@@ -208,12 +206,6 @@ struct DatagramHeaderFormat {
 
 #if !defined(__GNUC__) && !defined(__ARMCC)
 #pragma warning(disable : 4702)  // unreachable code
-#endif
-
-#ifdef _WIN32
-// #define _DEBUG_LOGGER
-#ifdef _DEBUG_LOGGER
-#endif
 #endif
 
 using namespace RakNet;
