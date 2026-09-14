@@ -707,6 +707,7 @@ protected:
 
     bool AllowIncomingConnections(void) const;
 
+    void HandleReceivedMessages(RemoteSystemStruct *remoteSystem, SystemAddress systemAddress);
     void PingInternal(const SystemAddress target, bool performImmediate, PacketReliability reliability);
     // This stores the user send calls to be handled by the update thread.  This way we don't have thread contention
     // over systemAddresss

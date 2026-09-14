@@ -2574,6 +2574,12 @@ void ProcessNetworkPacket(SystemAddress systemAddress, const char *data, const i
         if (isOfflineMessage == false) {
             remoteSystem->reliabilityLayer.HandleSocketReceiveFromConnectedPlayer(
                 data, length, systemAddress, remoteSystem->MTUSize, rakPeer, timeRead, updateBitStream);
+
+            // Deliver on the callback that produced them, then transmit. Upstream reached this by having
+            // the receive thread signal the update loop awake; there is no loop to wake now.
+            rakPeer->HandleReceivedMessages(remoteSystem, systemAddress);
+            remoteSystem->reliabilityLayer.Update(rakPeer, systemAddress, remoteSystem->MTUSize, RakNet::GetTimeUS(),
+                                                  rakPeer->maxOutgoingBPS, updateBitStream);
         }
     }
 }
@@ -2602,6 +2608,277 @@ void RakPeer::SendDatagram(const SystemAddress &systemAddress, const char *data,
 void RakPeer::OnReliabilityLayerNotification(const SystemAddress &systemAddress, const char *errorMessage, bool isError)
 {
     endpoint->onReliabilityLayerNotification(systemAddress, errorMessage, isError);
+}
+
+/// Delivers what the reliability layer has reassembled. Called from the receive path so a message
+/// reaches the chain on the callback that produced it, rather than waiting for a tick to drain a queue.
+void RakPeer::HandleReceivedMessages(RemoteSystemStruct *remoteSystem, SystemAddress systemAddress)
+{
+    unsigned char *data;
+    BitSize_t bitSize;
+    unsigned int byteSize;
+
+    // Does the reliability layer have any packets waiting for us?
+    // To be thread safe, this has to be called in the same thread as HandleSocketReceiveFromConnectedPlayer
+    bitSize = remoteSystem->reliabilityLayer.Receive(&data);
+
+    while (bitSize > 0) {
+        // These types are for internal use and should never arrive from a network packet
+        if (data[0] == ID_CONNECTION_ATTEMPT_FAILED) {
+            RakAssert(0);
+            bitSize = 0;
+            continue;
+        }
+
+        // Fast and easy - just use the data that was returned
+        byteSize = (unsigned int)BITS_TO_BYTES(bitSize);
+
+        // For unknown senders we only accept a few specific packets
+        if (remoteSystem->connectMode == RemoteSystemStruct::UNVERIFIED_SENDER) {
+            if ((unsigned char)(data)[0] == ID_CONNECTION_REQUEST) {
+                ParseConnectionRequestPacket(remoteSystem, systemAddress, (const char *)data, byteSize);
+                rakFree_Ex(data, _FILE_AND_LINE_);
+            }
+            else {
+                CloseConnectionInternal(systemAddress, false, true, 0, LOW_PRIORITY);
+#ifdef _DO_PRINTF
+                RAKNET_DEBUG_PRINTF("Temporarily banning %i:%i for sending nonsense data\n", systemAddress);
+#endif
+
+                char str1[64];
+                systemAddress.ToString(false, str1);
+
+                rakFree_Ex(data, _FILE_AND_LINE_);
+            }
+        }
+        else {
+            // However, if we are connected we still take a connection request in case both systems are trying to
+            // connect to each other at the same time
+            if ((unsigned char)(data)[0] == ID_CONNECTION_REQUEST) {
+                // 04/27/06 This is wrong.  With cross connections, we can both have initiated the connection are in
+                // state REQUESTED_CONNECTION 04/28/06 Downgrading connections from connected will close the
+                // connection due to security at ((remoteSystem->connectMode!=RemoteSystemStruct::CONNECTED && time
+                // > remoteSystem->connectionTime && time - remoteSystem->connectionTime > 10000))
+                if (remoteSystem->connectMode == RemoteSystemStruct::REQUESTED_CONNECTION) {
+                    ParseConnectionRequestPacket(remoteSystem, systemAddress, (const char *)data, byteSize);
+                }
+                else {
+
+                    RakNet::BitStream bs((unsigned char *)data, byteSize, false);
+                    bs.IgnoreBytes(sizeof(MessageID));
+                    bs.IgnoreBytes(sizeof(OFFLINE_MESSAGE_DATA_ID));
+                    bs.IgnoreBytes(RakNetGUID::size());
+                    RakNet::Time incomingTimestamp;
+                    bs.Read(incomingTimestamp);
+
+                    // Got a connection request message from someone we are already connected to. Just reply
+                    // normally. This can happen due to race conditions with the fully connected mesh
+                    OnConnectionRequest(remoteSystem, incomingTimestamp);
+                }
+                rakFree_Ex(data, _FILE_AND_LINE_);
+            }
+            else if ((unsigned char)data[0] == ID_NEW_INCOMING_CONNECTION &&
+                     byteSize > sizeof(unsigned char) + sizeof(unsigned int) + sizeof(unsigned short) +
+                                    sizeof(RakNet::Time) * 2) {
+                if (remoteSystem->connectMode == RemoteSystemStruct::HANDLING_CONNECTION_REQUEST) {
+                    remoteSystem->connectMode = RemoteSystemStruct::CONNECTED;
+                    PingInternal(systemAddress, true, UNRELIABLE);
+
+                    // Update again immediately after this tick so the ping goes out right away
+
+                    RakNet::BitStream inBitStream((unsigned char *)data, byteSize, false);
+                    SystemAddress bsSystemAddress;
+
+                    inBitStream.IgnoreBits(8);
+                    inBitStream.Read(bsSystemAddress);
+                    for (unsigned int i = 0; i < MAXIMUM_NUMBER_OF_INTERNAL_IDS; i++) {
+                        inBitStream.Read(remoteSystem->theirInternalSystemAddress[i]);
+                    }
+
+                    RakNet::Time sendPingTime, sendPongTime;
+                    inBitStream.Read(sendPingTime);
+                    inBitStream.Read(sendPongTime);
+                    OnConnectedPong(sendPingTime, sendPongTime, remoteSystem);
+
+                    // Overwrite the data in the packet
+
+                    remoteSystem->myExternalSystemAddress = bsSystemAddress;
+
+                    // Bug: If A connects to B through R, A's firstExternalID is set to R. If A tries to send to R,
+                    // sends to loopback because R==firstExternalID Correct fix is to specify in Connect() if target
+                    // is through a proxy. However, in practice you have to connect to something else first anyway
+                    // to know about the proxy. So setting once only is good enough
+                    if (firstExternalID == UNASSIGNED_SYSTEM_ADDRESS) {
+                        firstExternalID = bsSystemAddress;
+                        firstExternalID.debugPort = ntohs(firstExternalID.address.addr4.sin_port);
+                    }
+
+                    // Send this info down to the game
+                    endpoint->channelActive(systemAddress, remoteSystem->guid);
+                    rakFree_Ex(data, _FILE_AND_LINE_);
+                }
+                else {
+                    // Send to game even if already connected. This could happen when connecting to 127.0.0.1
+                    // Ignore, already connected
+                }
+            }
+            else if ((unsigned char)data[0] == ID_CONNECTED_PONG &&
+                     byteSize == sizeof(unsigned char) + sizeof(RakNet::Time) * 2) {
+                RakNet::Time sendPingTime, sendPongTime;
+
+                // Copy into the ping times array the current time - the value returned
+                // First extract the sent ping
+                RakNet::BitStream inBitStream((unsigned char *)data, byteSize, false);
+                inBitStream.IgnoreBits(8);
+                inBitStream.Read(sendPingTime);
+                inBitStream.Read(sendPongTime);
+
+                OnConnectedPong(sendPingTime, sendPongTime, remoteSystem);
+
+                rakFree_Ex(data, _FILE_AND_LINE_);
+            }
+            else if ((unsigned char)data[0] == ID_CONNECTED_PING &&
+                     byteSize == sizeof(unsigned char) + sizeof(RakNet::Time)) {
+                RakNet::BitStream inBitStream((unsigned char *)data, byteSize, false);
+                inBitStream.IgnoreBits(8);
+                RakNet::Time sendPingTime;
+                inBitStream.Read(sendPingTime);
+
+                RakNet::BitStream outBitStream;
+                outBitStream.Write((MessageID)ID_CONNECTED_PONG);
+                outBitStream.Write(sendPingTime);
+                outBitStream.Write(RakNet::GetTime());
+                SendImmediate((char *)outBitStream.GetData(), outBitStream.GetNumberOfBitsUsed(), IMMEDIATE_PRIORITY,
+                              UNRELIABLE, 0, systemAddress, false, false, RakNet::GetTimeUS(), 0);
+
+                // Update again immediately after this tick so the ping goes out right away
+
+                rakFree_Ex(data, _FILE_AND_LINE_);
+            }
+            else if ((unsigned char)data[0] == ID_DISCONNECTION_NOTIFICATION) {
+                // We shouldn't close the connection immediately because we need to ack the
+                // ID_DISCONNECTION_NOTIFICATION
+                remoteSystem->connectMode = RemoteSystemStruct::DISCONNECT_ON_NO_ACK;
+                rakFree_Ex(data, _FILE_AND_LINE_);
+            }
+            else if ((unsigned char)(data)[0] == ID_DETECT_LOST_CONNECTIONS && byteSize == sizeof(unsigned char)) {
+                // Do nothing
+                rakFree_Ex(data, _FILE_AND_LINE_);
+            }
+            else if ((unsigned char)(data)[0] == ID_INVALID_PASSWORD) {
+                if (remoteSystem->connectMode == RemoteSystemStruct::REQUESTED_CONNECTION) {
+                    endpoint->channelInactive(systemAddress, endgate::DisconnectReason::InvalidPassword);
+
+                    remoteSystem->connectMode = RemoteSystemStruct::DISCONNECT_ASAP_SILENTLY;
+                }
+                else {
+                    rakFree_Ex(data, _FILE_AND_LINE_);
+                }
+            }
+            else if ((unsigned char)(data)[0] == ID_CONNECTION_REQUEST_ACCEPTED) {
+                if (byteSize > sizeof(MessageID) + sizeof(unsigned int) + sizeof(unsigned short) + sizeof(SystemIndex) +
+                                   sizeof(RakNet::Time) * 2) {
+                    // Make sure this connection accept is from someone we wanted to connect to
+                    bool allowConnection, alreadyConnected;
+
+                    if (remoteSystem->connectMode == RemoteSystemStruct::HANDLING_CONNECTION_REQUEST ||
+                        remoteSystem->connectMode == RemoteSystemStruct::REQUESTED_CONNECTION ||
+                        allowConnectionResponseIPMigration) {
+                        allowConnection = true;
+                    }
+                    else {
+                        allowConnection = false;
+                    }
+
+                    if (remoteSystem->connectMode == RemoteSystemStruct::HANDLING_CONNECTION_REQUEST) {
+                        alreadyConnected = true;
+                    }
+                    else {
+                        alreadyConnected = false;
+                    }
+
+                    if (allowConnection) {
+                        SystemAddress externalID;
+                        SystemIndex systemIndex;
+
+                        RakNet::BitStream inBitStream((unsigned char *)data, byteSize, false);
+                        inBitStream.IgnoreBits(8);
+                        inBitStream.Read(externalID);
+                        inBitStream.Read(systemIndex);
+                        for (unsigned int i = 0; i < MAXIMUM_NUMBER_OF_INTERNAL_IDS; i++) {
+                            inBitStream.Read(remoteSystem->theirInternalSystemAddress[i]);
+                        }
+
+                        RakNet::Time sendPingTime, sendPongTime;
+                        inBitStream.Read(sendPingTime);
+                        inBitStream.Read(sendPongTime);
+                        OnConnectedPong(sendPingTime, sendPongTime, remoteSystem);
+
+                        // The remote system told us our external IP, so save it
+                        remoteSystem->myExternalSystemAddress = externalID;
+                        remoteSystem->connectMode = RemoteSystemStruct::CONNECTED;
+
+                        // Bug: If A connects to B through R, A's firstExternalID is set to R. If A tries to send to
+                        // R, sends to loopback because R==firstExternalID Correct fix is to specify in Connect() if
+                        // target is through a proxy. However, in practice you have to connect to something else
+                        // first anyway to know about the proxy. So setting once only is good enough
+                        if (firstExternalID == UNASSIGNED_SYSTEM_ADDRESS) {
+                            firstExternalID = externalID;
+                            firstExternalID.debugPort = ntohs(firstExternalID.address.addr4.sin_port);
+                        }
+
+                        // Send the connection request complete to the game
+                        endpoint->channelActive(systemAddress, remoteSystem->guid);
+                        rakFree_Ex(data, _FILE_AND_LINE_);
+
+                        RakNet::BitStream outBitStream;
+                        outBitStream.Write((MessageID)ID_NEW_INCOMING_CONNECTION);
+                        outBitStream.Write(systemAddress);
+                        for (unsigned int i = 0; i < MAXIMUM_NUMBER_OF_INTERNAL_IDS; i++) {
+                            outBitStream.Write(ipList[i]);
+                        }
+                        outBitStream.Write(sendPongTime);
+                        outBitStream.Write(RakNet::GetTime());
+
+                        SendImmediate((char *)outBitStream.GetData(), outBitStream.GetNumberOfBitsUsed(),
+                                      IMMEDIATE_PRIORITY, RELIABLE_ORDERED, 0, systemAddress, false, false,
+                                      RakNet::GetTimeUS(), 0);
+
+                        if (alreadyConnected == false) {
+                            PingInternal(systemAddress, true, UNRELIABLE);
+                        }
+                    }
+                    else {
+                        // Ignore, already connected
+                        rakFree_Ex(data, _FILE_AND_LINE_);
+                    }
+                }
+                else {
+                    // Version mismatch error?
+                    RakAssert(0);
+                    rakFree_Ex(data, _FILE_AND_LINE_);
+                }
+            }
+            else {
+                // What do I do if I get a message from a system, before I am fully connected?
+                // I can either ignore it or give it to the user
+                // It seems like giving it to the user is a better option
+                if ((data[0] >= (MessageID)ID_TIMESTAMP || data[0] == ID_SND_RECEIPT_ACKED ||
+                     data[0] == ID_SND_RECEIPT_LOSS) &&
+                    remoteSystem->isActive) {
+                    endpoint->channelRead(systemAddress, data, byteSize);
+                    rakFree_Ex(data, _FILE_AND_LINE_);
+                }
+                else {
+                    rakFree_Ex(data, _FILE_AND_LINE_);
+                }
+            }
+        }
+
+        // Does the reliability layer have any more packets waiting for us?
+        // To be thread safe, this has to be called in the same thread as HandleSocketReceiveFromConnectedPlayer
+        bitSize = remoteSystem->reliabilityLayer.Receive(&data);
+    }
 }
 
 bool RakPeer::RunUpdateCycle(BitStream &updateBitStream)
@@ -2761,7 +3038,12 @@ bool RakPeer::RunUpdateCycle(BitStream &updateBitStream)
                 remoteSystem->connectMode == RemoteSystemStruct::DISCONNECT_ASAP ||
                 remoteSystem->connectMode == RemoteSystemStruct::DISCONNECT_ON_NO_ACK) {
 
-                endpoint->channelInactive(systemAddress, endgate::DisconnectReason::ConnectionAttemptFailed);
+                endpoint->channelInactive(systemAddress,
+                                          remoteSystem->connectMode == RemoteSystemStruct::REQUESTED_CONNECTION
+                                              ? endgate::DisconnectReason::ConnectionAttemptFailed
+                                          : remoteSystem->connectMode == RemoteSystemStruct::CONNECTED
+                                              ? endgate::DisconnectReason::TimedOut
+                                              : endgate::DisconnectReason::ClosedByPeer);
             }
             // else connection shutting down, don't bother telling the user
 
@@ -2779,269 +3061,6 @@ bool RakPeer::RunUpdateCycle(BitStream &updateBitStream)
             PingInternal(systemAddress, true, UNRELIABLE);
 
             // Update again immediately after this tick so the ping goes out right away
-        }
-
-        // Does the reliability layer have any packets waiting for us?
-        // To be thread safe, this has to be called in the same thread as HandleSocketReceiveFromConnectedPlayer
-        bitSize = remoteSystem->reliabilityLayer.Receive(&data);
-
-        while (bitSize > 0) {
-            // These types are for internal use and should never arrive from a network packet
-            if (data[0] == ID_CONNECTION_ATTEMPT_FAILED) {
-                RakAssert(0);
-                bitSize = 0;
-                continue;
-            }
-
-            // Fast and easy - just use the data that was returned
-            byteSize = (unsigned int)BITS_TO_BYTES(bitSize);
-
-            // For unknown senders we only accept a few specific packets
-            if (remoteSystem->connectMode == RemoteSystemStruct::UNVERIFIED_SENDER) {
-                if ((unsigned char)(data)[0] == ID_CONNECTION_REQUEST) {
-                    ParseConnectionRequestPacket(remoteSystem, systemAddress, (const char *)data, byteSize);
-                    rakFree_Ex(data, _FILE_AND_LINE_);
-                }
-                else {
-                    CloseConnectionInternal(systemAddress, false, true, 0, LOW_PRIORITY);
-#ifdef _DO_PRINTF
-                    RAKNET_DEBUG_PRINTF("Temporarily banning %i:%i for sending nonsense data\n", systemAddress);
-#endif
-
-                    char str1[64];
-                    systemAddress.ToString(false, str1);
-
-                    rakFree_Ex(data, _FILE_AND_LINE_);
-                }
-            }
-            else {
-                // However, if we are connected we still take a connection request in case both systems are trying to
-                // connect to each other at the same time
-                if ((unsigned char)(data)[0] == ID_CONNECTION_REQUEST) {
-                    // 04/27/06 This is wrong.  With cross connections, we can both have initiated the connection are in
-                    // state REQUESTED_CONNECTION 04/28/06 Downgrading connections from connected will close the
-                    // connection due to security at ((remoteSystem->connectMode!=RemoteSystemStruct::CONNECTED && time
-                    // > remoteSystem->connectionTime && time - remoteSystem->connectionTime > 10000))
-                    if (remoteSystem->connectMode == RemoteSystemStruct::REQUESTED_CONNECTION) {
-                        ParseConnectionRequestPacket(remoteSystem, systemAddress, (const char *)data, byteSize);
-                    }
-                    else {
-
-                        RakNet::BitStream bs((unsigned char *)data, byteSize, false);
-                        bs.IgnoreBytes(sizeof(MessageID));
-                        bs.IgnoreBytes(sizeof(OFFLINE_MESSAGE_DATA_ID));
-                        bs.IgnoreBytes(RakNetGUID::size());
-                        RakNet::Time incomingTimestamp;
-                        bs.Read(incomingTimestamp);
-
-                        // Got a connection request message from someone we are already connected to. Just reply
-                        // normally. This can happen due to race conditions with the fully connected mesh
-                        OnConnectionRequest(remoteSystem, incomingTimestamp);
-                    }
-                    rakFree_Ex(data, _FILE_AND_LINE_);
-                }
-                else if ((unsigned char)data[0] == ID_NEW_INCOMING_CONNECTION &&
-                         byteSize > sizeof(unsigned char) + sizeof(unsigned int) + sizeof(unsigned short) +
-                                        sizeof(RakNet::Time) * 2) {
-                    if (remoteSystem->connectMode == RemoteSystemStruct::HANDLING_CONNECTION_REQUEST) {
-                        remoteSystem->connectMode = RemoteSystemStruct::CONNECTED;
-                        PingInternal(systemAddress, true, UNRELIABLE);
-
-                        // Update again immediately after this tick so the ping goes out right away
-
-                        RakNet::BitStream inBitStream((unsigned char *)data, byteSize, false);
-                        SystemAddress bsSystemAddress;
-
-                        inBitStream.IgnoreBits(8);
-                        inBitStream.Read(bsSystemAddress);
-                        for (unsigned int i = 0; i < MAXIMUM_NUMBER_OF_INTERNAL_IDS; i++) {
-                            inBitStream.Read(remoteSystem->theirInternalSystemAddress[i]);
-                        }
-
-                        RakNet::Time sendPingTime, sendPongTime;
-                        inBitStream.Read(sendPingTime);
-                        inBitStream.Read(sendPongTime);
-                        OnConnectedPong(sendPingTime, sendPongTime, remoteSystem);
-
-                        // Overwrite the data in the packet
-
-                        remoteSystem->myExternalSystemAddress = bsSystemAddress;
-
-                        // Bug: If A connects to B through R, A's firstExternalID is set to R. If A tries to send to R,
-                        // sends to loopback because R==firstExternalID Correct fix is to specify in Connect() if target
-                        // is through a proxy. However, in practice you have to connect to something else first anyway
-                        // to know about the proxy. So setting once only is good enough
-                        if (firstExternalID == UNASSIGNED_SYSTEM_ADDRESS) {
-                            firstExternalID = bsSystemAddress;
-                            firstExternalID.debugPort = ntohs(firstExternalID.address.addr4.sin_port);
-                        }
-
-                        // Send this info down to the game
-                        endpoint->channelActive(systemAddress, remoteSystem->guid);
-                        rakFree_Ex(data, _FILE_AND_LINE_);
-                    }
-                    else {
-                        // Send to game even if already connected. This could happen when connecting to 127.0.0.1
-                        // Ignore, already connected
-                    }
-                }
-                else if ((unsigned char)data[0] == ID_CONNECTED_PONG &&
-                         byteSize == sizeof(unsigned char) + sizeof(RakNet::Time) * 2) {
-                    RakNet::Time sendPingTime, sendPongTime;
-
-                    // Copy into the ping times array the current time - the value returned
-                    // First extract the sent ping
-                    RakNet::BitStream inBitStream((unsigned char *)data, byteSize, false);
-                    inBitStream.IgnoreBits(8);
-                    inBitStream.Read(sendPingTime);
-                    inBitStream.Read(sendPongTime);
-
-                    OnConnectedPong(sendPingTime, sendPongTime, remoteSystem);
-
-                    rakFree_Ex(data, _FILE_AND_LINE_);
-                }
-                else if ((unsigned char)data[0] == ID_CONNECTED_PING &&
-                         byteSize == sizeof(unsigned char) + sizeof(RakNet::Time)) {
-                    RakNet::BitStream inBitStream((unsigned char *)data, byteSize, false);
-                    inBitStream.IgnoreBits(8);
-                    RakNet::Time sendPingTime;
-                    inBitStream.Read(sendPingTime);
-
-                    RakNet::BitStream outBitStream;
-                    outBitStream.Write((MessageID)ID_CONNECTED_PONG);
-                    outBitStream.Write(sendPingTime);
-                    outBitStream.Write(RakNet::GetTime());
-                    SendImmediate((char *)outBitStream.GetData(), outBitStream.GetNumberOfBitsUsed(),
-                                  IMMEDIATE_PRIORITY, UNRELIABLE, 0, systemAddress, false, false, RakNet::GetTimeUS(),
-                                  0);
-
-                    // Update again immediately after this tick so the ping goes out right away
-
-                    rakFree_Ex(data, _FILE_AND_LINE_);
-                }
-                else if ((unsigned char)data[0] == ID_DISCONNECTION_NOTIFICATION) {
-                    // We shouldn't close the connection immediately because we need to ack the
-                    // ID_DISCONNECTION_NOTIFICATION
-                    remoteSystem->connectMode = RemoteSystemStruct::DISCONNECT_ON_NO_ACK;
-                    rakFree_Ex(data, _FILE_AND_LINE_);
-                }
-                else if ((unsigned char)(data)[0] == ID_DETECT_LOST_CONNECTIONS && byteSize == sizeof(unsigned char)) {
-                    // Do nothing
-                    rakFree_Ex(data, _FILE_AND_LINE_);
-                }
-                else if ((unsigned char)(data)[0] == ID_INVALID_PASSWORD) {
-                    if (remoteSystem->connectMode == RemoteSystemStruct::REQUESTED_CONNECTION) {
-                        endpoint->channelInactive(systemAddress, endgate::DisconnectReason::InvalidPassword);
-
-                        remoteSystem->connectMode = RemoteSystemStruct::DISCONNECT_ASAP_SILENTLY;
-                    }
-                    else {
-                        rakFree_Ex(data, _FILE_AND_LINE_);
-                    }
-                }
-                else if ((unsigned char)(data)[0] == ID_CONNECTION_REQUEST_ACCEPTED) {
-                    if (byteSize > sizeof(MessageID) + sizeof(unsigned int) + sizeof(unsigned short) +
-                                       sizeof(SystemIndex) + sizeof(RakNet::Time) * 2) {
-                        // Make sure this connection accept is from someone we wanted to connect to
-                        bool allowConnection, alreadyConnected;
-
-                        if (remoteSystem->connectMode == RemoteSystemStruct::HANDLING_CONNECTION_REQUEST ||
-                            remoteSystem->connectMode == RemoteSystemStruct::REQUESTED_CONNECTION ||
-                            allowConnectionResponseIPMigration) {
-                            allowConnection = true;
-                        }
-                        else {
-                            allowConnection = false;
-                        }
-
-                        if (remoteSystem->connectMode == RemoteSystemStruct::HANDLING_CONNECTION_REQUEST) {
-                            alreadyConnected = true;
-                        }
-                        else {
-                            alreadyConnected = false;
-                        }
-
-                        if (allowConnection) {
-                            SystemAddress externalID;
-                            SystemIndex systemIndex;
-
-                            RakNet::BitStream inBitStream((unsigned char *)data, byteSize, false);
-                            inBitStream.IgnoreBits(8);
-                            inBitStream.Read(externalID);
-                            inBitStream.Read(systemIndex);
-                            for (unsigned int i = 0; i < MAXIMUM_NUMBER_OF_INTERNAL_IDS; i++) {
-                                inBitStream.Read(remoteSystem->theirInternalSystemAddress[i]);
-                            }
-
-                            RakNet::Time sendPingTime, sendPongTime;
-                            inBitStream.Read(sendPingTime);
-                            inBitStream.Read(sendPongTime);
-                            OnConnectedPong(sendPingTime, sendPongTime, remoteSystem);
-
-                            // The remote system told us our external IP, so save it
-                            remoteSystem->myExternalSystemAddress = externalID;
-                            remoteSystem->connectMode = RemoteSystemStruct::CONNECTED;
-
-                            // Bug: If A connects to B through R, A's firstExternalID is set to R. If A tries to send to
-                            // R, sends to loopback because R==firstExternalID Correct fix is to specify in Connect() if
-                            // target is through a proxy. However, in practice you have to connect to something else
-                            // first anyway to know about the proxy. So setting once only is good enough
-                            if (firstExternalID == UNASSIGNED_SYSTEM_ADDRESS) {
-                                firstExternalID = externalID;
-                                firstExternalID.debugPort = ntohs(firstExternalID.address.addr4.sin_port);
-                            }
-
-                            // Send the connection request complete to the game
-                            endpoint->channelActive(systemAddress, remoteSystem->guid);
-                            rakFree_Ex(data, _FILE_AND_LINE_);
-
-                            RakNet::BitStream outBitStream;
-                            outBitStream.Write((MessageID)ID_NEW_INCOMING_CONNECTION);
-                            outBitStream.Write(systemAddress);
-                            for (unsigned int i = 0; i < MAXIMUM_NUMBER_OF_INTERNAL_IDS; i++) {
-                                outBitStream.Write(ipList[i]);
-                            }
-                            outBitStream.Write(sendPongTime);
-                            outBitStream.Write(RakNet::GetTime());
-
-                            SendImmediate((char *)outBitStream.GetData(), outBitStream.GetNumberOfBitsUsed(),
-                                          IMMEDIATE_PRIORITY, RELIABLE_ORDERED, 0, systemAddress, false, false,
-                                          RakNet::GetTimeUS(), 0);
-
-                            if (alreadyConnected == false) {
-                                PingInternal(systemAddress, true, UNRELIABLE);
-                            }
-                        }
-                        else {
-                            // Ignore, already connected
-                            rakFree_Ex(data, _FILE_AND_LINE_);
-                        }
-                    }
-                    else {
-                        // Version mismatch error?
-                        RakAssert(0);
-                        rakFree_Ex(data, _FILE_AND_LINE_);
-                    }
-                }
-                else {
-                    // What do I do if I get a message from a system, before I am fully connected?
-                    // I can either ignore it or give it to the user
-                    // It seems like giving it to the user is a better option
-                    if ((data[0] >= (MessageID)ID_TIMESTAMP || data[0] == ID_SND_RECEIPT_ACKED ||
-                         data[0] == ID_SND_RECEIPT_LOSS) &&
-                        remoteSystem->isActive) {
-                        endpoint->channelRead(systemAddress, data, byteSize);
-                        rakFree_Ex(data, _FILE_AND_LINE_);
-                    }
-                    else {
-                        rakFree_Ex(data, _FILE_AND_LINE_);
-                    }
-                }
-            }
-
-            // Does the reliability layer have any more packets waiting for us?
-            // To be thread safe, this has to be called in the same thread as HandleSocketReceiveFromConnectedPlayer
-            bitSize = remoteSystem->reliabilityLayer.Receive(&data);
         }
     }
 
