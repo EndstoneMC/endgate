@@ -16,12 +16,13 @@
 #ifndef __RELIABILITY_LAYER_H
 #define __RELIABILITY_LAYER_H
 
+#include <deque>
+
 #include "BitStream.h"
 #include "DS_Heap.h"
 #include "DS_List.h"
 #include "DS_MemoryPool.h"
 #include "DS_OrderedList.h"
-#include "DS_Queue.h"
 #include "DS_RangeList.h"
 #include "InternalPacket.h"
 #include "MTUSize.h"
@@ -62,10 +63,10 @@ int SplitPacketChannelComp(SplitPacketIdType const &key, SplitPacketChannel *con
 struct BPSTracker {
     BPSTracker();
     ~BPSTracker();
-    void Reset(const char *file, unsigned int line);
+    void Reset();
     inline void Push1(CCTimeType time, uint64_t value1)
     {
-        dataQueue.Push(TimeAndValue2(time, value1), _FILE_AND_LINE_);
+        dataQueue.push_back(TimeAndValue2(time, value1));
         total1 += value1;
         lastSec1 += value1;
     }
@@ -97,7 +98,7 @@ struct BPSTracker {
 
     uint64_t total1, lastSec1;
     //	uint64_t total2, lastSec2;
-    DataStructures::Queue<TimeAndValue2> dataQueue;
+    std::deque<TimeAndValue2> dataQueue;
     void ClearExpired1(CCTimeType time);
     //	void ClearExpired2(RakNet::TimeUS time);
 };
@@ -310,7 +311,7 @@ private:
     // Used ONLY for RELIABLE_ORDERED
     // RELIABLE_SEQUENCED just returns the newest one
     // DataStructures::List<DataStructures::LinkedList<InternalPacket*>*> orderingList;
-    DataStructures::Queue<InternalPacket *> outputQueue;
+    std::deque<InternalPacket *> outputQueue;
     int splitMessageProgressInterval;
     CCTimeType unreliableTimeout;
 
@@ -328,7 +329,7 @@ private:
     // This is essentially an O(1) lookup to get a DatagramHistoryNode given an index
     // datagramHistory holds a linked list of MessageNumberNode. Each MessageNumberNode refers to one element in
     // resendList which can be cleared on an ack.
-    DataStructures::Queue<DatagramHistoryNode> datagramHistory;
+    std::deque<DatagramHistoryNode> datagramHistory;
     DataStructures::MemoryPool<MessageNumberNode> datagramHistoryMessagePool;
 
     struct UnreliableWithAckReceiptNode {
@@ -446,7 +447,7 @@ private:
     /// half the range of receivedPacketsBaseIndex then it is a duplicate Otherwise, it is a duplicate packet (and
     /// ignore it).
     // DataStructures::Queue<CCTimeType> hasReceivedPacketQueue;
-    DataStructures::Queue<bool> hasReceivedPacketQueue;
+    std::deque<bool> hasReceivedPacketQueue;
     DatagramSequenceNumberType receivedPacketsBaseIndex;
     bool resetReceivedPackets;
 

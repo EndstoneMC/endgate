@@ -43,7 +43,6 @@ else use congestion avoidance
 
 #include <cstdint>
 
-#include "DS_Queue.h"
 #include "GetTime.h"
 #include "RakNetTypes.h"
 
