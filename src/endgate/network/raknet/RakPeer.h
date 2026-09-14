@@ -94,7 +94,6 @@ public:
     /// x64 builds require under 25% of the CPU time of other builds
     /// See the Encryption sample for example usage
     /// \pre Must be called while offline
-    /// \pre LIBCAT_SECURITY must be defined to 1 in NativeFeatureIncludes.h for this function to have any effect
     /// \param[in] publicKey A pointer to the public key for accepting new connections
     /// \param[in] privateKey A pointer to the private key for accepting new connections
     /// \param[in] bRequireClientKey: Should be set to false for most servers.  Allows the server to accept a public key
@@ -495,8 +494,8 @@ public:
     void GetOfflinePingResponse(char **data, unsigned int *length);
 
     //--------------------------------------------------------------------------------------------Network Functions -
-    //Functions dealing with the network in
-    //general--------------------------------------------------------------------------------------------
+    // Functions dealing with the network in
+    // general--------------------------------------------------------------------------------------------
     /// \brief Returns the unique address identifier that represents you or another system on the the network
     /// \note Not supported by the XBOX
     /// \param[in] systemAddress Use UNASSIGNED_SYSTEM_ADDRESS to get your behind-LAN address. Use a connected system to
@@ -642,7 +641,7 @@ public:
     /// \brief Detaches a Plugin interface from the instance of the base class (RakPeer or PacketizedTCP) it is attached
     /// to.
     ///	\details This method disables the plugin code from running automatically on base class's updates or message
-    ///receipt.
+    /// receipt.
     /// If the plugin returns false from PluginInterface::UsesReliabilityLayer(), which is the case for all plugins
     /// except PacketLogger, you can call AttachPlugin() and DetachPlugin() for this plugin while RakPeer is active.
     /// \param[in] messageHandler Pointer to a plugin to detach.
@@ -740,7 +739,7 @@ public:
     RakNetStatistics *GetStatistics(const SystemAddress systemAddress, RakNetStatistics *rns = 0);
     /// \brief Returns the network statistics of the system at the given index in the remoteSystemList.
     ///	\return True if the index is less than the maximum number of peers allowed and the system is active. False
-    ///otherwise.
+    /// otherwise.
     bool GetStatistics(const unsigned int index, RakNetStatistics *rns);
     /// \brief Returns the list of systems, and statistics for each of those systems
     /// Each system has one entry in each of the lists, in the same order
@@ -761,11 +760,7 @@ public:
     /// \internal
     // Call manually if RAKPEER_USER_THREADED==1 at least every 30 milliseconds.
     // updateBitStream should be:
-    // 	BitStream updateBitStream( MAXIMUM_MTU_SIZE
-    // #if LIBCAT_SECURITY==1
-    //	+ cat::AuthenticatedEncryption::OVERHEAD_BYTES
-    // #endif
-    // );
+    // 	BitStream updateBitStream( MAXIMUM_MTU_SIZE );
     bool RunUpdateCycle(BitStream &updateBitStream);
 
     /// \internal
@@ -803,15 +798,6 @@ public:
         // Reference counted socket to send back on
         RakNetSocket2 *rakNetSocket;
         SystemIndex remoteSystemIndex;
-
-#if LIBCAT_SECURITY == 1
-        // Cached answer used internally by RakPeer to prevent DoS attacks based on the connexion handshake
-        char answer[cat::EasyHandshake::ANSWER_BYTES];
-
-        // If the server has bRequireClientKey = true, then this is set to the validated public key of the connected
-        // client Valid after connectMode reaches HANDLING_CONNECTION_REQUEST
-        char client_public_key[cat::EasyHandshake::PUBLIC_KEY_BYTES];
-#endif
 
         enum ConnectMode {
             NO_ACTION,
@@ -977,16 +963,7 @@ protected:
         enum {
             CONNECT = 1
         } actionToTake;
-
-#if LIBCAT_SECURITY == 1
-        char handshakeChallenge[cat::EasyHandshake::CHALLENGE_BYTES];
-        cat::ClientEasyHandshake *client_handshake;
-        char remote_public_key[cat::EasyHandshake::PUBLIC_KEY_BYTES];
-#endif
     };
-#if LIBCAT_SECURITY == 1
-    bool GenerateConnectionRequestChallenge(RequestedConnectionStruct *rcs, PublicKey *publicKey);
-#endif
 
     DataStructures::List<BanStruct *> banList;
     // Threadsafe, and not thread safe
@@ -1091,10 +1068,6 @@ protected:
     unsigned maxOutgoingBPS;
 
     // Nobody would use the internet simulator in a final build.
-#ifdef _DEBUG
-    double _packetloss;
-    unsigned short _minExtraPing, _extraPingVariance;
-#endif
 
     /// True to allow connection accepted packets from anyone.  False to only allow these packets from servers we
     /// requested a connection to.
@@ -1136,15 +1109,6 @@ protected:
     void ResetSendReceipt(void);
     void OnConnectedPong(RakNet::Time sendPingTime, RakNet::Time sendPongTime, RemoteSystemStruct *remoteSystem);
     void CallPluginCallbacks(DataStructures::List<PluginInterface2 *> &pluginList, Packet *packet);
-
-#if LIBCAT_SECURITY == 1
-    // Encryption and security
-    bool _using_security, _require_client_public_key;
-    char my_public_key[cat::EasyHandshake::PUBLIC_KEY_BYTES];
-    cat::ServerEasyHandshake *_server_handshake;
-    cat::CookieJar *_cookie_jar;
-    bool InitializeClientSecurity(RequestedConnectionStruct *rcs, const char *public_key);
-#endif
 
     virtual void OnRNS2Recv(RNS2RecvStruct *recvStruct);
     void FillIPList(void);
