@@ -968,9 +968,6 @@ void ReliabilityLayer::Update(RakPeer *peer, SystemAddress &systemAddress, int M
 {
     (void)MTUSize;
 
-    RakNet::TimeMS timeMs;
-    timeMs = (RakNet::TimeMS)(time / (CCTimeType)1000);
-
     // This line is necessary because the timer isn't accurate
     if (time <= lastUpdateTime) {
         // Always set the last time in case of overflow
