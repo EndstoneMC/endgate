@@ -415,8 +415,6 @@ bool ReliabilityLayer::HandleSocketReceiveFromConnectedPlayer(const char *buffer
         for (i = 0; i < incomingAcks.ranges.size(); i++) {
             if (incomingAcks.ranges[i].minIndex > incomingAcks.ranges[i].maxIndex ||
                 (incomingAcks.ranges[i].maxIndex == (uint24_t)(0xFFFFFFFF))) {
-                RakAssert(incomingAcks.ranges[i].minIndex <= incomingAcks.ranges[i].maxIndex);
-
                 peer->OnReliabilityLayerNotification(systemAddress, "incomingAcks minIndex > maxIndex or maxIndex is too large", true);
                 return false;
             }
@@ -491,8 +489,6 @@ bool ReliabilityLayer::HandleSocketReceiveFromConnectedPlayer(const char *buffer
         for (i = 0; i < incomingNAKs.ranges.size(); i++) {
             if (incomingNAKs.ranges[i].minIndex > incomingNAKs.ranges[i].maxIndex ||
                 (incomingNAKs.ranges[i].maxIndex == (uint24_t)(0xFFFFFFFF))) {
-                RakAssert(incomingNAKs.ranges[i].minIndex <= incomingNAKs.ranges[i].maxIndex);
-
                 peer->OnReliabilityLayerNotification(systemAddress, "incomingNAKs minIndex>maxIndex or maxIndex is too large", true);
                 return false;
             }
@@ -640,8 +636,6 @@ bool ReliabilityLayer::HandleSocketReceiveFromConnectedPlayer(const char *buffer
                     else  // holeCount>=receivedPackets.Size()
                     {
                         if (holeCount > (DatagramSequenceNumberType)1000000) {
-                            RakAssert("Hole count too high. See ReliabilityLayer.h" && 0);
-
                             peer->OnReliabilityLayerNotification(systemAddress, "holeCount > 1000000", true);
                             bpsMetrics[(int)USER_MESSAGE_BYTES_RECEIVED_IGNORED].Push1(
                                 timeRead, BITS_TO_BYTES(internalPacket->dataBitLength));

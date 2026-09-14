@@ -2603,7 +2603,6 @@ void RakPeer::HandleReceivedMessages(RemoteSystemStruct *remoteSystem, SystemAdd
     while (bitSize > 0) {
         // These types are for internal use and should never arrive from a network packet
         if (data[0] == ID_CONNECTION_ATTEMPT_FAILED) {
-            RakAssert(0);
             bitSize = 0;
             continue;
         }
@@ -2827,7 +2826,6 @@ void RakPeer::HandleReceivedMessages(RemoteSystemStruct *remoteSystem, SystemAdd
                 }
                 else {
                     // Version mismatch error?
-                    RakAssert(0);
                     rakFree_Ex(data, _FILE_AND_LINE_);
                 }
             }
