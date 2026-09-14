@@ -369,7 +369,7 @@ void ReliabilityLayer::FreeThreadSafeMemory(void)
 #define MAX_ACKNOWLEDGEMENTS_PER_DATAGRAM       0x4000
 bool ReliabilityLayer::HandleSocketReceiveFromConnectedPlayer(const char *buffer, unsigned int length,
                                                               SystemAddress &systemAddress, int MTUSize,
-                                                              DatagramSink *s, CCTimeType timeRead,
+                                                              RakNetSocket2 *s, CCTimeType timeRead,
                                                               BitStream &updateBitStream)
 {
 
@@ -966,7 +966,7 @@ bool ReliabilityLayer::Send(char *data, BitSize_t numberOfBitsToSend, PacketPrio
     return true;
 }
 // Run this once per game cycle.  Handles internal lists and actually does the send
-void ReliabilityLayer::Update(DatagramSink *s, SystemAddress &systemAddress, int MTUSize, CCTimeType time,
+void ReliabilityLayer::Update(RakNetSocket2 *s, SystemAddress &systemAddress, int MTUSize, CCTimeType time,
                               unsigned bitsPerSecondLimit, BitStream &updateBitStream)
 
 {
@@ -1393,7 +1393,7 @@ void ReliabilityLayer::Update(DatagramSink *s, SystemAddress &systemAddress, int
 }
 
 // Writes a bitstream to the socket
-void ReliabilityLayer::SendBitStream(DatagramSink *s, SystemAddress &systemAddress, RakNet::BitStream *bitStream,
+void ReliabilityLayer::SendBitStream(RakNetSocket2 *s, SystemAddress &systemAddress, RakNet::BitStream *bitStream,
                                      CCTimeType currentTime)
 {
     (void)systemAddress;
@@ -1970,7 +1970,7 @@ InternalPacket *ReliabilityLayer::BuildPacketFromSplitPacketList(SplitPacketChan
     return internalPacket;
 }
 InternalPacket *ReliabilityLayer::BuildPacketFromSplitPacketList(SplitPacketIdType splitPacketId, CCTimeType time,
-                                                                 DatagramSink *s, SystemAddress &systemAddress,
+                                                                 RakNetSocket2 *s, SystemAddress &systemAddress,
                                                                  BitStream &updateBitStream)
 {
     InternalPacket *internalPacket;
@@ -2227,7 +2227,7 @@ bool ReliabilityLayer::IsResendQueueEmpty(void) const
 {
     return resendLinkedListHead == 0;
 }
-void ReliabilityLayer::SendACKs(DatagramSink *s, SystemAddress &systemAddress, CCTimeType time,
+void ReliabilityLayer::SendACKs(RakNetSocket2 *s, SystemAddress &systemAddress, CCTimeType time,
                                 BitStream &updateBitStream)
 {
     BitSize_t maxDatagramPayload = GetMaxDatagramSizeExcludingMessageHeaderBits();

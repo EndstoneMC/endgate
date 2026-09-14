@@ -31,7 +31,6 @@
 #include "RakMemoryOverride.h"
 #include "RakNetDefines.h"
 #include "RakNetStatistics.h"
-#include "sink.h"
 
 /// Number of ordered streams available. You can use up to 32 ordered streams
 #define NUMBER_OF_ORDERED_STREAMS 32  // 2^5
@@ -40,7 +39,7 @@
 
 namespace RakNet {
 
-using DatagramSink = endgate::raknet::DatagramSink;
+class RakNetSocket2;
 
 /// Forward declarations
 typedef uint64_t reliabilityHeapWeightType;
@@ -123,7 +122,7 @@ public:
     /// \retval true Success
     /// \retval false Modified packet
     bool HandleSocketReceiveFromConnectedPlayer(const char *buffer, unsigned int length, SystemAddress &systemAddress,
-                                                int MTUSize, DatagramSink *s, CCTimeType timeRead,
+                                                int MTUSize, RakNetSocket2 *s, CCTimeType timeRead,
                                                 BitStream &updateBitStream);
 
     /// This allocates bytes and writes a user-level message to those bytes.
@@ -153,7 +152,7 @@ public:
     /// \param[in] MTUSize maximum datagram size
     /// \param[in] time current system time
     /// \param[in] maxBitsPerSecond if non-zero, enforces that outgoing bandwidth does not exceed this amount
-    void Update(DatagramSink *s, SystemAddress &systemAddress, int MTUSize, CCTimeType time,
+    void Update(RakNetSocket2 *s, SystemAddress &systemAddress, int MTUSize, CCTimeType time,
                 unsigned bitsPerSecondLimit, BitStream &updateBitStream);
 
     /// Were you ever unable to deliver a packet despite retries?
@@ -184,7 +183,7 @@ private:
     /// \param[in] s The socket used for sending data
     /// \param[in] systemAddress The address and port to send to
     /// \param[in] bitStream The data to send.
-    void SendBitStream(DatagramSink *s, SystemAddress &systemAddress, RakNet::BitStream *bitStream,
+    void SendBitStream(RakNetSocket2 *s, SystemAddress &systemAddress, RakNet::BitStream *bitStream,
                        CCTimeType currentTime);
 
     /// Parse an internalPacket and create a bitstream to represent this data
@@ -228,7 +227,7 @@ private:
 
     /// Take all split chunks with the specified splitPacketId and try to reconstruct a packet. If we can, allocate and
     /// return it.  Otherwise return 0
-    InternalPacket *BuildPacketFromSplitPacketList(SplitPacketIdType splitPacketId, CCTimeType time, DatagramSink *s,
+    InternalPacket *BuildPacketFromSplitPacketList(SplitPacketIdType splitPacketId, CCTimeType time, RakNetSocket2 *s,
                                                    SystemAddress &systemAddress, BitStream &updateBitStream);
     InternalPacket *BuildPacketFromSplitPacketList(SplitPacketChannel &splitPacketChannel, CCTimeType time);
 
@@ -411,7 +410,7 @@ private:
     void AddToListTail(InternalPacket *internalPacket, bool modifyUnacknowledgedBytes);
     void PopListHead(bool modifyUnacknowledgedBytes);
     bool IsResendQueueEmpty(void) const;
-    void SendACKs(DatagramSink *s, SystemAddress &systemAddress, CCTimeType time, BitStream &updateBitStream);
+    void SendACKs(RakNetSocket2 *s, SystemAddress &systemAddress, CCTimeType time, BitStream &updateBitStream);
 
     std::vector<InternalPacket *> packetsToSendThisUpdate;
     std::vector<bool> packetsToDeallocThisUpdate;
