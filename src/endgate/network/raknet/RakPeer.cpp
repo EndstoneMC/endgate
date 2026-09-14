@@ -21,11 +21,6 @@
 #include "RakNetTypes.h"
 #include "endgate/network/endpoint.h"
 
-#ifdef _WIN32
-
-#else
-#endif
-
 #include <ctype.h>  // toupper
 #include <string.h>
 #include <time.h>
@@ -362,9 +357,6 @@ void RakPeer::Shutdown(unsigned int blockDuration, unsigned char orderingChannel
     activeSystemListSize = 0;
 
     isRunning = false;
-
-#if !defined(__native_client__) && !defined(WINDOWS_STORE_RT)
-#endif
 
     // remoteSystemList in Single thread
     for (i = 0; i < systemListSize; i++) {
