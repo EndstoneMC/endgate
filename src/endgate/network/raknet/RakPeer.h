@@ -29,7 +29,6 @@
 namespace RakNet {
 /// Forward declarations
 class HuffmanEncodingTree;
-class PluginInterface2;
 
 // Sucks but this struct has to be outside the class.  Inside and DevCPP won't let you refer to the struct as
 // RakPeer::RemoteSystemIndex while GCC forces you to do RakPeer::RemoteSystemIndex
@@ -64,38 +63,6 @@ public:
     /// connections.
     /// \return RAKNET_STARTED on success, otherwise appropriate failure enumeration.
     StartupResult Startup(unsigned int maxConnections);
-
-    /// If you accept connections, you must call this or else security will not be enabled for incoming connections.
-    /// This feature requires more round trips, bandwidth, and CPU time for the connection handshake
-    /// x64 builds require under 25% of the CPU time of other builds
-    /// See the Encryption sample for example usage
-    /// \pre Must be called while offline
-    /// \param[in] publicKey A pointer to the public key for accepting new connections
-    /// \param[in] privateKey A pointer to the private key for accepting new connections
-    /// \param[in] bRequireClientKey: Should be set to false for most servers.  Allows the server to accept a public key
-    /// from connecting clients as a proof of identity but eats twice as much CPU time as a normal connection
-    bool InitializeSecurity(const char *publicKey, const char *privateKey, bool bRequireClientKey = false);
-
-    /// Disables security for incoming connections.
-    /// \note Must be called while offline
-    void DisableSecurity(void);
-
-    /// \brief This is useful if you have a fixed-address internal server behind a LAN.
-    ///
-    ///  Secure connections are determined by the recipient of an incoming connection. This has no effect if called on
-    ///  the system attempting to connect.
-    /// \note If secure connections are on, do not use secure connections for a specific IP address.
-    /// \param[in] ip IP address to add. * wildcards are supported.
-    void AddToSecurityExceptionList(const char *ip);
-
-    /// \brief Remove a specific connection previously added via AddToSecurityExceptionList.
-    /// \param[in] ip IP address to remove. Pass 0 to remove all IP addresses. * wildcards are supported.
-    void RemoveFromSecurityExceptionList(const char *ip);
-
-    /// \brief Checks to see if a given IP is in the security exception list.
-    /// \param[in] IP address to check.
-    /// \return True if the IP address is found in security exception list, else returns false.
-    bool IsInSecurityExceptionList(const char *ip);
 
     /// \brief Sets the maximum number of incoming connections allowed.
     /// \details If the number of incoming connections is less than the number of players currently connected,
@@ -339,27 +306,6 @@ public:
     /// of the \a addresses list.
     void GetSystemList(DataStructures::List<SystemAddress> &addresses, DataStructures::List<RakNetGUID> &guids) const;
 
-    /// \brief Bans an IP from connecting.
-    /// \details Banned IPs persist between connections but are not saved on shutdown nor loaded on startup.
-    /// \param[in] IP Dotted IP address. You can use * for a wildcard address, such as 128.0.0. * will ban all IP
-    /// addresses starting with 128.0.0.
-    /// \param[in] milliseconds Gives time in milli seconds for a temporary ban of the IP address.  Use 0 for a
-    /// permanent ban.
-    void AddToBanList(const char *IP, RakNet::TimeMS milliseconds = 0);
-
-    /// \brief Allows a previously banned IP to connect.
-    /// param[in] Dotted IP address. You can use * as a wildcard. An IP such as 128.0.0.* will ban all IP addresses
-    /// starting with 128.0.0.
-    void RemoveFromBanList(const char *IP);
-
-    /// \brief Allows all previously banned IPs to connect.
-    void ClearBanList(void);
-
-    /// \brief Returns true or false indicating if a particular IP is banned.
-    /// \param[in] IP Dotted IP address.
-    /// \return True if IP matches any IPs in the ban list, accounting for any wildcards. False otherwise.
-    bool IsBanned(const char *IP);
-
     /// \brief Enable or disable allowing frequent connections from the same IP adderss
     /// \details This is a security measure which is disabled by default, but can be set to true to prevent attackers
     /// from using up all connection slots.
@@ -371,19 +317,6 @@ public:
     /// \pre The sender and recipient must already be started via a successful call to Startup()
     /// \param[in] target Which system to ping
     void Ping(const SystemAddress target);
-
-    /// \brief Send a ping to the specified unconnected system.
-    /// \details The remote system, if it is Initialized, will respond with ID_PONG followed by sizeof(RakNet::TimeMS)
-    /// containing the system time the ping was sent. Default is 4 bytes - See __GET_TIME_64BIT in RakNetTypes.h System
-    /// should reply with ID_PONG if it is active
-    /// \param[in] host Either a dotted IP address or a domain name.  Can be 255.255.255.255 for LAN broadcast.
-    /// \param[in] remotePort Which port to connect to on the remote machine.
-    /// \param[in] onlyReplyOnAcceptingConnections Only request a reply if the remote system is accepting connections
-    /// \param[in] connectionSocketIndex Index into the array of socket descriptors passed to socketDescriptors in
-    /// RakPeer::Startup() to send on.
-    /// \return true on success, false on failure (unknown hostname)
-    bool Ping(const char *host, unsigned short remotePort, bool onlyReplyOnAcceptingConnections,
-              unsigned connectionSocketIndex = 0);
 
     /// \brief Returns the average of all ping times read for the specific system or -1 if none read yet
     /// \param[in] systemAddress Which system we are referring to
@@ -500,40 +433,12 @@ public:
     /// \return The current MTU size of the target system.
     int GetMTUSize(const SystemAddress target) const;
 
-    /// \brief Returns the number of IP addresses this system has internally.
-    /// \details Get the actual addresses from GetLocalIP()
-    unsigned GetNumberOfAddresses(void);
-
-    /// Returns an IP address at index 0 to GetNumberOfAddresses-1 in ipList array.
-    /// \param[in] index index into the list of IP addresses
-    /// \return The local IP address at this index
-    const char *GetLocalIP(unsigned int index);
-
-    /// Is this a local IP?
-    /// Checks if this ip is in the ipList array.
-    /// \param[in] An IP address to check, excluding the port.
-    /// \return True if this is one of the IP addresses returned by GetLocalIP
-    bool IsLocalIP(const char *ip);
-
     /// \brief Allow or disallow connection responses from any IP.
     /// \details Normally this should be false, but may be necessary when connecting to servers with multiple IP
     /// addresses.
     /// \param[in] allow - True to allow this behavior, false to not allow. Defaults to false. Value persists between
     /// connections.
     void AllowConnectionResponseIPMigration(bool allow);
-
-    /// \brief Sends a one byte message ID_ADVERTISE_SYSTEM to the remote unconnected system.
-    /// This will send our external IP outside the LAN along with some user data to the remote system.
-    /// \pre The sender and recipient must already be started via a successful call to Initialize
-    /// \param[in] host Either a dotted IP address or a domain name
-    /// \param[in] remotePort Which port to connect to on the remote machine.
-    /// \param[in] data Optional data to append to the packet.
-    /// \param[in] dataLength Length of data in bytes.  Use 0 if no data.
-    /// \param[in] connectionSocketIndex Index into the array of socket descriptors passed to socketDescriptors in
-    /// RakPeer::Startup() to send on.
-    /// \return False if IsActive()==false or the host is unresolvable. True otherwise.
-    bool AdvertiseSystem(const char *host, unsigned short remotePort, const char *data, int dataLength,
-                         unsigned connectionSocketIndex = 0);
 
     /// \brief Controls how often to return ID_DOWNLOAD_PROGRESS for large message downloads.
     /// \details ID_DOWNLOAD_PROGRESS is returned to indicate a new partial message chunk, roughly the MTU size, has
@@ -561,23 +466,6 @@ public:
     /// \remarks Used for NAT-Punchthrough
     void SendTTL(const char *host, unsigned short remotePort, int ttl, unsigned connectionSocketIndex = 0);
 
-    // Plugin Functions
-    /// \brief Attaches a Plugin interface to an instance of the base class (RakPeer or PacketizedTCP) to run code
-    /// automatically on message receipt in the Receive call. If the plugin returns false from
-    /// PluginInterface::UsesReliabilityLayer(), which is the case for all plugins except PacketLogger, you can call
-    /// AttachPlugin() and DetachPlugin() for this plugin while RakPeer is active.
-    /// \param[in] messageHandler Pointer to the plugin to attach.
-    void AttachPlugin(PluginInterface2 *plugin);
-
-    /// \brief Detaches a Plugin interface from the instance of the base class (RakPeer or PacketizedTCP) it is attached
-    /// to.
-    ///	\details This method disables the plugin code from running automatically on base class's updates or message
-    /// receipt.
-    /// If the plugin returns false from PluginInterface::UsesReliabilityLayer(), which is the case for all plugins
-    /// except PacketLogger, you can call AttachPlugin() and DetachPlugin() for this plugin while RakPeer is active.
-    /// \param[in] messageHandler Pointer to a plugin to detach.
-    void DetachPlugin(PluginInterface2 *messageHandler);
-
     // Miscellaneous Functions
     /// \brief Puts a message back in the receive queue in case you don't want to deal with it immediately.
     /// \param[in] packet The pointer to the packet you want to push back.
@@ -597,9 +485,6 @@ public:
     /// \param[in] dataSize How many bytes to allocate for the buffer
     /// \return A packet.
     Packet *AllocatePacket(unsigned dataSize);
-
-    /// \internal
-    virtual void WriteOutOfBandHeader(RakNet::BitStream *bitStream);
 
     // Network Simulator Functions
     /// Adds simulated ping and packet loss to the outgoing data flow.
@@ -655,10 +540,6 @@ public:
     // updateBitStream should be:
     // 	BitStream updateBitStream( MAXIMUM_MTU_SIZE );
     bool RunUpdateCycle(BitStream &updateBitStream);
-
-    /// \internal
-    bool SendOutOfBand(const char *host, unsigned short remotePort, const char *data, BitSize_t dataLength,
-                       unsigned connectionSocketIndex = 0);
 
     /// \internal
     /// \brief Holds the clock differences between systems, along with the ping
@@ -759,6 +640,9 @@ protected:
     bool IsLoopbackAddress(const AddressOrGUID &systemIdentifier, bool matchPort) const;
     SystemAddress GetLoopbackAddress(void) const;
 
+    /// Whether Startup has run. Upstream spelled this endThreads, when it also stopped them.
+    bool isRunning;
+
     bool occasionalPing;  /// Do we occasionally ping the other systems?*/
     /// Store the maximum number of peers allowed to connect
     unsigned int maximumNumberOfPeers;
@@ -817,9 +701,6 @@ protected:
             CONNECT = 1
         } actionToTake;
     };
-
-    // Threadsafe, and not thread safe
-    DataStructures::List<PluginInterface2 *> pluginListTS, pluginListNTS;
 
     std::deque<RequestedConnectionStruct *> requestedConnectionQueue;
 
@@ -881,7 +762,6 @@ protected:
     uint32_t sendReceiptSerial;
     void ResetSendReceipt(void);
     void OnConnectedPong(RakNet::Time sendPingTime, RakNet::Time sendPongTime, RemoteSystemStruct *remoteSystem);
-    void CallPluginCallbacks(DataStructures::List<PluginInterface2 *> &pluginList, Packet *packet);
 };
 
 }  // namespace RakNet
