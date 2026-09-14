@@ -17,12 +17,12 @@
 #define __RELIABILITY_LAYER_H
 
 #include <deque>
+#include <map>
 #include <vector>
 
 #include "BitStream.h"
 #include "DS_Heap.h"
 #include "DS_MemoryPool.h"
-#include "DS_OrderedList.h"
 #include "DS_RangeList.h"
 #include "InternalPacket.h"
 #include "MTUSize.h"
@@ -56,7 +56,6 @@ struct SplitPacketChannel  //<SplitPacketChannel>
     // This is here for progress notifications, since progress notifications return the first packet data, if available
     InternalPacket *firstPacket;
 };
-int SplitPacketChannelComp(SplitPacketIdType const &key, SplitPacketChannel *const &data);
 
 // Helper class
 struct BPSTracker {
@@ -254,10 +253,9 @@ private:
     /// return it.  Otherwise return 0
     InternalPacket *BuildPacketFromSplitPacketList(SplitPacketIdType splitPacketId, CCTimeType time, DatagramSink *s,
                                                    SystemAddress &systemAddress, BitStream &updateBitStream);
-    InternalPacket *BuildPacketFromSplitPacketList(SplitPacketChannel *splitPacketChannel, CCTimeType time);
+    InternalPacket *BuildPacketFromSplitPacketList(SplitPacketChannel &splitPacketChannel, CCTimeType time);
 
     /// Delete any unreliable split packets that have long since expired
-    // void DeleteOldUnreliableSplitPackets( CCTimeType time );
 
     /// Creates a copy of the specified internal packet with data copied from the original starting at dataByteOffset
     /// for dataByteLength bytes. Does not copy any split data parameters as that information is always generated does
@@ -369,32 +367,19 @@ private:
     //	CCTimeType timeResendQueueNonEmpty;
     RakNet::TimeMS timeLastDatagramArrived;
 
-    // If we backoff due to packetloss, don't remeasure until all waiting resends have gone out or else we overcount
-    //	bool packetlossThisSample;
-    //	int backoffThisSample;
-    //	unsigned packetlossThisSampleResendCount;
-    //	CCTimeType lastPacketlossTime;
 
-    // DataStructures::Queue<InternalPacket*> sendPacketSet[ NUMBER_OF_PRIORITIES ];
     DataStructures::Heap<reliabilityHeapWeightType, InternalPacket *, false> outgoingPacketBuffer;
     reliabilityHeapWeightType outgoingPacketBufferNextWeights[NUMBER_OF_PRIORITIES];
     void InitHeapWeights(void);
     reliabilityHeapWeightType GetNextWeight(int priorityLevel);
-    //	unsigned int messageInSendBuffer[NUMBER_OF_PRIORITIES];
-    //	double bytesInSendBuffer[NUMBER_OF_PRIORITIES];
 
-    DataStructures::OrderedList<SplitPacketIdType, SplitPacketChannel *, SplitPacketChannelComp> splitPacketChannelList;
+    std::map<SplitPacketIdType, SplitPacketChannel> splitPacketChannelList;
 
     MessageNumberType sendReliableMessageNumberIndex;
     MessageNumberType internalOrderIndex;
-    // unsigned int windowSize;
-    // RakNet::BitStream updateBitStream;
     bool deadConnection, cheater;
     SplitPacketIdType splitPacketId;
     RakNet::TimeMS timeoutTime;  // How long to wait in MS before timing someone out
-    // int MAX_AVERAGE_PACKETS_PER_SECOND; // Name says it all
-    //	int RECEIVED_PACKET_LOG_LENGTH, requestedReceivedPacketLogLength; // How big the receivedPackets array is
-    //	unsigned int *receivedPackets;
     RakNetStatistics statistics;
 
     // Algorithm for blending ordered and sequenced on the same channel:
