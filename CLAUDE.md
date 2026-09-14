@@ -21,11 +21,18 @@ Endgate is a modern, high-performance proxy for Minecraft: Bedrock Edition. Its 
 ## Pipeline
 
 - Packets move through a statically typed handler chain. Each stage declares what it reads and what it emits, so a chain wired wrong fails to build. Netty erases every message to `Object` and finds out at runtime; wangle's `Handler<Rin, Rout, Win, Wout>` is the shape worth copying.
-- Stages push, they are never polled. BDS polls because a game server has a tick to drain on, and a proxy has no tick — its only clock is packet arrival, so a poll would add latency to invent one. `fireRead` may be called any number of times for one input, which is how a batch fans out into packets.
+- Stages push, they are never polled. BDS polls because a game server has a tick to drain on, and a proxy has no tick — its only clock is packet arrival, so a poll would add latency to invent one.
+- That rule is about the chain, not the transport. A reliability layer has retransmission timers, a delayed-ACK deadline and an idle-timeout deadline, and none of them can be driven by arrival — they exist for when nothing arrives. One `asio::steady_timer` per listener at 10 ms, RakNet's own cadence, is a clock rather than a poll: arrival still drives transmission directly, so the timer adds latency to nothing a peer sends. It has to be this way round — the congestion window is ACK-clocked with no pacer, and the only socket write lives inside `ReliabilityLayer::Update`, so waiting for the tick would cap throughput at cwnd per tick instead of per RTT, and a design that never called `Update` on arrival would be silent rather than merely slow. `fireRead` may be called any number of times for one input, which is how a batch fans out into packets.
 - Stages are never inserted or removed. Runtime pipeline surgery is the part of Netty hardest to reconcile with static typing, so a stage that would be removed is present from the start and gated on a flag, the way BDS gates compression and encryption.
 - Every chain ends in a sink. Neither Netty nor wangle has one — both log that a message reached the end of the pipeline and drop it. Ours is a typed object, so an unterminated chain is a compile error rather than a warning in production.
 - A stage may emit a raw `ByteBuf` or a decoded packet, and the next stage overloads on both. That is how a packet we have no interest in is forwarded without being decoded, which is most of why Velocity is fast.
 - `ByteBuf` keeps Netty's name and folly `IOBuf`'s shape, and is ours: segments over shared storage, so a slice copies nothing, a header goes in front without moving the payload, and the chain hands straight to a scatter-gather write.
+
+## Concurrency
+
+- One `Endpoint` is one socket, one `asio::strand`, and every connection that arrived on it. Everything touching a reliability layer, a session registry or that socket runs on the strand. This is not tidiness: `ReliabilityLayer` has no mutex, no atomic and no lock anywhere, and asio's own documentation calls a shared socket unsafe for concurrent asynchronous operations — its carve-out covers synchronous calls only. The strand is the whole guarantee for both.
+- The strand is per listener, not per connection, for that second reason: connections on one socket must share one, or two of them can be inside `async_send_to` at once.
+- `ConnectionManager` still runs the io_context on several threads; the strand serialises our handlers, not the context.
 
 ## Build
 
@@ -41,10 +48,11 @@ Endgate is a modern, high-performance proxy for Minecraft: Bedrock Edition. Its 
 - Take the design, not the dependency. A framework we would use one idea from — folly and wangle for `IOBuf` and their Netty-shaped pipeline, say — is not worth its transitive weight or a second event loop beside asio. Port the idea, name where it came from, and pay only for what we use.
 - **RakNet** — vendored, not a Conan dependency. This is the one exception to "no vendored copies": we take RakNet's reliability layer as a *port* we own, not a library we consume. `src/endgate/network/raknet/` holds `ReliabilityLayer`, `CCRakNetSlidingWindow` and `BitStream`, carried over from `raknet/4.081-mojang` in the endstone recipe with all six of its patches applied — including the ACK/NAK range bound, which is a security fix. Re-derive from that recipe, never from the upstream tarball.
   - Upstream filenames are kept so each file traces back to its RakNet counterpart.
-  - `RakNetSocket2` and `RakNetRandom` are gone: the layer sends through `endgate::raknet::DatagramSink` (`sink.h`), and the session owns the peer address.
+  - `RakNetSocket2` and `RakNetRandom` are gone. The reliability layer calls back into the `RakPeer` that owns it — `SendDatagram` for a datagram it has decided to send, `OnReliabilityLayerNotification` for one it dropped — and the `SystemAddress` upstream already threaded through those signatures says which peer. No interface stands between them: there is exactly one implementor, and a virtual call per datagram buys nothing.
   - Every file keeps its upstream name, including the three we reimplemented: `GetTime.cpp` is a `std::chrono` clock, `RakMemoryOverride.cpp` backs RakNet's allocator hooks with the default allocator, `RakNetTypes.cpp` holds the one `SystemAddress` constructor still needed.
   - The port is formatted to endgate's `.clang-format` like any other source — it is code we own, not a dependency we track. clang-tidy stays off for the folder (`.clang-tidy` with `Checks: '-*'`): its checks would demand redesign, not formatting, and the point of the port is to keep RakNet's proven logic intact.
-  - `PluginInterface2` is retained deliberately. It is the reliability layer's observability seam: 23 of its 31 call sites report malformed datagrams, which is how the ACK/NAK bound surfaces an attack.
+  - `PluginInterface2` is not in the tree and never was. `OnReliabilityLayerNotification` is what it collapsed into: 22 of the layer's 23 calls into `RakPeer` are reports rather than sends, and they are the only surface the ACK/NAK range bound has, because `HandleSocketReceiveFromConnectedPlayer`'s return value is discarded by every caller.
+  - `RakPeer` owns no thread, no socket and no receive queue. `ConnectionManager` calls `RunUpdateCycle` — upstream's own `RAKPEER_USER_THREADED` contract — and `Endpoint` owns the socket. Of the twelve places upstream queued a `Packet` for a caller to drain, one carried a user message; it fires `channelRead`, and the rest are channel lifecycle or unconnected traffic endgate answers itself.
 
 ## Approach
 
