@@ -2745,9 +2745,7 @@ void RakPeer::HandleReceivedMessages(RemoteSystemStruct *remoteSystem, SystemAdd
 
                     remoteSystem->connectMode = RemoteSystemStruct::DISCONNECT_ASAP_SILENTLY;
                 }
-                else {
-                    rakFree_Ex(data, _FILE_AND_LINE_);
-                }
+                rakFree_Ex(data, _FILE_AND_LINE_);
             }
             else if ((unsigned char)(data)[0] == ID_CONNECTION_REQUEST_ACCEPTED) {
                 if (byteSize > sizeof(MessageID) + sizeof(unsigned int) + sizeof(unsigned short) + sizeof(SystemIndex) +
