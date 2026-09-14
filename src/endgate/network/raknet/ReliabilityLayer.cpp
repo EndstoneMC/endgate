@@ -30,12 +30,6 @@ double Ceil(double d)
     return (int)(d + 1.0);
 }
 
-// #if defined(new)
-// #pragma push_macro("new")
-// #undef new
-// #define RELIABILITY_LAYER_NEW_UNDEF_ALLOCATING_QUEUE
-// #endif
-
 // #define _DEBUG_LOGGER
 
 static const CCTimeType MAX_TIME_BETWEEN_PACKETS = 350000;  // 350 milliseconds
@@ -220,11 +214,6 @@ struct DatagramHeaderFormat {
 // #define _DEBUG_LOGGER
 #ifdef _DEBUG_LOGGER
 #endif
-#endif
-
-// #define DEBUG_SPLIT_PACKET_PROBLEMS
-#if defined(DEBUG_SPLIT_PACKET_PROBLEMS)
-static int waitFlag = -1;
 #endif
 
 using namespace RakNet;
@@ -3398,12 +3387,6 @@ reliabilityHeapWeightType ReliabilityLayer::GetNextWeight(int priorityLevel)
     }
     return next;
 }
-
-//-------------------------------------------------------------------------------------------------------
-// #if defined(RELIABILITY_LAYER_NEW_UNDEF_ALLOCATING_QUEUE)
-// #pragma pop_macro("new")
-// #undef RELIABILITY_LAYER_NEW_UNDEF_ALLOCATING_QUEUE
-// #endif
 
 #ifdef _MSC_VER
 #pragma warning(pop)

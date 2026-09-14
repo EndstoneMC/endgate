@@ -15,10 +15,6 @@
 #ifndef __MESSAGE_IDENTIFIERS_H
 #define __MESSAGE_IDENTIFIERS_H
 
-#if defined(RAKNET_USE_CUSTOM_PACKET_IDS)
-#include "CustomPacketIdentifiers.h"
-#else
-
 enum OutOfBandIdentifiers {
     ID_NAT_ESTABLISH_UNIDIRECTIONAL,
     ID_NAT_ESTABLISH_BIDIRECTIONAL,
@@ -448,7 +444,5 @@ enum DefaultMessageIDTypes {
     ID_USER_PACKET_ENUM
     //-------------------------------------------------------------------------------------------------------------
 };
-
-#endif  // RAKNET_USE_CUSTOM_PACKET_IDS
 
 #endif
