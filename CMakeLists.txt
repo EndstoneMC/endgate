@@ -18,6 +18,7 @@ find_package(libdeflate REQUIRED)
 find_package(Snappy REQUIRED)
 
 add_library(endgate_raknet STATIC
+        src/endgate/network/raknet/ReliabilityLayer.cpp
         src/endgate/network/raknet/CCRakNetSlidingWindow.cpp
         src/endgate/network/raknet/BitStream.cpp
         src/endgate/network/raknet/GetTime.cpp

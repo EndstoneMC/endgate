@@ -39,7 +39,7 @@
 
 namespace RakNet {
 
-class RakNetSocket2;
+class RakPeer;
 
 /// Forward declarations
 typedef uint64_t reliabilityHeapWeightType;
@@ -122,7 +122,7 @@ public:
     /// \retval true Success
     /// \retval false Modified packet
     bool HandleSocketReceiveFromConnectedPlayer(const char *buffer, unsigned int length, SystemAddress &systemAddress,
-                                                int MTUSize, RakNetSocket2 *s, CCTimeType timeRead,
+                                                int MTUSize, RakPeer *peer, CCTimeType timeRead,
                                                 BitStream &updateBitStream);
 
     /// This allocates bytes and writes a user-level message to those bytes.
@@ -152,7 +152,7 @@ public:
     /// \param[in] MTUSize maximum datagram size
     /// \param[in] time current system time
     /// \param[in] maxBitsPerSecond if non-zero, enforces that outgoing bandwidth does not exceed this amount
-    void Update(RakNetSocket2 *s, SystemAddress &systemAddress, int MTUSize, CCTimeType time,
+    void Update(RakPeer *peer, SystemAddress &systemAddress, int MTUSize, CCTimeType time,
                 unsigned bitsPerSecondLimit, BitStream &updateBitStream);
 
     /// Were you ever unable to deliver a packet despite retries?
@@ -183,7 +183,7 @@ private:
     /// \param[in] s The socket used for sending data
     /// \param[in] systemAddress The address and port to send to
     /// \param[in] bitStream The data to send.
-    void SendBitStream(RakNetSocket2 *s, SystemAddress &systemAddress, RakNet::BitStream *bitStream,
+    void SendBitStream(RakPeer *peer, SystemAddress &systemAddress, RakNet::BitStream *bitStream,
                        CCTimeType currentTime);
 
     /// Parse an internalPacket and create a bitstream to represent this data
@@ -227,7 +227,7 @@ private:
 
     /// Take all split chunks with the specified splitPacketId and try to reconstruct a packet. If we can, allocate and
     /// return it.  Otherwise return 0
-    InternalPacket *BuildPacketFromSplitPacketList(SplitPacketIdType splitPacketId, CCTimeType time, RakNetSocket2 *s,
+    InternalPacket *BuildPacketFromSplitPacketList(SplitPacketIdType splitPacketId, CCTimeType time, RakPeer *peer,
                                                    SystemAddress &systemAddress, BitStream &updateBitStream);
     InternalPacket *BuildPacketFromSplitPacketList(SplitPacketChannel &splitPacketChannel, CCTimeType time);
 
@@ -410,7 +410,7 @@ private:
     void AddToListTail(InternalPacket *internalPacket, bool modifyUnacknowledgedBytes);
     void PopListHead(bool modifyUnacknowledgedBytes);
     bool IsResendQueueEmpty(void) const;
-    void SendACKs(RakNetSocket2 *s, SystemAddress &systemAddress, CCTimeType time, BitStream &updateBitStream);
+    void SendACKs(RakPeer *peer, SystemAddress &systemAddress, CCTimeType time, BitStream &updateBitStream);
 
     std::vector<InternalPacket *> packetsToSendThisUpdate;
     std::vector<bool> packetsToDeallocThisUpdate;

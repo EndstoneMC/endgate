@@ -541,6 +541,19 @@ public:
     // 	BitStream updateBitStream( MAXIMUM_MTU_SIZE );
     bool RunUpdateCycle(BitStream &updateBitStream);
 
+    /// Where a reliability layer puts a datagram it has decided to send. RakPeer no longer owns a
+    /// socket, so this is the seam its owner writes through.
+    ///
+    /// @see RakNetSocket2::Send
+    void SendDatagram(const SystemAddress &systemAddress, const char *data, int length);
+
+    /// What a reliability layer reports about a datagram it dropped. Twenty-two of its twenty-three
+    /// calls into RakPeer are this one, and they are how the ACK/NAK range bound surfaces an attack:
+    /// HandleSocketReceiveFromConnectedPlayer's return value is discarded by every caller.
+    ///
+    /// @see PluginInterface2::OnReliabilityLayerNotification
+    void OnReliabilityLayerNotification(const SystemAddress &systemAddress, const char *errorMessage, bool isError);
+
     /// \internal
     /// \brief Holds the clock differences between systems, along with the ping
     struct PingAndClockDifferential {
