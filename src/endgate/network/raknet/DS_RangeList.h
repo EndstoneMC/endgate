@@ -16,8 +16,10 @@
 #ifndef __RANGE_LIST_H
 #define __RANGE_LIST_H
 
+#include <algorithm>
+#include <vector>
+
 #include "BitStream.h"
-#include "DS_OrderedList.h"
 #include "RakMemoryOverride.h"
 #include "RakNetDefines.h"
 
@@ -36,21 +38,8 @@ struct RangeNode {
 };
 
 template <class range_type>
-int RangeNodeComp(const range_type &a, const RangeNode<range_type> &b)
-{
-    if (a < b.minIndex) {
-        return -1;
-    }
-    if (a == b.minIndex) {
-        return 0;
-    }
-    return 1;
-}
-
-template <class range_type>
 class RangeList {
 public:
-    RangeList();
     ~RangeList();
     void Insert(range_type index);
     void Clear(void);
@@ -59,21 +48,21 @@ public:
     RakNet::BitSize_t Serialize(RakNet::BitStream *in, RakNet::BitSize_t maxBits, bool clearSerialized);
     bool Deserialize(RakNet::BitStream *out);
 
-    DataStructures::OrderedList<range_type, RangeNode<range_type>, RangeNodeComp<range_type>> ranges;
+    std::vector<RangeNode<range_type>> ranges;
 };
 
 template <class range_type>
 RakNet::BitSize_t RangeList<range_type>::Serialize(RakNet::BitStream *in, RakNet::BitSize_t maxBits,
                                                    bool clearSerialized)
 {
-    RakAssert(ranges.Size() < (unsigned short)-1);
+    RakAssert(ranges.size() < (unsigned short)-1);
     RakNet::BitStream tempBS;
     RakNet::BitSize_t bitsWritten;
     unsigned short countWritten;
     unsigned i;
     countWritten = 0;
     bitsWritten = 0;
-    for (i = 0; i < ranges.Size(); i++) {
+    for (i = 0; i < ranges.size(); i++) {
         if ((int)sizeof(unsigned short) * 8 + bitsWritten + (int)sizeof(range_type) * 8 * 2 + 1 > maxBits) {
             break;
         }
@@ -101,11 +90,7 @@ RakNet::BitSize_t RangeList<range_type>::Serialize(RakNet::BitStream *in, RakNet
     in->Write(&tempBS, tempBS.GetNumberOfBitsUsed());
 
     if (clearSerialized && countWritten) {
-        unsigned rangeSize = ranges.Size();
-        for (i = 0; i < rangeSize - countWritten; i++) {
-            ranges[i] = ranges[i + countWritten];
-        }
-        ranges.RemoveFromEnd(countWritten);
+        ranges.erase(ranges.begin(), ranges.begin() + countWritten);
     }
 
     return bitsWritten;
@@ -113,7 +98,7 @@ RakNet::BitSize_t RangeList<range_type>::Serialize(RakNet::BitStream *in, RakNet
 template <class range_type>
 bool RangeList<range_type>::Deserialize(RakNet::BitStream *out)
 {
-    ranges.Clear(true, _FILE_AND_LINE_);
+    ranges.clear();
     unsigned short count;
     out->AlignReadToByteBoundary();
     out->Read(count);
@@ -138,15 +123,9 @@ bool RangeList<range_type>::Deserialize(RakNet::BitStream *out)
             max = min;
         }
 
-        ranges.InsertAtEnd(RangeNode<range_type>(min, max), _FILE_AND_LINE_);
+        ranges.push_back(RangeNode<range_type>(min, max));
     }
     return true;
-}
-
-template <class range_type>
-RangeList<range_type>::RangeList()
-{
-    RangeNodeComp<range_type>(0, RangeNode<range_type>());
 }
 
 template <class range_type>
@@ -158,20 +137,24 @@ RangeList<range_type>::~RangeList()
 template <class range_type>
 void RangeList<range_type>::Insert(range_type index)
 {
-    if (ranges.Size() == 0) {
-        ranges.Insert(index, RangeNode<range_type>(index, index), true, _FILE_AND_LINE_);
+    if (ranges.empty()) {
+        ranges.push_back(RangeNode<range_type>(index, index));
         return;
     }
 
-    bool objectExists;
-    unsigned insertionIndex = ranges.GetIndexFromKey(index, &objectExists);
-    if (insertionIndex == ranges.Size()) {
+    auto insertionPoint =
+        std::lower_bound(ranges.begin(), ranges.end(), index,
+                         [](const RangeNode<range_type> &node, const range_type &key) {
+                             return node.minIndex < key;
+                         });
+    unsigned insertionIndex = (unsigned)(insertionPoint - ranges.begin());
+    if (insertionIndex == ranges.size()) {
         if (index == ranges[insertionIndex - 1].maxIndex + (range_type)1) {
             ranges[insertionIndex - 1].maxIndex++;
         }
         else if (index > ranges[insertionIndex - 1].maxIndex + (range_type)1) {
             // Insert at end
-            ranges.Insert(index, RangeNode<range_type>(index, index), true, _FILE_AND_LINE_);
+            ranges.push_back(RangeNode<range_type>(index, index));
         }
 
         return;
@@ -179,7 +162,7 @@ void RangeList<range_type>::Insert(range_type index)
 
     if (index < ranges[insertionIndex].minIndex - (range_type)1) {
         // Insert here
-        ranges.InsertAtIndex(RangeNode<range_type>(index, index), insertionIndex, _FILE_AND_LINE_);
+        ranges.insert(insertionPoint, RangeNode<range_type>(index, index));
 
         return;
     }
@@ -189,7 +172,7 @@ void RangeList<range_type>::Insert(range_type index)
         if (insertionIndex > 0 &&
             ranges[insertionIndex - 1].maxIndex + (range_type)1 == ranges[insertionIndex].minIndex) {
             ranges[insertionIndex - 1].maxIndex = ranges[insertionIndex].maxIndex;
-            ranges.RemoveAtIndex(insertionIndex);
+            ranges.erase(ranges.begin() + insertionIndex);
         }
 
         return;
@@ -201,10 +184,10 @@ void RangeList<range_type>::Insert(range_type index)
     else if (index == ranges[insertionIndex].maxIndex + (range_type)1) {
         // Increase maxIndex and join right
         ranges[insertionIndex].maxIndex++;
-        if (insertionIndex < ranges.Size() - 1 &&
+        if (insertionIndex < ranges.size() - 1 &&
             ranges[insertionIndex + (range_type)1].minIndex == ranges[insertionIndex].maxIndex + (range_type)1) {
             ranges[insertionIndex + 1].minIndex = ranges[insertionIndex].minIndex;
-            ranges.RemoveAtIndex(insertionIndex);
+            ranges.erase(ranges.begin() + insertionIndex);
         }
 
         return;
@@ -214,20 +197,20 @@ void RangeList<range_type>::Insert(range_type index)
 template <class range_type>
 void RangeList<range_type>::Clear(void)
 {
-    ranges.Clear(true, _FILE_AND_LINE_);
+    ranges.clear();
 }
 
 template <class range_type>
 unsigned RangeList<range_type>::Size(void) const
 {
-    return ranges.Size();
+    return (unsigned)ranges.size();
 }
 
 template <class range_type>
 unsigned RangeList<range_type>::RangeSum(void) const
 {
     unsigned sum = 0, i;
-    for (i = 0; i < ranges.Size(); i++) {
+    for (i = 0; i < ranges.size(); i++) {
         sum += ranges[i].maxIndex - ranges[i].minIndex + 1;
     }
     return sum;

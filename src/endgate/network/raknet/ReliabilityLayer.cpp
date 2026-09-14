@@ -551,22 +551,18 @@ return true;
     }
     if (dhf.isACK) {
         DatagramSequenceNumberType datagramNumber;
-        // datagramNumber=dhf.datagramNumber;
-
-
-        //		congestionManager.OnAck(timeRead, rtt, dhf.hasBAndAS, dhf.B, dhf.AS, totalUserDataBytesAcked );
 
         incomingAcks.Clear();
         if (incomingAcks.Deserialize(&socketData) == false) {
             s->onReliabilityNotification("incomingAcks.Deserialize failed", true);
 return false;
         }
-        if (incomingAcks.ranges.Size() > MAX_ACKNOWLEDGEMENT_RANGES_PER_DATAGRAM) {
+        if (incomingAcks.ranges.size() > MAX_ACKNOWLEDGEMENT_RANGES_PER_DATAGRAM) {
             s->onReliabilityNotification("number of ACK ranges in this datagram exceeds the maximum allowed", true);
 return false;
         }
         uint32_t totalAcknowledgementsThisDatagram = 0;
-        for (i = 0; i < incomingAcks.ranges.Size(); i++) {
+        for (i = 0; i < incomingAcks.ranges.size(); i++) {
             if (incomingAcks.ranges[i].minIndex > incomingAcks.ranges[i].maxIndex ||
                 (incomingAcks.ranges[i].maxIndex == (uint24_t)(0xFFFFFFFF))) {
                 RakAssert(incomingAcks.ranges[i].minIndex <= incomingAcks.ranges[i].maxIndex);
@@ -648,12 +644,12 @@ return false;
             s->onReliabilityNotification("incomingNAKs.Deserialize failed", true);
 return false;
         }
-        if (incomingNAKs.ranges.Size() > MAX_ACKNOWLEDGEMENT_RANGES_PER_DATAGRAM) {
+        if (incomingNAKs.ranges.size() > MAX_ACKNOWLEDGEMENT_RANGES_PER_DATAGRAM) {
             s->onReliabilityNotification("number of NAK ranges in this datagram exceeds the maximum allowed", true);
 return false;
         }
         uint32_t totalAcknowledgementsThisDatagram = 0;
-        for (i = 0; i < incomingNAKs.ranges.Size(); i++) {
+        for (i = 0; i < incomingNAKs.ranges.size(); i++) {
             if (incomingNAKs.ranges[i].minIndex > incomingNAKs.ranges[i].maxIndex ||
                 (incomingNAKs.ranges[i].maxIndex == (uint24_t)(0xFFFFFFFF))) {
                 RakAssert(incomingNAKs.ranges[i].minIndex <= incomingNAKs.ranges[i].maxIndex);
