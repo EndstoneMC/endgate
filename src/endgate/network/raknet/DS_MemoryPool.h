@@ -24,8 +24,6 @@
 // DS_MEMORY_POOL_MAX_FREE_PAGES must be > 1
 #define DS_MEMORY_POOL_MAX_FREE_PAGES 4
 
-// #define _DISABLE_MEMORY_POOL
-
 namespace DataStructures {
 /// Very fast memory pool for allocating and deallocating structures that don't have constructors or destructors.
 /// Contains a list of pages, each of which has an array of the user structures
@@ -72,19 +70,14 @@ protected:
 template <class MemoryBlockType>
 MemoryPool<MemoryBlockType>::MemoryPool()
 {
-#ifndef _DISABLE_MEMORY_POOL
-    // AllocateFirst();
     availablePagesSize = 0;
     unavailablePagesSize = 0;
     memoryPoolPageSize = 16384;
-#endif
 }
 template <class MemoryBlockType>
 MemoryPool<MemoryBlockType>::~MemoryPool()
 {
-#ifndef _DISABLE_MEMORY_POOL
     Clear(_FILE_AND_LINE_);
-#endif
 }
 
 template <class MemoryBlockType>
@@ -96,10 +89,6 @@ void MemoryPool<MemoryBlockType>::SetPageSize(int size)
 template <class MemoryBlockType>
 MemoryBlockType *MemoryPool<MemoryBlockType>::Allocate(const char *file, unsigned int line)
 {
-#ifdef _DISABLE_MEMORY_POOL
-    return (MemoryBlockType *)rakMalloc_Ex(sizeof(MemoryBlockType), file, line);
-#else
-
     if (availablePagesSize > 0) {
         MemoryBlockType *retVal;
         Page *curPage;
@@ -141,15 +130,10 @@ MemoryBlockType *MemoryPool<MemoryBlockType>::Allocate(const char *file, unsigne
     RakAssert(availablePages->availableStackSize > 1);
 
     return (MemoryBlockType *)availablePages->availableStack[--availablePages->availableStackSize];
-#endif
 }
 template <class MemoryBlockType>
 void MemoryPool<MemoryBlockType>::Release(MemoryBlockType *m, const char *file, unsigned int line)
 {
-#ifdef _DISABLE_MEMORY_POOL
-    rakFree_Ex(m, file, line);
-    return;
-#else
     // Find the page this block is in and return it.
     Page *curPage;
     MemoryWithPage *memoryWithPage = (MemoryWithPage *)m;
@@ -197,14 +181,10 @@ void MemoryPool<MemoryBlockType>::Release(MemoryBlockType *m, const char *file, 
             rakFree_Ex(curPage, file, line);
         }
     }
-#endif
 }
 template <class MemoryBlockType>
 void MemoryPool<MemoryBlockType>::Clear(const char *file, unsigned int line)
 {
-#ifdef _DISABLE_MEMORY_POOL
-    return;
-#else
     Page *cur, *freed;
 
     if (availablePagesSize > 0) {
@@ -213,7 +193,6 @@ void MemoryPool<MemoryBlockType>::Clear(const char *file, unsigned int line)
 #pragma warning(disable : 4127)  // conditional expression is constant
 #endif
         while (true)
-        // do
         {
             rakFree_Ex(cur->availableStack, file, line);
             rakFree_Ex(cur->block, file, line);
@@ -230,7 +209,6 @@ void MemoryPool<MemoryBlockType>::Clear(const char *file, unsigned int line)
     if (unavailablePagesSize > 0) {
         cur = unavailablePages;
         while (1)
-        // do
         {
             rakFree_Ex(cur->availableStack, file, line);
             rakFree_Ex(cur->block, file, line);
@@ -246,7 +224,6 @@ void MemoryPool<MemoryBlockType>::Clear(const char *file, unsigned int line)
 
     availablePagesSize = 0;
     unavailablePagesSize = 0;
-#endif
 }
 template <class MemoryBlockType>
 int MemoryPool<MemoryBlockType>::BlocksPerPage(void) const
