@@ -2693,8 +2693,8 @@ void RakPeer::HandleReceivedMessages(RemoteSystemStruct *remoteSystem, SystemAdd
 
                     // Send this info down to the game
                     endpoint->channelActive(systemAddress, remoteSystem->guid);
-                    rakFree_Ex(data, _FILE_AND_LINE_);
                 }
+                rakFree_Ex(data, _FILE_AND_LINE_);
             }
             else if ((unsigned char)data[0] == ID_CONNECTED_PONG &&
                      byteSize == sizeof(unsigned char) + sizeof(RakNet::Time) * 2) {
