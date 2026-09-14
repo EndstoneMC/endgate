@@ -407,7 +407,7 @@ void ReliabilityLayer::FreeThreadSafeMemory(void)
     ClearPacketsAndDatagrams();
 
     for (i = 0; i < splitPacketChannelList.Size(); i++) {
-        for (j = 0; j < splitPacketChannelList[i]->splitPacketList.Size(); j++) {
+        for (j = 0; j < splitPacketChannelList[i]->splitPacketList.size(); j++) {
             FreeInternalPacketData(splitPacketChannelList[i]->splitPacketList[j], _FILE_AND_LINE_);
             ReleaseToInternalPacketPool(splitPacketChannelList[i]->splitPacketList[j]);
         }
@@ -494,16 +494,16 @@ void ReliabilityLayer::FreeThreadSafeMemory(void)
 
     outgoingPacketBuffer.Clear(true, _FILE_AND_LINE_);
 
-    unreliableWithAckReceiptHistory.Clear(false, _FILE_AND_LINE_);
+    unreliableWithAckReceiptHistory.clear();
 
-    packetsToSendThisUpdate.Clear(false, _FILE_AND_LINE_);
-    packetsToSendThisUpdate.Preallocate(512, _FILE_AND_LINE_);
-    packetsToDeallocThisUpdate.Clear(false, _FILE_AND_LINE_);
-    packetsToDeallocThisUpdate.Preallocate(512, _FILE_AND_LINE_);
-    packetsToSendThisUpdateDatagramBoundaries.Clear(false, _FILE_AND_LINE_);
-    packetsToSendThisUpdateDatagramBoundaries.Preallocate(128, _FILE_AND_LINE_);
-    datagramSizesInBytes.Clear(false, _FILE_AND_LINE_);
-    datagramSizesInBytes.Preallocate(128, _FILE_AND_LINE_);
+    packetsToSendThisUpdate.clear();
+    packetsToSendThisUpdate.reserve(512);
+    packetsToDeallocThisUpdate.clear();
+    packetsToDeallocThisUpdate.reserve(512);
+    packetsToSendThisUpdateDatagramBoundaries.clear();
+    packetsToSendThisUpdateDatagramBoundaries.reserve(128);
+    datagramSizesInBytes.clear();
+    datagramSizesInBytes.reserve(128);
 
     internalPacketPool.Clear(_FILE_AND_LINE_);
 
@@ -634,9 +634,9 @@ return false;
                  datagramNumber++) {
                 CCTimeType whenSent;
 
-                if (unreliableWithAckReceiptHistory.Size() > 0) {
+                if (unreliableWithAckReceiptHistory.size() > 0) {
                     unsigned int k = 0;
-                    while (k < unreliableWithAckReceiptHistory.Size()) {
+                    while (k < unreliableWithAckReceiptHistory.size()) {
                         if (unreliableWithAckReceiptHistory[k].datagramNumber == datagramNumber) {
                             InternalPacket *ackReceipt = AllocateFromInternalPacketPool();
                             AllocInternalPacketData(ackReceipt, 5, false, _FILE_AND_LINE_);
@@ -647,7 +647,7 @@ return false;
                             outputQueue.push_back(ackReceipt);
 
                             // Remove, swap with last
-                            unreliableWithAckReceiptHistory.RemoveAtIndex(k);
+                            unreliableWithAckReceiptHistory.erase(unreliableWithAckReceiptHistory.begin() + k);
                         }
                         else {
                             k++;
@@ -1526,9 +1526,9 @@ void ReliabilityLayer::Update(DatagramSink *s, SystemAddress &systemAddress, int
         lastBpsClear = time;
     }
 
-    if (unreliableWithAckReceiptHistory.Size() > 0) {
+    if (unreliableWithAckReceiptHistory.size() > 0) {
         i = 0;
-        while (i < unreliableWithAckReceiptHistory.Size()) {
+        while (i < unreliableWithAckReceiptHistory.size()) {
             // if (unreliableWithAckReceiptHistory[i].nextActionTime < time)
             if (time - unreliableWithAckReceiptHistory[i].nextActionTime < (((CCTimeType)-1) / 2)) {
                 InternalPacket *ackReceipt = AllocateFromInternalPacketPool();
@@ -1540,7 +1540,7 @@ void ReliabilityLayer::Update(DatagramSink *s, SystemAddress &systemAddress, int
                 outputQueue.push_back(ackReceipt);
 
                 // Remove, swap with last
-                unreliableWithAckReceiptHistory.RemoveAtIndex(i);
+                unreliableWithAckReceiptHistory.erase(unreliableWithAckReceiptHistory.begin() + i);
             }
             else {
                 i++;
@@ -1640,7 +1640,7 @@ void ReliabilityLayer::Update(DatagramSink *s, SystemAddress &systemAddress, int
                    ((int)BITS_TO_BYTES(allDatagramSizesSoFar) < transmissionBandwidth ||
                     // This condition means if we want to send a datagram pair, and only have one datagram buffered,
                     // exceed bandwidth to add another
-                    (countdownToNextPacketPair == 0 && datagramsToSendThisUpdateIsPair.Size() == 1))) {
+                    (countdownToNextPacketPair == 0 && datagramsToSendThisUpdateIsPair.size() == 1))) {
                 // Fill with packets until MTU is reached
                 //	for ( i = 0; i < NUMBER_OF_PRIORITIES; i++ )
                 //	{
@@ -1758,13 +1758,11 @@ void ReliabilityLayer::Update(DatagramSink *s, SystemAddress &systemAddress, int
                         sendReliableMessageNumberIndex++;
                     }
                     else if (internalPacket->reliability == UNRELIABLE_WITH_ACK_RECEIPT) {
-                        unreliableWithAckReceiptHistory.Push(
-                            UnreliableWithAckReceiptNode(
-                                congestionManager.GetNextDatagramSequenceNumber() +
-                                    packetsToSendThisUpdateDatagramBoundaries.Size(),
-                                internalPacket->sendReceiptSerial,
-                                congestionManager.GetRTOForRetransmission(internalPacket->timesSent + 1) + time),
-                            _FILE_AND_LINE_);
+                        unreliableWithAckReceiptHistory.push_back(UnreliableWithAckReceiptNode(
+                            congestionManager.GetNextDatagramSequenceNumber() +
+                                (unsigned int)packetsToSendThisUpdateDatagramBoundaries.size(),
+                            internalPacket->sendReceiptSerial,
+                            congestionManager.GetRTOForRetransmission(internalPacket->timesSent + 1) + time));
                     }
 
                     // If isReliable is false, the packet and its contents will be added to a list to be freed in
@@ -1802,7 +1800,7 @@ pushedAnything = true;
             }
         }
 
-        for (unsigned int datagramIndex = 0; datagramIndex < packetsToSendThisUpdateDatagramBoundaries.Size();
+        for (unsigned int datagramIndex = 0; datagramIndex < packetsToSendThisUpdateDatagramBoundaries.size();
              datagramIndex++) {
             if (datagramIndex > 0) {
                 dhf.isContinuousSend = true;
@@ -2585,12 +2583,12 @@ void ReliabilityLayer::InsertIntoSplitPacketList(InternalPacket *internalPacket,
         newChannel->firstPacket = 0;
         index = splitPacketChannelList.Insert(internalPacket->splitPacketId, newChannel, true, __FILE__, __LINE__);
         // Preallocate to the final size, to avoid runtime copies
-        newChannel->splitPacketList.Preallocate(internalPacket->splitPacketCount, __FILE__, __LINE__);
+        newChannel->splitPacketList.reserve(internalPacket->splitPacketCount);
 
     }
 
     // Insert the packet into the SplitPacketChannel
-    splitPacketChannelList[index]->splitPacketList.Insert(internalPacket, __FILE__, __LINE__);
+    splitPacketChannelList[index]->splitPacketList.push_back(internalPacket);
     splitPacketChannelList[index]->lastUpdateTime = time;
 
     // If the index is 0, then this is the first packet. Record this so it can be returned to the user with download
@@ -2602,9 +2600,9 @@ void ReliabilityLayer::InsertIntoSplitPacketList(InternalPacket *internalPacket,
     // Return download progress if we have the first packet, the list is not complete, and there are enough packets to
     // justify it
     if (splitMessageProgressInterval && splitPacketChannelList[index]->firstPacket &&
-        splitPacketChannelList[index]->splitPacketList.Size() !=
+        splitPacketChannelList[index]->splitPacketList.size() !=
             splitPacketChannelList[index]->firstPacket->splitPacketCount &&
-        (splitPacketChannelList[index]->splitPacketList.Size() % splitMessageProgressInterval) == 0) {
+        (splitPacketChannelList[index]->splitPacketList.size() % splitMessageProgressInterval) == 0) {
         // Return ID_DOWNLOAD_PROGRESS
         // Write splitPacketIndex (SplitPacketIndexType)
         // Write splitPacketCount (SplitPacketIndexType)
@@ -2617,7 +2615,7 @@ void ReliabilityLayer::InsertIntoSplitPacketList(InternalPacket *internalPacket,
         progressIndicator->dataBitLength = BYTES_TO_BITS(length);
         progressIndicator->data[0] = (MessageID)ID_DOWNLOAD_PROGRESS;
         unsigned int temp;
-        temp = splitPacketChannelList[index]->splitPacketList.Size();
+        temp = (unsigned int)splitPacketChannelList[index]->splitPacketList.size();
         memcpy(progressIndicator->data + sizeof(MessageID), &temp, sizeof(unsigned int));
         temp = (unsigned int)internalPacket->splitPacketCount;
         memcpy(progressIndicator->data + sizeof(MessageID) + sizeof(unsigned int) * 1, &temp, sizeof(unsigned int));
@@ -2647,7 +2645,7 @@ InternalPacket *ReliabilityLayer::BuildPacketFromSplitPacketList(SplitPacketChan
     // Reconstruct
     internalPacket = CreateInternalPacketCopy(splitPacketChannel->splitPacketList[0], 0, 0, time);
     internalPacket->dataBitLength = 0;
-    for (j = 0; j < splitPacketChannel->splitPacketList.Size(); j++) {
+    for (j = 0; j < splitPacketChannel->splitPacketList.size(); j++) {
         internalPacket->dataBitLength += splitPacketChannel->splitPacketList[j]->dataBitLength;
     }
     // splitPacketPartLength=BITS_TO_BYTES(splitPacketChannel->firstPacket->dataBitLength);
@@ -2657,14 +2655,14 @@ InternalPacket *ReliabilityLayer::BuildPacketFromSplitPacketList(SplitPacketChan
     internalPacket->allocationScheme = InternalPacket::NORMAL;
 
     BitSize_t offset = 0;
-    for (j = 0; j < splitPacketChannel->splitPacketList.Size(); j++) {
+    for (j = 0; j < splitPacketChannel->splitPacketList.size(); j++) {
         splitPacket = splitPacketChannel->splitPacketList[j];
         memcpy(internalPacket->data + BITS_TO_BYTES(offset), splitPacket->data,
                (size_t)BITS_TO_BYTES(splitPacketChannel->splitPacketList[j]->dataBitLength));
         offset += splitPacketChannel->splitPacketList[j]->dataBitLength;
     }
 
-    for (j = 0; j < splitPacketChannel->splitPacketList.Size(); j++) {
+    for (j = 0; j < splitPacketChannel->splitPacketList.size(); j++) {
         FreeInternalPacketData(splitPacketChannel->splitPacketList[j], _FILE_AND_LINE_);
         ReleaseToInternalPacketPool(splitPacketChannel->splitPacketList[j]);
     }
@@ -2686,7 +2684,7 @@ InternalPacket *ReliabilityLayer::BuildPacketFromSplitPacketList(SplitPacketIdTy
     i = splitPacketChannelList.GetIndexFromKey(splitPacketId, &objectExists);
     splitPacketChannel = splitPacketChannelList[i];
 
-    if (splitPacketChannel->splitPacketList.Size() == splitPacketChannel->splitPacketList[0]->splitPacketCount)
+    if (splitPacketChannel->splitPacketList.size() == splitPacketChannel->splitPacketList[0]->splitPacketCount)
     {
         // Ack immediately, because for large files this can take a long time
         SendACKs(s, systemAddress, time, updateBitStream);
@@ -2889,11 +2887,11 @@ CCTimeType ReliabilityLayer::GetAckPing(void) const
 //-------------------------------------------------------------------------------------------------------
 void ReliabilityLayer::ResetPacketsAndDatagrams(void)
 {
-    packetsToSendThisUpdate.Clear(true, _FILE_AND_LINE_);
-    packetsToDeallocThisUpdate.Clear(true, _FILE_AND_LINE_);
-    packetsToSendThisUpdateDatagramBoundaries.Clear(true, _FILE_AND_LINE_);
-    datagramsToSendThisUpdateIsPair.Clear(true, _FILE_AND_LINE_);
-    datagramSizesInBytes.Clear(true, _FILE_AND_LINE_);
+    packetsToSendThisUpdate.clear();
+    packetsToDeallocThisUpdate.clear();
+    packetsToSendThisUpdateDatagramBoundaries.clear();
+    datagramsToSendThisUpdateIsPair.clear();
+    datagramSizesInBytes.clear();
     datagramSizeSoFar = 0;
 }
 //-------------------------------------------------------------------------------------------------------
@@ -2904,8 +2902,8 @@ void ReliabilityLayer::PushPacket(CCTimeType time, InternalPacket *internalPacke
     datagramSizeSoFar += bitsForThisPacket;
     RakAssert(BITS_TO_BYTES(datagramSizeSoFar) < MAXIMUM_MTU_SIZE - UDP_HEADER_SIZE);
     allDatagramSizesSoFar += bitsForThisPacket;
-    packetsToSendThisUpdate.Push(internalPacket, _FILE_AND_LINE_);
-    packetsToDeallocThisUpdate.Push(isReliable == false, _FILE_AND_LINE_);
+    packetsToSendThisUpdate.push_back(internalPacket);
+    packetsToDeallocThisUpdate.push_back(isReliable == false);
     RakAssert(internalPacket->headerLength == GetMessageHeaderLengthBits(internalPacket));
 
     // This code tells me how much time elapses between when you send, and when the message actually goes out
@@ -2925,10 +2923,10 @@ void ReliabilityLayer::PushPacket(CCTimeType time, InternalPacket *internalPacke
 void ReliabilityLayer::PushDatagram(void)
 {
     if (datagramSizeSoFar > 0) {
-        packetsToSendThisUpdateDatagramBoundaries.Push(packetsToSendThisUpdate.Size(), _FILE_AND_LINE_);
-        datagramsToSendThisUpdateIsPair.Push(false, _FILE_AND_LINE_);
+        packetsToSendThisUpdateDatagramBoundaries.push_back((unsigned int)packetsToSendThisUpdate.size());
+        datagramsToSendThisUpdateIsPair.push_back(false);
         RakAssert(BITS_TO_BYTES(datagramSizeSoFar) < MAXIMUM_MTU_SIZE - UDP_HEADER_SIZE);
-        datagramSizesInBytes.Push(BITS_TO_BYTES(datagramSizeSoFar), _FILE_AND_LINE_);
+        datagramSizesInBytes.push_back(BITS_TO_BYTES(datagramSizeSoFar));
         datagramSizeSoFar = 0;
 
         // Disable packet pairs
@@ -2946,9 +2944,9 @@ void ReliabilityLayer::PushDatagram(void)
 //-------------------------------------------------------------------------------------------------------
 bool ReliabilityLayer::TagMostRecentPushAsSecondOfPacketPair(void)
 {
-    if (datagramsToSendThisUpdateIsPair.Size() >= 2) {
-        datagramsToSendThisUpdateIsPair[datagramsToSendThisUpdateIsPair.Size() - 2] = true;
-        datagramsToSendThisUpdateIsPair[datagramsToSendThisUpdateIsPair.Size() - 1] = true;
+    if (datagramsToSendThisUpdateIsPair.size() >= 2) {
+        datagramsToSendThisUpdateIsPair[datagramsToSendThisUpdateIsPair.size() - 2] = true;
+        datagramsToSendThisUpdateIsPair[datagramsToSendThisUpdateIsPair.size() - 1] = true;
         return true;
     }
     return false;
@@ -2957,7 +2955,7 @@ bool ReliabilityLayer::TagMostRecentPushAsSecondOfPacketPair(void)
 void ReliabilityLayer::ClearPacketsAndDatagrams(void)
 {
     unsigned int i;
-    for (i = 0; i < packetsToDeallocThisUpdate.Size(); i++) {
+    for (i = 0; i < packetsToDeallocThisUpdate.size(); i++) {
         // packetsToDeallocThisUpdate holds a boolean indicating if packetsToSendThisUpdate at this index should be
         // freed
         if (packetsToDeallocThisUpdate[i]) {
@@ -2968,7 +2966,7 @@ void ReliabilityLayer::ClearPacketsAndDatagrams(void)
             ReleaseToInternalPacketPool(packetsToSendThisUpdate[i]);
         }
     }
-    packetsToDeallocThisUpdate.Clear(true, _FILE_AND_LINE_);
+    packetsToDeallocThisUpdate.clear();
 }
 //-------------------------------------------------------------------------------------------------------
 void ReliabilityLayer::MoveToListHead(InternalPacket *internalPacket)

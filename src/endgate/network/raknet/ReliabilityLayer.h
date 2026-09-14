@@ -17,10 +17,10 @@
 #define __RELIABILITY_LAYER_H
 
 #include <deque>
+#include <vector>
 
 #include "BitStream.h"
 #include "DS_Heap.h"
-#include "DS_List.h"
 #include "DS_MemoryPool.h"
 #include "DS_OrderedList.h"
 #include "DS_RangeList.h"
@@ -52,7 +52,7 @@ struct SplitPacketChannel  //<SplitPacketChannel>
 {
     CCTimeType lastUpdateTime;
 
-    DataStructures::List<InternalPacket *> splitPacketList;
+    std::vector<InternalPacket *> splitPacketList;
 
     // This is here for progress notifications, since progress notifications return the first packet data, if available
     InternalPacket *firstPacket;
@@ -343,7 +343,7 @@ private:
         uint32_t sendReceiptSerial;
         RakNet::TimeUS nextActionTime;
     };
-    DataStructures::List<UnreliableWithAckReceiptNode> unreliableWithAckReceiptHistory;
+    std::vector<UnreliableWithAckReceiptNode> unreliableWithAckReceiptHistory;
 
     void RemoveFromDatagramHistory(DatagramSequenceNumberType index);
     MessageNumberNode *GetMessageNumberNodeByDatagramIndex(DatagramSequenceNumberType index, CCTimeType *timeSent);
@@ -495,16 +495,14 @@ private:
     void AddToListTail(InternalPacket *internalPacket, bool modifyUnacknowledgedBytes);
     void PopListHead(bool modifyUnacknowledgedBytes);
     bool IsResendQueueEmpty(void) const;
-    void SortSplitPacketList(DataStructures::List<InternalPacket *> &data, unsigned int leftEdge,
-                             unsigned int rightEdge) const;
     void SendACKs(DatagramSink *s, SystemAddress &systemAddress, CCTimeType time, BitStream &updateBitStream);
 
-    DataStructures::List<InternalPacket *> packetsToSendThisUpdate;
-    DataStructures::List<bool> packetsToDeallocThisUpdate;
+    std::vector<InternalPacket *> packetsToSendThisUpdate;
+    std::vector<bool> packetsToDeallocThisUpdate;
     // boundary is in packetsToSendThisUpdate, inclusive
-    DataStructures::List<unsigned int> packetsToSendThisUpdateDatagramBoundaries;
-    DataStructures::List<bool> datagramsToSendThisUpdateIsPair;
-    DataStructures::List<unsigned int> datagramSizesInBytes;
+    std::vector<unsigned int> packetsToSendThisUpdateDatagramBoundaries;
+    std::vector<bool> datagramsToSendThisUpdateIsPair;
+    std::vector<unsigned int> datagramSizesInBytes;
     BitSize_t datagramSizeSoFar;
     BitSize_t allDatagramSizesSoFar;
     double totalUserDataBytesAcked;
