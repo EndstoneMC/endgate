@@ -3,28 +3,30 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <format>
 #include <span>
 #include <utility>
 
 #include <asio/as_tuple.hpp>
+#include <asio/bind_executor.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
+#include <asio/dispatch.hpp>
 #include <asio/use_awaitable.hpp>
 
+#include "endgate/config.h"
 #include "endgate/logging/manager.h"
 #include "endgate/server.h"
 
 namespace endgate {
 
 namespace {
-using DatagramBuffer = std::array<std::byte, 65535>;
+using DatagramBuffer = std::array<std::byte, MAXIMUM_MTU_SIZE>;
 }  // namespace
 
 ConnectionManager::ConnectionManager(ProxyServer &server)
     : server_(server), logger_(LogManager::getLogger()), offline_(server),
       work_guard_(asio::make_work_guard(io_context_)), signals_(io_context_, SIGINT, SIGTERM),
-      threads_(std::max(1U, std::thread::hardware_concurrency()))
+      threads_(std::max(1U, std::thread::hardware_concurrency())), timer_(io_context_)
 {
 }
 
@@ -50,13 +52,22 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
         return false;
     }
 
-    auto &endpoint = endpoints_.emplace_back(std::move(socket));
+    auto &endpoint = endpoints_.emplace_back(server_, io_context_, std::move(socket));
+
+    peer_.SetEndpoint(&endpoint);
+    if (peer_.Startup(server_.getConfiguration().getShowMaxPlayers()) != RakNet::RAKNET_STARTED) {
+        logger_.error("RakNet failed to start");
+        return false;
+    }
+    peer_.SetMaximumIncomingConnections(server_.getConfiguration().getShowMaxPlayers());
+    peer_.SetOfflinePingResponse(nullptr, 0);
 
     offline_.setPingResponder(port);
 
     logger_.info("Listening on {}", endpoint.getLocalAddress());
 
-    asio::co_spawn(io_context_, receive(endpoint.getSocket()), asio::detached);
+    asio::co_spawn(endpoint.getExecutor(), receive(endpoint), asio::detached);
+    asio::dispatch(endpoint.getExecutor(), [this] { tick(); });
     return true;
 }
 
@@ -77,7 +88,11 @@ void ConnectionManager::start()
 void ConnectionManager::shutdown()
 {
     for (auto &endpoint : endpoints_) {
-        endpoint.close();
+        asio::dispatch(endpoint.getExecutor(), [this, &endpoint] {
+            stopping_ = true;
+            timer_.cancel();
+            endpoint.close();
+        });
     }
     signals_.cancel();
     work_guard_.reset();
@@ -93,26 +108,47 @@ void ConnectionManager::awaitTermination()
     workers_.clear();
 }
 
-asio::awaitable<void> ConnectionManager::receive(asio::ip::udp::socket &socket)
+void ConnectionManager::tick()
+{
+    if (stopping_) {
+        return;
+    }
+
+    peer_.RunUpdateCycle(scratch_);
+
+    timer_.expires_after(TICK_INTERVAL);
+    timer_.async_wait([this](const asio::error_code &ec) {
+        if (!ec) {
+            tick();
+        }
+    });
+}
+
+asio::awaitable<void> ConnectionManager::receive(Endpoint &endpoint)
 {
     DatagramBuffer buffer{};
     asio::ip::udp::endpoint sender;
 
     for (;;) {
-        auto [ec, size] =
-            co_await socket.async_receive_from(asio::buffer(buffer), sender, asio::as_tuple(asio::use_awaitable));
+        auto [ec, size] = co_await endpoint.getSocket().async_receive_from(asio::buffer(buffer), sender,
+                                                                           asio::as_tuple(asio::use_awaitable));
         if (ec == asio::error::operation_aborted) {
             co_return;
         }
-        if (ec) {
+        if (ec || size == 0) {
             continue;
         }
 
-        logger_.debug("Received {} bytes from {}:{}", size, sender.address().to_string(), sender.port());
+        const auto datagram = std::span{buffer}.first(size);
 
-        if (const auto pong = offline_.handle(std::span{buffer}.first(size)); !pong.empty()) {
-            co_await socket.async_send_to(pong.toBufferSequence(), sender, asio::as_tuple(asio::use_awaitable));
+        // The unconnected surface is endgate's: RakPeer answers only what belongs to a connection.
+        if (const auto pong = offline_.handle(datagram); !pong.empty()) {
+            endpoint.send(Endpoint::fromAsio(sender), pong);
+            continue;
         }
+
+        peer_.OnDatagram(Endpoint::fromAsio(sender), reinterpret_cast<const char *>(datagram.data()),
+                         static_cast<int>(size), scratch_);
     }
 }
 

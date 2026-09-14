@@ -18,6 +18,7 @@ find_package(libdeflate REQUIRED)
 find_package(Snappy REQUIRED)
 
 add_library(endgate_raknet STATIC
+        src/endgate/network/raknet/RakPeer.cpp
         src/endgate/network/raknet/ReliabilityLayer.cpp
         src/endgate/network/raknet/CCRakNetSlidingWindow.cpp
         src/endgate/network/raknet/BitStream.cpp
@@ -26,8 +27,9 @@ add_library(endgate_raknet STATIC
         src/endgate/network/raknet/RakNetTypes.cpp
 )
 
-target_include_directories(endgate_raknet PUBLIC src/endgate/network/raknet)
+target_include_directories(endgate_raknet PUBLIC src/endgate/network/raknet PRIVATE src)
 target_compile_definitions(endgate_raknet PRIVATE _RAKNET_LIB)
+target_link_libraries(endgate_raknet PRIVATE asio::asio spdlog::spdlog)
 target_compile_options(endgate_raknet PRIVATE -w)
 
 add_executable(endgate
@@ -38,6 +40,7 @@ add_executable(endgate
         src/endgate/logging/appender.cpp
         src/endgate/logging/formatter.cpp
         src/endgate/logging/manager.cpp
+        src/endgate/network/endpoint.cpp
         src/endgate/network/handler.cpp
         src/endgate/network/manager.cpp
         src/endgate/network/offline.cpp

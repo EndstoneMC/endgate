@@ -10,6 +10,11 @@ TimeMS GetTimeMS()
     return static_cast<TimeMS>(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
 }
 
+Time GetTime()
+{
+    return static_cast<Time>(GetTimeMS());
+}
+
 TimeUS GetTimeUS()
 {
     using namespace std::chrono;

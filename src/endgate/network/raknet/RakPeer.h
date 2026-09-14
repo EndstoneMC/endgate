@@ -26,6 +26,10 @@
 #include "RakNetTypes.h"
 #include "ReliabilityLayer.h"
 
+namespace endgate {
+class Endpoint;
+}  // namespace endgate
+
 namespace RakNet {
 /// Forward declarations
 class HuffmanEncodingTree;
@@ -189,14 +193,6 @@ public:
     uint32_t Send(const char *data, const int length, PacketPriority priority, PacketReliability reliability,
                   char orderingChannel, const AddressOrGUID systemIdentifier, bool broadcast,
                   uint32_t forceReceiptNumber = 0);
-
-    /// \brief "Send" to yourself rather than a remote system.
-    /// \details The message will be processed through the plugins and returned to the game as usual.
-    /// This function works anytime
-    /// \note The first byte should be a message identifier starting at ID_USER_PACKET_ENUM
-    /// \param[in] data Block of data to send.
-    /// \param[in] length Size in bytes of the data to send.
-    void SendLoopback(const char *data, const int length);
 
     /// \brief Sends a block of data to the specified system that you are connected to.
     ///
@@ -386,9 +382,6 @@ public:
     /// Return my own GUID
     const RakNetGUID GetMyGUID(void) const;
 
-    /// Return the address bound to a socket at the specified index
-    SystemAddress GetMyBoundAddress(const int socketIndex = 0);
-
     /// \brief  Given a connected system address, this method gives the unique GUID representing that instance of
     /// RakPeer. This will be the same on all systems connected to that instance of RakPeer, even if the external system
     /// addresses are different. Complexity is O(log2(n)). If \a input is UNASSIGNED_SYSTEM_ADDRESS, will return your
@@ -457,34 +450,13 @@ public:
     /// \param[in] timeoutMS How many ms to wait before simply not sending an unreliable message.
     void SetUnreliableTimeout(RakNet::TimeMS timeoutMS);
 
-    /// \brief Send a message to a host, with the IP socket option TTL set to 3.
-    /// \details This message will not reach the host, but will open the router.
-    /// \param[in] host The address of the remote host in dotted notation.
-    /// \param[in] remotePort The port number to send to.
-    /// \param[in] ttl Max hops of datagram, set to 3
-    /// \param[in] connectionSocketIndex userConnectionSocketIndex.
-    /// \remarks Used for NAT-Punchthrough
-    void SendTTL(const char *host, unsigned short remotePort, int ttl, unsigned connectionSocketIndex = 0);
-
     // Miscellaneous Functions
-    /// \brief Puts a message back in the receive queue in case you don't want to deal with it immediately.
-    /// \param[in] packet The pointer to the packet you want to push back.
-    /// \param[in] pushAtHead True to push the packet at the start of the queue so that the next receive call returns
-    /// it.  False to push it at the end of the queue.
-    /// \note Setting pushAtHead to false end makes the packets out of order.
-    void PushBackPacket(Packet *packet, bool pushAtHead);
 
     /// \internal
     /// \brief For a given system identified by \a guid, change the SystemAddress to send to.
     /// \param[in] guid The connection we are referring to
     /// \param[in] systemAddress The new address to send to
     void ChangeSystemAddress(RakNetGUID guid, const SystemAddress &systemAddress);
-
-    /// \brief Returns a packet for you to write to if you want to create a Packet for some reason.
-    /// You can add it to the receive buffer with PushBackPacket
-    /// \param[in] dataSize How many bytes to allocate for the buffer
-    /// \return A packet.
-    Packet *AllocatePacket(unsigned dataSize);
 
     // Network Simulator Functions
     /// Adds simulated ping and packet loss to the outgoing data flow.
@@ -540,6 +512,16 @@ public:
     // updateBitStream should be:
     // 	BitStream updateBitStream( MAXIMUM_MTU_SIZE );
     bool RunUpdateCycle(BitStream &updateBitStream);
+
+    /// The listener this peer sends through and pushes up to. RakPeer owns no socket and no receive
+    /// queue, so both directions leave through here.
+    void SetEndpoint(endgate::Endpoint *endpoint);
+
+    /// A datagram arrived on the listener. Upstream reached this from its own socket receive thread
+    /// through a handoff queue; the listener's strand calls it directly.
+    void OnDatagram(const SystemAddress &systemAddress, const char *data, int length, BitStream &updateBitStream);
+
+    static uint64_t Get64BitUniqueRandomNumber(void);
 
     /// Where a reliability layer puts a datagram it has decided to send. RakPeer no longer owns a
     /// socket, so this is the seam its owner writes through.
@@ -654,6 +636,12 @@ protected:
     SystemAddress GetLoopbackAddress(void) const;
 
     /// Whether Startup has run. Upstream spelled this endThreads, when it also stopped them.
+    /// Our own addresses, as written into ID_CONNECTION_REQUEST_ACCEPTED. Wire format, not a socket:
+    /// the listener fills these in.
+    SystemAddress ipList[MAXIMUM_NUMBER_OF_INTERNAL_IDS];
+
+    endgate::Endpoint *endpoint;
+
     bool isRunning;
 
     bool occasionalPing;  /// Do we occasionally ping the other systems?*/
