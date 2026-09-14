@@ -33,7 +33,6 @@
 #include "sink.h"
 
 #include "CCRakNetSlidingWindow.h"
-#define INCLUDE_TIMESTAMP_WITH_DATAGRAMS 0
 
 /// Number of ordered streams available. You can use up to 32 ordered streams
 #define NUMBER_OF_ORDERED_STREAMS 32  // 2^5
@@ -188,9 +187,6 @@ public:
     bool AckTimeout(RakNet::Time curTime);
     CCTimeType GetNextSendTime(void) const;
     CCTimeType GetTimeBetweenPackets(void) const;
-#if INCLUDE_TIMESTAMP_WITH_DATAGRAMS == 1
-    CCTimeType GetAckPing(void) const;
-#endif
     RakNet::TimeMS GetTimeLastDatagramArrived(void) const { return timeLastDatagramArrived; }
 
     // If true, will update time between packets quickly based on ping calculations
@@ -453,9 +449,6 @@ private:
 
     CCTimeType lastUpdateTime;
     CCTimeType timeBetweenPackets, nextSendTime;
-#if INCLUDE_TIMESTAMP_WITH_DATAGRAMS == 1
-    CCTimeType ackPing;
-#endif
     //	CCTimeType ackPingSamples[ACK_PING_SAMPLES_SIZE]; // Must be range of unsigned char to wrap ackPingIndex
     //properly
     CCTimeType ackPingSum;
