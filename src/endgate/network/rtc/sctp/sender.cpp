@@ -324,8 +324,24 @@ std::optional<ForwardTsnChunk> Sender::forwardTsn(Clock::time_point now, std::si
     }
     const auto capacity = max_size > Chunk::header_size + 4 ? (max_size - Chunk::header_size - 4) / 4 : 0;
     auto advanced = cumulative_ack_;
+    auto covered = cumulative_ack_;
     std::vector<ForwardTsnChunk::SkippedStream> skipped;
-    for (const auto &item : outstanding_) {
+    for (std::size_t index = 0; index < outstanding_.size(); ++index) {
+        const auto &item = outstanding_[index];
+        if (item.state == State::Acked && (item.max_retransmits || item.expires_at) &&
+            (item.flags & DataChunk::beginning_flag) != 0) {
+            auto last = index;
+            while (last + 1 < outstanding_.size() && (outstanding_[last].flags & DataChunk::end_flag) == 0 &&
+                   outstanding_[last + 1].state == State::Acked && outstanding_[last + 1].message == item.message) {
+                ++last;
+            }
+            if ((outstanding_[last].flags & DataChunk::end_flag) == 0) {
+                break;
+            }
+            advanced += last - index + 1;
+            index = last;
+            continue;
+        }
         if (item.state != State::Abandoned) {
             break;
         }
@@ -341,8 +357,9 @@ std::optional<ForwardTsnChunk> Sender::forwardTsn(Clock::time_point now, std::si
                 break;
             }
         }
-        ++advanced;
+        covered = ++advanced;
     }
+    advanced = covered;
     if (advanced == cumulative_ack_ || (advanced == last_forward_tsn_ && now < forward_tsn_retry_at_)) {
         return std::nullopt;
     }

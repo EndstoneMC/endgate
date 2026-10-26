@@ -326,6 +326,34 @@ TEST_F(SenderTest, ExpiresMessagesPastTheirLifetime)
     EXPECT_EQ(forward->new_cumulative_tsn, 1001U);
 }
 
+TEST_F(SenderTest, ForwardTsnSkipsAcknowledgedUnreliableMessages)
+{
+    const Sender::SendOptions unreliable{.unordered = true, .max_retransmits = 0};
+    for (auto i = 0; i < 7; ++i) {
+        ASSERT_TRUE(sender.send(1, 53, payload(100), unreliable, start));
+    }
+    transmit(start);
+    sack(999, {{.start = 2, .end = 2}, {.start = 4, .end = 4}, {.start = 7, .end = 7}});
+    sender.handleTimeout(start + 500ms);
+    const auto forward = sender.forwardTsn(start + 500ms, 1188);
+    ASSERT_TRUE(forward);
+    EXPECT_EQ(forward->new_cumulative_tsn, 1005U);
+}
+
+TEST_F(SenderTest, ForwardTsnStopsAtAcknowledgedReliableMessage)
+{
+    const Sender::SendOptions unreliable{.unordered = true, .max_retransmits = 0};
+    ASSERT_TRUE(sender.send(1, 53, payload(100), unreliable, start));
+    ASSERT_TRUE(sender.send(0, 53, payload(100), {}, start));
+    ASSERT_TRUE(sender.send(1, 53, payload(100), unreliable, start));
+    transmit(start);
+    sack(999, {{.start = 2, .end = 2}});
+    sender.handleTimeout(start + 500ms);
+    const auto forward = sender.forwardTsn(start + 500ms, 1188);
+    ASSERT_TRUE(forward);
+    EXPECT_EQ(forward->new_cumulative_tsn, 1000U);
+}
+
 TEST_F(SenderTest, RateLimitsRepeatedForwardTsn)
 {
     ASSERT_TRUE(sender.send(0, 53, payload(100), {.unordered = true, .max_retransmits = 0}, start));
