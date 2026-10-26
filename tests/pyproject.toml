@@ -1,0 +1,22 @@
+[project]
+name = "endgate-tests"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "nethernet[http]",
+    "pytest>=8",
+    "raknet==0.4.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+nethernet = { git = "https://github.com/EndstoneMC/nethernet-python" }
+
+[tool.pytest.ini_options]
+testpaths = ["network"]
+
+[tool.ruff]
+line-length = 120
+lint.select = ["E", "F", "I"]
