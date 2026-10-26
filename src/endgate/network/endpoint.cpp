@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <optional>
 #include <tuple>
 #include <utility>
@@ -168,7 +169,7 @@ private:
 
 Endpoint::Endpoint(ProxyServer &server, asio::io_context &io_context, asio::ip::udp::socket socket, std::uint64_t guid,
                    std::span<const std::byte> offline_ping_response)
-    : server_(server), logger_(LogManager::getLogger()), io_context_(io_context), socket_(std::move(socket)),
+    : server_(server), logger_(LogManager::getLogger()), socket_(std::move(socket)),
       strand_(asio::make_strand(io_context)), offline_(*this, guid)
 {
     offline_.setOfflinePingResponse(offline_ping_response);
@@ -341,21 +342,44 @@ void Endpoint::connectBackend(const std::shared_ptr<Session> &player)
         return;
     }
 
-    const auto colon = entry->second.rfind(':');
-    const auto host = entry->second.substr(0, colon);
-    const auto port = entry->second.substr(colon + 1);
+    const auto &name = entry->second;
+    const auto colon = name.rfind(':');
+    const auto host = name.substr(0, colon == std::string::npos ? name.size() : colon);
+    const auto port = colon == std::string::npos ? std::string{} : name.substr(colon + 1);
     asio::error_code ec;
-    asio::ip::udp::resolver resolver{io_context_};
-    const auto results = resolver.resolve(host, port, ec);
-    if (ec || results.empty()) {
-        logger_.warn("Can't reach backend {} for {}", entry->second, player->getKey());
+    const auto address = asio::ip::make_address(host, ec);
+    std::uint16_t port_number = 0;
+    const auto [end, parsed] = std::from_chars(port.data(), port.data() + port.size(), port_number);
+    if (!ec && parsed == std::errc{} && end == port.data() + port.size()) {
+        openBackend(player, name, {address, port_number});
         return;
     }
-    const auto address = results.begin()->endpoint();
+    asio::co_spawn(strand_, resolveBackend(player, host, port, name), asio::detached);
+}
 
+asio::awaitable<void> Endpoint::resolveBackend(std::weak_ptr<Session> player, std::string host, std::string port,
+                                               std::string name)
+{
+    asio::ip::udp::resolver resolver{strand_};
+    const auto [ec, results] = co_await resolver.async_resolve(host, port, asio::as_tuple(asio::use_awaitable));
+    const auto session = player.lock();
+    if (closed_ || !session || session->getConnection().isClosed()) {
+        co_return;
+    }
+    if (ec || results.empty()) {
+        logger_.warn("Can't reach backend {} for {}", name, session->getKey());
+        co_return;
+    }
+    openBackend(session, name, results.begin()->endpoint());
+}
+
+void Endpoint::openBackend(const std::shared_ptr<Session> &player, const std::string &name,
+                           const raknet::SystemAddress &address)
+{
+    asio::error_code ec;
     asio::ip::udp::socket socket{strand_};
     if (socket.open(address.protocol(), ec) || socket.connect(address, ec) || socket.non_blocking(true, ec)) {
-        logger_.warn("Can't reach backend {} for {}: {}", entry->second, player->getKey(), ec.message());
+        logger_.warn("Can't reach backend {} for {}: {}", name, player->getKey(), ec.message());
         return;
     }
 
@@ -363,7 +387,7 @@ void Endpoint::connectBackend(const std::shared_ptr<Session> &player)
     backend->counterpart = player;
     player->counterpart = backend;
     backends_.insert(backend);
-    logger_.info("Opening backend {} for {}", entry->second, player->getKey());
+    logger_.info("Opening backend {} for {}", name, player->getKey());
     asio::co_spawn(strand_, receive(backend), asio::detached);
     backend->getConnection().handleTimeout(raknet::Clock::now());
     backend->arm();

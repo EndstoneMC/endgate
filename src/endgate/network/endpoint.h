@@ -66,6 +66,10 @@ private:
     void channelInactive(Session &session, raknet::DisconnectReason reason);
 
     void connectBackend(const std::shared_ptr<Session> &player);
+    asio::awaitable<void> resolveBackend(std::weak_ptr<Session> player, std::string host, std::string port,
+                                         std::string name);
+    void openBackend(const std::shared_ptr<Session> &player, const std::string &name,
+                     const raknet::SystemAddress &address);
     [[nodiscard]] bool allowIncomingConnections() const;
     [[nodiscard]] bool isGuidInUse(std::uint64_t guid) const;
     [[nodiscard]] std::uint16_t getFreeSystemIndex() const;
@@ -73,7 +77,6 @@ private:
 
     ProxyServer &server_;
     spdlog::logger &logger_;
-    asio::io_context &io_context_;
     asio::ip::udp::socket socket_;
     Executor strand_;
     raknet::OfflineHandler offline_;
