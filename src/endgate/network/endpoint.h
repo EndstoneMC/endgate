@@ -70,7 +70,6 @@ private:
                                          std::string name);
     void openBackend(const std::shared_ptr<Session> &player, const std::string &name,
                      const raknet::SystemAddress &address);
-    [[nodiscard]] bool allowIncomingConnections() const;
     [[nodiscard]] bool isGuidInUse(std::uint64_t guid) const;
     [[nodiscard]] std::uint16_t getFreeSystemIndex() const;
     [[nodiscard]] raknet::ConnectionConfiguration getConnectionConfiguration() const;

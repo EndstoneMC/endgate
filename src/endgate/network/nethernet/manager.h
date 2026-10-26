@@ -40,7 +40,6 @@ public:
         std::shared_ptr<const ServerIdentityAssertionGenerator> identity;
         NetworkSession::Config session;
         bool require_identity{false};
-        std::size_t max_sessions{1024};
     };
 
     class Listener {

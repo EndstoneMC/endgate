@@ -91,7 +91,6 @@ public:
 class HttpSignalingServer : public std::enable_shared_from_this<HttpSignalingServer> {
 public:
     struct Config {
-        std::size_t max_connections{64};
         std::size_t max_request_bytes{65536};
         std::chrono::milliseconds request_timeout{std::chrono::seconds{10}};
         std::chrono::milliseconds write_timeout{std::chrono::seconds{10}};

@@ -151,11 +151,6 @@ asio::awaitable<void> HttpSignalingServer::accept(std::shared_ptr<HttpSignalingS
             co_await pause.async_wait(AWAITABLE);
             continue;
         }
-        if (self->connections_.size() >= self->config_.max_connections) {
-            asio::error_code ignored;
-            std::ignore = socket.close(ignored);
-            continue;
-        }
         asio::co_spawn(self->strand_, serve(self, std::move(socket)), [](const std::exception_ptr &) {});
     }
 }

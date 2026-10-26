@@ -79,11 +79,7 @@ protected:
     void SetUp() override
     {
         if (!server_) {
-            start({.max_connections = 64,
-                   .max_request_bytes = 65536,
-                   .request_timeout = 300ms,
-                   .write_timeout = 1s,
-                   .join_timeout = 300ms});
+            start({.max_request_bytes = 65536, .request_timeout = 300ms, .write_timeout = 1s, .join_timeout = 300ms});
         }
     }
 
@@ -422,24 +418,14 @@ TEST_F(TlsSignalingServerTest, ClosesAStalledHandshake)
     EXPECT_LT(std::chrono::steady_clock::now() - started, 2s);
 }
 
-class CappedSignalingServerTest : public HttpSignalingServerTest {
-protected:
-    void SetUp() override
-    {
-        start({.max_connections = 2, .request_timeout = 300ms, .write_timeout = 1s, .join_timeout = 300ms});
-    }
-};
-
-TEST_F(CappedSignalingServerTest, RefusesConnectionsOverTheCapUntilOthersClose)
+TEST_F(HttpSignalingServerTest, ServesEveryConnectionWithoutACap)
 {
     asio::io_context client;
-    asio::ip::tcp::socket first(client);
-    asio::ip::tcp::socket second(client);
-    first.connect(endpoint_);
-    second.connect(endpoint_);
+    std::vector<asio::ip::tcp::socket> idle;
+    for (int i = 0; i < 200; ++i) {
+        idle.emplace_back(client).connect(endpoint_);
+    }
     std::this_thread::sleep_for(50ms);
-    EXPECT_EQ(roundTrip("GET /v1/join HTTP/1.1\r\n\r\n"), "");
-    std::this_thread::sleep_for(400ms);
     EXPECT_TRUE(roundTrip("GET /v1/join HTTP/1.1\r\n\r\n").starts_with("HTTP/1.1 200 OK\r\n"));
 }
 

@@ -58,9 +58,6 @@ std::expected<std::string, ESessionError> NetworkSessionManager::join(const Join
                                                                       Clock::time_point now,
                                                                       std::chrono::system_clock::time_point wall_clock)
 {
-    if (sessions_.size() >= config_.max_sessions) {
-        return std::unexpected(ESessionError::IncomingConnectionIgnored);
-    }
     if (config_.require_identity && !IdentityAssertion::extractFromSdp(request.offer)) {
         return std::unexpected(ESessionError::IdentityNotAllowed);
     }

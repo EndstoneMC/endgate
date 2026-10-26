@@ -246,7 +246,7 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const raknet:
     if (offline_message &&
         (id == raknet::MessageId::UnconnectedPing || id == raknet::MessageId::UnconnectedPingOpenConnections ||
          id == raknet::MessageId::OpenConnectionRequest1)) {
-        static_cast<void>(offline_.handle(datagram, sender, allowIncomingConnections()));
+        static_cast<void>(offline_.handle(datagram, sender, true));
         return;
     }
 
@@ -263,7 +263,7 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const raknet:
     if (!offline_message || id != raknet::MessageId::OpenConnectionRequest2) {
         return;
     }
-    const auto request = offline_.handle(datagram, sender, allowIncomingConnections());
+    const auto request = offline_.handle(datagram, sender, true);
     if (!request) {
         return;
     }
@@ -271,14 +271,7 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const raknet:
         offline_.reject(sender, raknet::MessageId::AlreadyConnected);
         return;
     }
-    if (!allowIncomingConnections()) {
-        offline_.reject(sender, raknet::MessageId::NoFreeIncomingConnections);
-        return;
-    }
-
-    constexpr std::size_t minimum_half_open_connections = 1024;
-    const auto max_players = static_cast<std::size_t>(std::max(0, server_.getConfiguration().getShowMaxPlayers()));
-    const auto half_open_limit = std::max(minimum_half_open_connections, 2 * max_players);
+    constexpr std::size_t half_open_limit = 1024;
     std::shared_ptr<Session> oldest_half_open;
     std::size_t half_open = 0;
     for (const auto &entry : players_) {
@@ -300,14 +293,6 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const raknet:
     players_.emplace(sender, session);
     session->getConnection().handleDatagram(datagram, now);
     session->arm();
-}
-
-bool Endpoint::allowIncomingConnections() const
-{
-    const auto max_players = static_cast<std::size_t>(std::max(0, server_.getConfiguration().getShowMaxPlayers()));
-    const auto connected =
-        std::ranges::count_if(players_, [](const auto &entry) { return entry.second->getConnection().isConnected(); });
-    return std::cmp_less(connected, max_players);
 }
 
 bool Endpoint::isGuidInUse(std::uint64_t guid) const
