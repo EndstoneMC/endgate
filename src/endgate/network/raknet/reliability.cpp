@@ -569,6 +569,15 @@ std::size_t ReliabilityLayer::getMaxDatagramSizeExcludingMessageHeaderBytes() co
     return congestion_manager_.getMtu() - DatagramHeader::DATA_HEADER_BYTE_LENGTH;
 }
 
+std::size_t ReliabilityLayer::getMessagesInSendBuffer() const
+{
+    std::size_t messages = 0;
+    for (const auto &queue : outgoing_packet_buffer_) {
+        messages += queue.size();
+    }
+    return messages;
+}
+
 bool ReliabilityLayer::isOutgoingDataWaiting() const
 {
     return !resend_list_.empty() ||
@@ -657,6 +666,16 @@ void ReliabilityLayer::update(TimePoint now)
     if (!resend_list_.empty() && ackTimeout(now)) {
         dead_connection_ = true;
         return;
+    }
+
+    if (unreliable_timeout_.count() > 0 && now >= next_unreliable_cull_) {
+        for (auto &queue : outgoing_packet_buffer_) {
+            std::erase_if(queue, [this, now](const OutgoingPacket &outgoing) {
+                return !isReliable(outgoing.packet.reliability) &&
+                       now > outgoing.packet.creation_time + unreliable_timeout_;
+            });
+        }
+        next_unreliable_cull_ = now + unreliable_timeout_ / 2;
     }
 
     if (congestion_manager_.shouldSendAcks(now)) {
@@ -802,6 +821,10 @@ std::optional<TimePoint> ReliabilityLayer::nextTimeout() const
     }
     for (const auto &node : unreliable_with_ack_receipt_history_) {
         consider(node.next_action_time);
+    }
+    if (unreliable_timeout_.count() > 0 &&
+        std::ranges::any_of(outgoing_packet_buffer_, [](const auto &queue) { return !queue.empty(); })) {
+        consider(next_unreliable_cull_);
     }
     return earliest;
 }

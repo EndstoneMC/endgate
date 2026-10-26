@@ -94,6 +94,11 @@ public:
     [[nodiscard]] bool areAcksWaiting() const { return !acknowlegements_.empty(); }
     [[nodiscard]] bool ackTimeout(TimePoint now) const;
     [[nodiscard]] std::size_t getMessagesInResendBuffer() const { return resend_list_.size(); }
+
+    /**
+     * @see RakNet::RakNetStatistics::messageInSendBuffer
+     */
+    [[nodiscard]] std::size_t getMessagesInSendBuffer() const;
     [[nodiscard]] std::size_t getUnacknowledgedBytes() const { return unacknowledged_bytes_; }
     [[nodiscard]] const CCRakNetSlidingWindow &getCongestionManager() const { return congestion_manager_; }
 
@@ -176,6 +181,7 @@ private:
     CCRakNetSlidingWindow congestion_manager_;
     std::chrono::milliseconds timeout_time_{10000};
     std::chrono::milliseconds unreliable_timeout_{0};
+    TimePoint next_unreliable_cull_;
     TimePoint time_last_datagram_arrived_;
     TimePoint last_update_time_;
     bool dead_connection_{false};
