@@ -45,6 +45,7 @@ struct StateCookie {
 
 struct StateCookie::Opened {
     StateCookie cookie;
+    std::chrono::steady_clock::duration age;
     bool expired;
 };
 

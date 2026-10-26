@@ -84,6 +84,7 @@ std::optional<StateCookie::Opened> StateCookie::open(const Key &key, std::span<c
                 .peer_supports_forward_tsn = (flags & 1U) != 0,
                 .peer_supports_reconfig = (flags & 2U) != 0,
             },
+        .age = now - created,
         .expired = now - created > lifetime,
     };
 }

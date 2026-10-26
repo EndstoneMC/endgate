@@ -39,8 +39,13 @@ enum class ChunkType : std::uint8_t {
  */
 enum class ParameterType : std::uint16_t {
     HeartbeatInfo = 1,
+    Ipv4Address = 5,
+    Ipv6Address = 6,
     StateCookie = 7,
     UnrecognizedParameter = 8,
+    CookiePreservative = 9,
+    HostNameAddress = 11,
+    SupportedAddressTypes = 12,
     OutgoingSsnResetRequest = 13,
     IncomingSsnResetRequest = 14,
     SsnTsnResetRequest = 15,

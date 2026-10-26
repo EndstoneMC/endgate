@@ -85,6 +85,7 @@ TEST(StateCookie, ReportsExpiryWithoutRejecting)
     const auto late = StateCookie::open(key, sealed, issued + 60s + 1ms, 60s);
     ASSERT_TRUE(late);
     EXPECT_TRUE(late->expired);
+    EXPECT_EQ(late->age, 60s + 1ms);
 }
 
 TEST(StateCookie, RejectsCookieFromTheFuture)
