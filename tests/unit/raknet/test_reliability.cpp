@@ -379,6 +379,24 @@ TEST(Reliability, SilentPeerMakesTheConnectionDead)
     EXPECT_LT(pair.simulation.now() - start, 10s + 10ms);
 }
 
+TEST(Reliability, PeerThatKeepsSendingButNeverAcksIsDroppedAfterTheTimeout)
+{
+    Pair pair;
+    pair.simulation.setConditions(1, {1.0});
+    pair.a.send(message(0), PacketReliability::Reliable);
+    const auto start = pair.simulation.now();
+    for (std::uint32_t i = 0; i < 40 && !pair.a.layer.isDeadConnection(); ++i) {
+        pair.simulation.runUntil([] { return false; }, 1s);
+        const auto number = test::toHex(std::array{std::byte(i), std::byte{0}, std::byte{0}});
+        pair.a.inject("84" + number +
+                      "000008"
+                      "fe");
+    }
+    EXPECT_TRUE(pair.a.layer.isDeadConnection());
+    EXPECT_GE(pair.simulation.now() - start, 10s);
+    EXPECT_LE(pair.simulation.now() - start, 13s);
+}
+
 TEST(Reliability, SkippedDatagramsAreNaked)
 {
     Pair pair;

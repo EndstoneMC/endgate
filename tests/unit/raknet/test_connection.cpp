@@ -423,6 +423,25 @@ TEST(Connection, GracefulCloseReachesThePeer)
     EXPECT_EQ(handshake.server.events.disconnected, std::vector<DisconnectReason>{DisconnectReason::ClosedByPeer});
 }
 
+TEST(Connection, ClosingConnectionEndsEvenIfThePeerKeepsSendingWithoutAcking)
+{
+    Handshake handshake;
+    ASSERT_TRUE(handshake.connect());
+    handshake.simulation.setConditions(0, {1.0});
+    handshake.server.connection->close(true, handshake.simulation.now());
+    const auto start = handshake.simulation.now();
+    for (std::uint32_t i = 0; i < 30 && handshake.server.events.disconnected.empty(); ++i) {
+        handshake.simulation.runUntil([&] { return !handshake.server.events.disconnected.empty(); }, 5s);
+        const auto number = toHex(std::array{std::byte(0x60 + i), std::byte{0}, std::byte{0}});
+        handshake.server.connection->handleDatagram(fromHex("84" + number +
+                                                            "000008"
+                                                            "fe"),
+                                                    handshake.simulation.now());
+    }
+    EXPECT_EQ(handshake.server.events.disconnected, std::vector<DisconnectReason>{DisconnectReason::ClosedLocally});
+    EXPECT_LE(handshake.simulation.now() - start, 13s);
+}
+
 TEST(Connection, CloseWithoutNotificationIsImmediate)
 {
     Handshake handshake;
