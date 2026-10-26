@@ -56,6 +56,8 @@ DtlsTransport::DtlsTransport(Listener &listener, std::shared_ptr<const Certifica
                                          "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-CHACHA20-POLY1305:"
                                          "ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA") != 1 ||
         SSL_CTX_set1_groups_list(context, "X25519:P-256:P-384") != 1 ||
+        SSL_CTX_set_tlsext_use_srtp(context, "SRTP_AEAD_AES_256_GCM:SRTP_AEAD_AES_128_GCM:SRTP_AES128_CM_SHA1_80") !=
+            0 ||
         SSL_CTX_use_certificate(context, certificate_->getX509()) != 1 ||
         SSL_CTX_use_PrivateKey(context, certificate_->getPrivateKey()) != 1 ||
         SSL_CTX_check_private_key(context) != 1) {
