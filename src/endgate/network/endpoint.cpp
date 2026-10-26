@@ -53,6 +53,7 @@ public:
     Session(Endpoint &endpoint, const raknet::SystemAddress &address, const raknet::OpenConnectionRequest2 &request,
             std::uint16_t system_index, raknet::TimePoint now)
         : endpoint_(endpoint), address_(address), key_(toString(address)), timer_(endpoint.strand_),
+          creation_time_(now),
           connection_(*this, endpoint.getConnectionConfiguration(), address, request, system_index, now)
     {
     }
@@ -60,7 +61,8 @@ public:
     Session(Endpoint &endpoint, const raknet::SystemAddress &address, asio::ip::udp::socket socket,
             raknet::TimePoint now)
         : endpoint_(endpoint), address_(address), key_(toString(address)), socket_(std::move(socket)),
-          timer_(endpoint.strand_), connection_(*this, endpoint.getConnectionConfiguration(), address, now)
+          timer_(endpoint.strand_), creation_time_(now),
+          connection_(*this, endpoint.getConnectionConfiguration(), address, now)
     {
     }
 
@@ -90,6 +92,7 @@ public:
     void onConnected() override
     {
         active_ = true;
+        was_active_ = true;
         endpoint_.channelActive(*this);
     }
 
@@ -151,6 +154,8 @@ public:
     [[nodiscard]] const raknet::SystemAddress &getAddress() const { return address_; }
     [[nodiscard]] const std::string &getKey() const { return key_; }
     [[nodiscard]] bool isActive() const { return active_; }
+    [[nodiscard]] bool wasActive() const { return was_active_; }
+    [[nodiscard]] raknet::TimePoint getCreationTime() const { return creation_time_; }
     [[nodiscard]] bool isBackend() const { return socket_.has_value(); }
     [[nodiscard]] asio::ip::udp::socket *getSocket() { return socket_ ? &*socket_ : nullptr; }
 
@@ -164,6 +169,8 @@ private:
     asio::steady_timer timer_;
     std::optional<raknet::TimePoint> armed_;
     bool active_{false};
+    bool was_active_{false};
+    raknet::TimePoint creation_time_;
     raknet::Connection connection_;
 };
 
@@ -264,10 +271,29 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const raknet:
         offline_.reject(sender, raknet::MessageId::AlreadyConnected);
         return;
     }
-    const auto max_players = static_cast<std::size_t>(std::max(0, server_.getConfiguration().getShowMaxPlayers()));
-    if (!allowIncomingConnections() || players_.size() >= max_players) {
+    if (!allowIncomingConnections()) {
         offline_.reject(sender, raknet::MessageId::NoFreeIncomingConnections);
         return;
+    }
+
+    constexpr std::size_t minimum_half_open_connections = 1024;
+    const auto max_players = static_cast<std::size_t>(std::max(0, server_.getConfiguration().getShowMaxPlayers()));
+    const auto half_open_limit = std::max(minimum_half_open_connections, 2 * max_players);
+    std::shared_ptr<Session> oldest_half_open;
+    std::size_t half_open = 0;
+    for (const auto &entry : players_) {
+        const auto &candidate = entry.second;
+        if (candidate->wasActive() || candidate->getConnection().isClosed()) {
+            continue;
+        }
+        ++half_open;
+        if (!oldest_half_open || candidate->getCreationTime() < oldest_half_open->getCreationTime()) {
+            oldest_half_open = candidate;
+        }
+    }
+    if (oldest_half_open && half_open >= half_open_limit) {
+        oldest_half_open->getConnection().close(false, now);
+        players_.erase(oldest_half_open->getAddress());
     }
 
     const auto session = std::make_shared<Session>(*this, sender, *request, getFreeSystemIndex(), now);
@@ -408,7 +434,8 @@ void Endpoint::channelRead(Session &session, ByteBuf message)
 
 void Endpoint::channelInactive(Session &session, raknet::DisconnectReason reason)
 {
-    if (reason != raknet::DisconnectReason::HandshakeTimedOut && reason != raknet::DisconnectReason::Rejected) {
+    logger_.debug("{} ended: {}", session.getKey(), raknet::toString(reason));
+    if (session.wasActive() || session.isBackend()) {
         logger_.info("Disconnected: {}", session.getKey());
     }
 
