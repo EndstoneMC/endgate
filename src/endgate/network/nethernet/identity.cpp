@@ -15,6 +15,7 @@
 #include <openssl/bn.h>
 #include <openssl/core_names.h>
 #include <openssl/ec.h>
+#include <openssl/encoder.h>
 #include <openssl/param_build.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
@@ -83,11 +84,11 @@ struct JwsHeader {
 
 struct JwtHeader {
     std::string alg;
-    std::string typ;
+    std::string x5u;
 
     struct glaze {
         using T = JwtHeader;
-        static constexpr auto value = glz::object("alg", &T::alg, "typ", &T::typ);
+        static constexpr auto value = glz::object("alg", &T::alg, "x5u", &T::x5u);
     };
 };
 
@@ -428,22 +429,43 @@ PrivateKey ServerIdentityAssertionGenerator::loadOrCreateKey(const std::filesyst
     if (std::filesystem::exists(path)) {
         const std::unique_ptr<BIO, decltype(&BIO_free)> file(BIO_new_file(path.string().c_str(), "r"), BIO_free);
         PrivateKey key(file ? PEM_read_bio_PrivateKey(file.get(), nullptr, nullptr, nullptr) : nullptr, EVP_PKEY_free);
-        if (!key || curveOf(key.get()) == nullptr) {
-            throw std::runtime_error("failed to read an ECDSA identity key from " + path.string());
+        const auto *const curve = curveOf(key.get());
+        if (curve == nullptr || curve->jwk_name != "P-384") {
+            throw std::runtime_error("invalid server identity key file " + path.string());
         }
         return key;
     }
+
     PrivateKey key(EVP_EC_gen("P-384"), EVP_PKEY_free);
+    if (!key) {
+        throw std::runtime_error("failed to generate a server identity key");
+    }
     if (path.has_parent_path()) {
         std::filesystem::create_directories(path.parent_path());
     }
-    const std::unique_ptr<BIO, decltype(&BIO_free)> file(BIO_new_file(path.string().c_str(), "w"), BIO_free);
-    if (!key || !file) {
-        throw std::runtime_error("failed to create the identity key at " + path.string());
+
+    auto temporary = path;
+    temporary += ".tmp";
+    {
+        const std::unique_ptr<BIO, decltype(&BIO_free)> file(BIO_new_file(temporary.string().c_str(), "w"), BIO_free);
+        if (!file) {
+            throw std::runtime_error("unable to write server identity key file " + temporary.string());
+        }
+        std::filesystem::permissions(temporary,
+                                     std::filesystem::perms::owner_read | std::filesystem::perms::owner_write);
+        const std::unique_ptr<OSSL_ENCODER_CTX, decltype(&OSSL_ENCODER_CTX_free)> encoder(
+            OSSL_ENCODER_CTX_new_for_pkey(key.get(), OSSL_KEYMGMT_SELECT_KEYPAIR, "PEM", "type-specific", nullptr),
+            OSSL_ENCODER_CTX_free);
+        if (!encoder || OSSL_ENCODER_to_bio(encoder.get(), file.get()) != 1) {
+            std::filesystem::remove(temporary);
+            throw std::runtime_error("unable to write server identity key file " + temporary.string());
+        }
     }
-    std::filesystem::permissions(path, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write);
-    if (PEM_write_bio_PrivateKey(file.get(), key.get(), nullptr, nullptr, 0, nullptr, nullptr) != 1) {
-        throw std::runtime_error("failed to write the identity key to " + path.string());
+    std::error_code error;
+    std::filesystem::rename(temporary, path, error);
+    if (error) {
+        std::filesystem::remove(temporary);
+        throw std::runtime_error("unable to replace server identity key file " + path.string());
     }
     return key;
 }
@@ -454,6 +476,14 @@ std::optional<std::string> ServerIdentityAssertionGenerator::createAssertion(
     const auto *const curve = curveOf(key_.get());
     const auto issued = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
     const auto expires = issued + config_.token_lifetime.count();
+
+    unsigned char *der = nullptr;
+    const auto der_length = i2d_PUBKEY(key_.get(), &der);
+    const std::unique_ptr<unsigned char, decltype([](unsigned char *p) { OPENSSL_free(p); })> owned_der(der);
+    if (der_length <= 0) {
+        return std::nullopt;
+    }
+    const auto public_key = base64Encode(std::as_bytes(std::span{der, static_cast<std::size_t>(der_length)}));
 
     std::string claims;
     if (config_.cpk_encoding == CpkEncoding::JsonWebKey) {
@@ -479,20 +509,11 @@ std::optional<std::string> ServerIdentityAssertionGenerator::createAssertion(
                                               .iat = issued});
     }
     else {
-        unsigned char *der = nullptr;
-        const auto length = i2d_PUBKEY(key_.get(), &der);
-        const std::unique_ptr<unsigned char, decltype([](unsigned char *p) { OPENSSL_free(p); })> owned(der);
-        if (length <= 0) {
-            return std::nullopt;
-        }
-        claims = writeJson(
-            Claims<std::string>{.cpk = base64Encode(std::as_bytes(std::span{der, static_cast<std::size_t>(length)})),
-                                .exp = expires,
-                                .iat = issued});
+        claims = writeJson(Claims<std::string>{.cpk = public_key, .exp = expires, .iat = issued});
     }
 
     const auto token_head =
-        base64UrlEncode(bytesOf(writeJson(JwtHeader{.alg = std::string(curve->algorithm), .typ = "JWT"}))) + "." +
+        base64UrlEncode(bytesOf(writeJson(JwtHeader{.alg = std::string(curve->algorithm), .x5u = public_key}))) + "." +
         base64UrlEncode(bytesOf(claims));
     const auto jws_head = base64UrlEncode(bytesOf(writeJson(JwsHeader{.alg = std::string(curve->algorithm)})));
     const auto token_signature = sign(key_.get(), token_head);

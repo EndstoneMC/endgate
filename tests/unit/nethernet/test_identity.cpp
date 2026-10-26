@@ -3,12 +3,14 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <string>
 #include <string_view>
 
 #include <gtest/gtest.h>
 #include <openssl/ec.h>
 #include <openssl/evp.h>
+#include <openssl/pem.h>
 
 #include "endgate/network/nethernet/identity.h"
 
@@ -84,6 +86,18 @@ TEST(IdentityAssertionTest, InjectsTheEnvelopeBeforeTheFirstMediaLine)
     EXPECT_TRUE(envelope.ends_with(R"(","idp":{"domain":"endgate.test","protocol":"default"}})")) << envelope;
 }
 
+TEST(IdentityAssertionTest, SignsAsBdsDoesByDefault)
+{
+    const ServerIdentityAssertionGenerator generator(generateKey("P-384"), {});
+    const auto identity = IdentityAssertion::extractFromSdp(
+        IdentityAssertion::create(generator, AnswerSdp, Now)->injectIntoSdp(AnswerSdp));
+    ASSERT_TRUE(identity);
+    EXPECT_EQ(identity->getIdpDomain(), "self");
+    const auto token = JsonWebToken::decode(identity->getToken().value_or(""));
+    ASSERT_TRUE(token);
+    EXPECT_NE(token->claims.find(R"("exp":1800000060,"iat":1800000000)"), std::string::npos) << token->claims;
+}
+
 TEST(IdentityAssertionTest, ReadsBackAndVerifiesItsOwnAssertion)
 {
     const auto key = generateKey("P-384");
@@ -105,12 +119,14 @@ TEST(IdentityAssertionTest, ReadsBackAndVerifiesItsOwnAssertion)
     const auto token = JsonWebToken::decode(identity->getToken().value_or(""));
     ASSERT_TRUE(token);
     EXPECT_EQ(token->algorithm, "ES384");
-    EXPECT_EQ(token->header, R"({"alg":"ES384","typ":"JWT"})");
+    EXPECT_TRUE(token->header.starts_with(R"({"alg":"ES384","x5u":"MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE)"))
+        << token->header;
+    EXPECT_TRUE(token->header.ends_with(R"("})")) << token->header;
     EXPECT_TRUE(token->verify(key.get()));
     EXPECT_NE(token->claims.find(R"("kty":"EC")"), std::string::npos);
     EXPECT_NE(token->claims.find(R"("crv":"P-384")"), std::string::npos);
     EXPECT_NE(token->claims.find(R"("iat":1800000000)"), std::string::npos);
-    EXPECT_NE(token->claims.find(R"("exp":1802592000)"), std::string::npos);
+    EXPECT_NE(token->claims.find(R"("exp":1800000060)"), std::string::npos);
     const auto cpk = token->publicKey();
     ASSERT_TRUE(cpk);
     EXPECT_EQ(EVP_PKEY_eq(cpk.get(), key.get()), 1);
@@ -192,17 +208,38 @@ TEST(ServerIdentityAssertionGeneratorTest, KeepsItsKeyAcrossRestarts)
 {
     const auto directory = std::filesystem::temp_directory_path() / ("endgate-identity-" + std::to_string(::getpid()));
     std::filesystem::remove_all(directory);
-    const auto path = directory / "nested" / "identity.pem";
+    const auto path = directory / "keys" / "server_identity_key.pem";
 
     const auto created = ServerIdentityAssertionGenerator::loadOrCreateKey(path);
     ASSERT_TRUE(created);
     EXPECT_EQ(EVP_PKEY_get_bits(created.get()), 384);
     EXPECT_EQ(std::filesystem::status(path).permissions() & std::filesystem::perms::all,
               std::filesystem::perms::owner_read | std::filesystem::perms::owner_write);
+    EXPECT_FALSE(std::filesystem::exists(directory / "keys" / "server_identity_key.pem.tmp"));
+    std::string first_line;
+    std::getline(std::ifstream(path), first_line);
+    EXPECT_EQ(first_line, "-----BEGIN EC PRIVATE KEY-----");
+
     const auto loaded = ServerIdentityAssertionGenerator::loadOrCreateKey(path);
     EXPECT_EQ(EVP_PKEY_eq(created.get(), loaded.get()), 1);
 
     std::ofstream(path, std::ios::trunc) << "garbage";
+    EXPECT_THROW((void)ServerIdentityAssertionGenerator::loadOrCreateKey(path), std::runtime_error);
+    std::filesystem::remove_all(directory);
+}
+
+TEST(ServerIdentityAssertionGeneratorTest, RefusesAKeyBdsWouldRefuse)
+{
+    const auto directory =
+        std::filesystem::temp_directory_path() / ("endgate-identity-p256-" + std::to_string(::getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+    const auto path = directory / "server_identity_key.pem";
+    const auto key = generateKey("P-256");
+    {
+        const std::unique_ptr<BIO, decltype(&BIO_free)> file(BIO_new_file(path.string().c_str(), "w"), BIO_free);
+        ASSERT_EQ(PEM_write_bio_PrivateKey(file.get(), key.get(), nullptr, nullptr, 0, nullptr, nullptr), 1);
+    }
     EXPECT_THROW((void)ServerIdentityAssertionGenerator::loadOrCreateKey(path), std::runtime_error);
     std::filesystem::remove_all(directory);
 }

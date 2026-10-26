@@ -61,16 +61,16 @@ enum class CpkEncoding {
 class ServerIdentityAssertionGenerator {
 public:
     struct Config {
-        std::string domain;
-        std::chrono::seconds token_lifetime{std::chrono::days{30}};
+        std::string domain{"self"};
+        std::chrono::seconds token_lifetime{60};
         CpkEncoding cpk_encoding{CpkEncoding::JsonWebKey};
     };
 
     ServerIdentityAssertionGenerator(PrivateKey key, Config config);
 
     /**
-     * Reads the operator key from a PEM file, generating and saving a P-384 key there first if there
-     * is none.
+     * @see loadOrCreateServerIdentityKey
+     * @see saveServerIdentityKey
      */
     [[nodiscard]] static PrivateKey loadOrCreateKey(const std::filesystem::path &path);
 
