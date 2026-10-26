@@ -1032,7 +1032,7 @@ void Association::transmit(Clock::time_point now)
         if (data && tcb_->heartbeat_at) {
             tcb_->heartbeat_at = now + config_.heartbeat_interval + sender.rto();
         }
-        if (!data && control_.empty()) {
+        if (!data && control_.empty() && !receiver.sackRequired()) {
             break;
         }
     }
