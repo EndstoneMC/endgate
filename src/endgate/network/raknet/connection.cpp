@@ -91,10 +91,12 @@ void Connection::handleOfflineMessage(std::span<const std::byte> datagram, TimeP
         Writer writer{buffer};
         if (!we_initiated_the_connection_ && connect_mode_ == ConnectMode::UnverifiedSender &&
             request->client_guid == guid_) {
-            OpenConnectionReply2{configuration_.guid, system_address_, request->mtu, false}.encode(writer);
+            OpenConnectionReply2{
+                .server_guid = configuration_.guid, .client_address = system_address_, .mtu = request->mtu}
+                .encode(writer);
         }
         else {
-            OfflineRejection{MessageId::AlreadyConnected, configuration_.guid}.encode(writer);
+            OfflineRejection{.id = MessageId::AlreadyConnected, .server_guid = configuration_.guid}.encode(writer);
         }
         listener_.sendDatagram(writer.written());
         return;
@@ -110,7 +112,11 @@ void Connection::handleOfflineMessage(std::span<const std::byte> datagram, TimeP
         }
         std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
         Writer writer{buffer};
-        OpenConnectionRequest2{reply->cookie, system_address_, reply->mtu, configuration_.guid}.encode(writer);
+        OpenConnectionRequest2{.cookie = reply->cookie,
+                               .server_address = system_address_,
+                               .mtu = reply->mtu,
+                               .client_guid = configuration_.guid}
+            .encode(writer);
         listener_.sendDatagram(writer.written());
         return;
     }
@@ -133,7 +139,9 @@ void Connection::handleOfflineMessage(std::span<const std::byte> datagram, TimeP
 
         std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
         Writer writer{buffer};
-        ConnectionRequest{configuration_.guid, getTime(now), false, configuration_.password}.encode(writer);
+        ConnectionRequest{
+            .client_guid = configuration_.guid, .send_ping_time = getTime(now), .password = configuration_.password}
+            .encode(writer);
         sendImmediate(writer.written(), PacketPriority::Immediate, PacketReliability::Reliable, now);
         update(now);
         return;
@@ -241,7 +249,7 @@ void Connection::handleMessage(ByteBuf message, TimePoint now)
         }
         std::array<std::byte, 17> buffer{};
         Writer writer{buffer};
-        ConnectedPong{ping->send_ping_time, getTime(now)}.encode(writer);
+        ConnectedPong{.send_ping_time = ping->send_ping_time, .send_pong_time = getTime(now)}.encode(writer);
         sendImmediate(writer.written(), PacketPriority::Immediate, PacketReliability::Unreliable, now);
         return;
     }
@@ -269,7 +277,10 @@ void Connection::handleMessage(ByteBuf message, TimePoint now)
 
         std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
         Writer writer{buffer};
-        NewIncomingConnection{system_address_, {}, accepted->send_pong_time, getTime(now)}.encode(writer);
+        NewIncomingConnection{.server_address = system_address_,
+                              .send_ping_time = accepted->send_pong_time,
+                              .send_pong_time = getTime(now)}
+            .encode(writer);
         sendImmediate(writer.written(), PacketPriority::Immediate, PacketReliability::ReliableOrdered, now);
         if (!already_connected) {
             pingInternal(PacketReliability::Unreliable, now);
@@ -302,7 +313,11 @@ void Connection::onConnectionRequest(std::uint64_t incoming_timestamp, TimePoint
 {
     std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
     Writer writer{buffer};
-    ConnectionRequestAccepted{system_address_, system_index_, {}, incoming_timestamp, getTime(now)}.encode(writer);
+    ConnectionRequestAccepted{.client_address = system_address_,
+                              .system_index = system_index_,
+                              .send_ping_time = incoming_timestamp,
+                              .send_pong_time = getTime(now)}
+        .encode(writer);
     sendImmediate(writer.written(), PacketPriority::Immediate, PacketReliability::ReliableOrdered, now);
 }
 
@@ -397,8 +412,9 @@ void Connection::sendOpenConnectionRequests(TimePoint now)
 
         std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
         Writer writer{buffer};
-        OpenConnectionRequest1{RAKNET_PROTOCOL_VERSION, static_cast<std::uint16_t>(MTU_SIZES[mtu_size_index])}.encode(
-            writer);
+        OpenConnectionRequest1{.protocol = RAKNET_PROTOCOL_VERSION,
+                               .mtu = static_cast<std::uint16_t>(MTU_SIZES[mtu_size_index])}
+            .encode(writer);
         if (!listener_.sendMtuProbe(writer.written()) && mtu_size_index + 1 < MTU_SIZES.size()) {
             requests_made_ = static_cast<unsigned>((mtu_size_index + 1) * per_size);
             next_request_time_ = now;
@@ -413,6 +429,9 @@ void Connection::update(TimePoint now)
     }
     if (connect_mode_ == ConnectMode::RequestingOpenConnection) {
         sendOpenConnectionRequests(now);
+        return;
+    }
+    if (!reliability_layer_) {
         return;
     }
     auto &reliability_layer = *reliability_layer_;
@@ -436,10 +455,11 @@ void Connection::update(TimePoint now)
     const bool handshaking = mode == ConnectMode::RequestedConnection ||
                              mode == ConnectMode::HandlingConnectionRequest || mode == ConnectMode::UnverifiedSender;
     const bool disconnecting = mode == ConnectMode::DisconnectAsap || mode == ConnectMode::DisconnectAsapSilently;
-    if (!reliability_layer.isDeadConnection() && !(disconnecting && !reliability_layer.isOutgoingDataWaiting()) &&
-        !(mode == ConnectMode::DisconnectOnNoAck &&
-          (!reliability_layer.areAcksWaiting() || reliability_layer.ackTimeout(now))) &&
-        !(handshaking && now - connection_time_ > CONNECTION_REQUEST_TIMEOUT)) {
+    const bool drained = disconnecting && !reliability_layer.isOutgoingDataWaiting();
+    const bool acknowledged = mode == ConnectMode::DisconnectOnNoAck &&
+                              (!reliability_layer.areAcksWaiting() || reliability_layer.ackTimeout(now));
+    const bool abandoned = handshaking && now - connection_time_ > CONNECTION_REQUEST_TIMEOUT;
+    if (!reliability_layer.isDeadConnection() && !drained && !acknowledged && !abandoned) {
         return;
     }
     switch (mode) {
@@ -469,7 +489,7 @@ std::optional<TimePoint> Connection::nextTimeout() const
     if (isClosed()) {
         return std::nullopt;
     }
-    if (connect_mode_ == ConnectMode::RequestingOpenConnection) {
+    if (connect_mode_ == ConnectMode::RequestingOpenConnection || !reliability_layer_) {
         return next_request_time_;
     }
     std::optional<TimePoint> earliest = reliability_layer_->nextTimeout();
