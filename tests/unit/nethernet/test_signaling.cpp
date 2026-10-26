@@ -5,8 +5,10 @@
 #include <filesystem>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -40,15 +42,15 @@ public:
                 GameType::Survival};
     }
 
-    void onJoin(std::string network_id, std::string offer, JoinResponse response) override
+    void onJoin(JoinRequest request, JoinResponse response) override
     {
         const std::scoped_lock lock(mutex);
-        joins.emplace_back(std::move(network_id), std::move(offer));
+        joins.push_back(std::move(request));
         behaviour(response);
     }
 
     std::mutex mutex;
-    std::vector<std::pair<std::string, std::string>> joins;
+    std::vector<JoinRequest> joins;
     std::function<void(const JoinResponse &)> behaviour = [](const JoinResponse &response) {
         response.answer("v=0\r\nanswer\r\n");
     };
@@ -125,6 +127,40 @@ protected:
     std::thread thread_;
 };
 
+TEST_F(HttpSignalingServerTest, PassesOnTheAddressTheClientReachedUsAt)
+{
+    for (const auto &[header, host, port] : {
+             std::tuple{std::string_view{"Host: play.example.com:19132\r\n"}, std::string_view{"play.example.com"},
+                        std::optional<std::uint16_t>{19132}},
+             std::tuple{std::string_view{"hOsT:  203.0.113.5 \r\n"}, std::string_view{"203.0.113.5"},
+                        std::optional<std::uint16_t>{}},
+             std::tuple{std::string_view{"Host: [2001:db8::1]:19133\r\n"}, std::string_view{"2001:db8::1"},
+                        std::optional<std::uint16_t>{19133}},
+             std::tuple{std::string_view{""}, std::string_view{""}, std::optional<std::uint16_t>{}},
+         }) {
+        const auto response = roundTrip(
+            std::format("POST /v1/join/1 HTTP/1.1\r\n{}Content-Length: {}\r\n\r\n{}", header, Offer.size(), Offer));
+        EXPECT_TRUE(response.starts_with("HTTP/1.1 200 OK\r\n")) << header;
+        const std::scoped_lock lock(handler_.mutex);
+        ASSERT_FALSE(handler_.joins.empty()) << header;
+        EXPECT_EQ(handler_.joins.back().host, host) << header;
+        EXPECT_EQ(handler_.joins.back().port, port) << header;
+    }
+}
+
+TEST_F(HttpSignalingServerTest, ClosesOnAHostItCannotRead)
+{
+    for (const auto header : {"Host: a\r\nHost: b\r\n", "Host: example.com:port\r\n", "Host: [::1\r\n", "Host: ::1\r\n",
+                              "Host: :19132\r\n", "Host: example.com:70000\r\n"}) {
+        EXPECT_EQ(roundTrip(std::format("POST /v1/join/1 HTTP/1.1\r\n{}Content-Length: {}\r\n\r\n{}", header,
+                                        Offer.size(), Offer)),
+                  "")
+            << header;
+    }
+    const std::scoped_lock lock(handler_.mutex);
+    EXPECT_TRUE(handler_.joins.empty());
+}
+
 TEST_F(HttpSignalingServerTest, AnswersThePingWithServerInfo)
 {
     const auto response = roundTrip("GET /v1/join HTTP/1.1\r\nHost: localhost\r\n\r\n");
@@ -145,8 +181,8 @@ TEST_F(HttpSignalingServerTest, TradesAnOfferForAnAnswer)
     EXPECT_TRUE(response.ends_with("\r\n\r\nv=0\r\nanswer\r\n")) << response;
     const std::scoped_lock lock(handler_.mutex);
     ASSERT_EQ(handler_.joins.size(), 1U);
-    EXPECT_EQ(handler_.joins[0].first, "9876543210123456789");
-    EXPECT_EQ(handler_.joins[0].second, Offer);
+    EXPECT_EQ(handler_.joins[0].network_id, "9876543210123456789");
+    EXPECT_EQ(handler_.joins[0].offer, Offer);
 }
 
 TEST_F(HttpSignalingServerTest, TakesAnOpaqueNetworkId)
@@ -241,7 +277,7 @@ TEST_F(HttpSignalingServerTest, ReadsARequestArrivingInPieces)
     EXPECT_TRUE(response.starts_with("HTTP/1.1 200 OK\r\n")) << response;
     const std::scoped_lock lock(handler_.mutex);
     ASSERT_EQ(handler_.joins.size(), 1U);
-    EXPECT_EQ(handler_.joins[0].second, Offer);
+    EXPECT_EQ(handler_.joins[0].offer, Offer);
 }
 
 TEST_F(HttpSignalingServerTest, DropsOversizeRequestsWithoutAnswering)

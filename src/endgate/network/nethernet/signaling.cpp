@@ -234,20 +234,34 @@ asio::awaitable<void> HttpSignalingServer::exchange(Stream &stream, std::chrono:
         }
 
         std::optional<std::size_t> content_length;
+        std::optional<std::string_view> host;
         while (!head.empty()) {
             const auto header = head.substr(0, head.find("\r\n"));
             head.remove_prefix(std::min(head.size(), header.size() + 2));
             const auto colon = header.find(':');
+            if (colon == std::string_view::npos) {
+                continue;
+            }
             const auto name = header.substr(0, colon);
-            constexpr std::string_view content_length_name = "content-length";
-            if (colon == std::string_view::npos || name.size() != content_length_name.size() ||
-                !std::ranges::equal(name, content_length_name,
-                                    [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == b; })) {
+            const auto lowercase_equal = [](char a, char b) {
+                return std::tolower(static_cast<unsigned char>(a)) == b;
+            };
+            const auto is_content_length =
+                std::ranges::equal(name, std::string_view{"content-length"}, lowercase_equal);
+            const auto is_host = std::ranges::equal(name, std::string_view{"host"}, lowercase_equal);
+            if (!is_content_length && !is_host) {
                 continue;
             }
             auto value = header.substr(colon + 1);
             value.remove_prefix(std::min(value.find_first_not_of(" \t"), value.size()));
             value.remove_suffix(value.size() - std::min(value.find_last_not_of(" \t") + 1, value.size()));
+            if (is_host) {
+                if (host) {
+                    co_return;
+                }
+                host = value;
+                continue;
+            }
             std::size_t length = 0;
             const auto [end, parse_error] = std::from_chars(value.data(), value.data() + value.size(), length);
             if (parse_error != std::errc{} || end != value.data() + value.size() ||
@@ -255,6 +269,38 @@ asio::awaitable<void> HttpSignalingServer::exchange(Stream &stream, std::chrono:
                 co_return;
             }
             content_length = length;
+        }
+
+        std::string_view host_name;
+        std::optional<std::uint16_t> host_port;
+        if (host) {
+            auto authority = *host;
+            if (authority.starts_with('[')) {
+                const auto bracket = authority.find(']');
+                if (bracket == std::string_view::npos) {
+                    co_return;
+                }
+                host_name = authority.substr(1, bracket - 1);
+                authority.remove_prefix(bracket + 1);
+            }
+            else {
+                const auto colon = authority.find(':');
+                host_name = authority.substr(0, colon);
+                authority.remove_prefix(colon == std::string_view::npos ? authority.size() : colon);
+            }
+            if (!authority.empty()) {
+                std::uint16_t port = 0;
+                const auto [end, parse_error] =
+                    std::from_chars(authority.data() + 1, authority.data() + authority.size(), port);
+                if (authority.front() != ':' || parse_error != std::errc{} ||
+                    end != authority.data() + authority.size()) {
+                    co_return;
+                }
+                host_port = port;
+            }
+            if (host_name.empty()) {
+                co_return;
+            }
         }
 
         const auto body_length = content_length.value_or(0);
@@ -266,6 +312,8 @@ asio::awaitable<void> HttpSignalingServer::exchange(Stream &stream, std::chrono:
         }
         request = Request{.method = std::string(method),
                           .path = std::string(path),
+                          .host = std::string(host_name),
+                          .port = host_port,
                           .body = buffer.substr(header_end + 4, body_length)};
     }
 
@@ -319,7 +367,11 @@ asio::awaitable<HttpSignalingServer::Response> HttpSignalingServer::respond(Requ
 
     auto pending = std::make_shared<JoinResponse::Pending>(strand_);
     pending->timer.expires_after(config_.join_timeout);
-    handler_.onJoin(std::string(network_id), std::move(request.body), JoinResponse{pending});
+    handler_.onJoin(JoinRequest{.network_id = std::string(network_id),
+                                .offer = std::move(request.body),
+                                .host = std::move(request.host),
+                                .port = request.port},
+                    JoinResponse{pending});
     co_await pending->timer.async_wait(Awaitable);
     if (!pending->result) {
         co_return error(504, "Gateway Timeout");
