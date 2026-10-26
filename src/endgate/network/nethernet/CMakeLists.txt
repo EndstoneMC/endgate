@@ -1,4 +1,5 @@
 add_library(endgate_nethernet STATIC
+        framing.cpp
         identity.cpp
         signaling.cpp
 )
