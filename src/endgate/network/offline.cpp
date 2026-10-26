@@ -6,9 +6,9 @@
 #include <string>
 
 #include "endgate/network/ping.h"
-#include "endgate/network/raknet/BitStream.h"
-#include "endgate/network/raknet/GetTime.h"
-#include "endgate/network/raknet/MessageIdentifiers.h"
+#include "endgate/network/legacy/raknet/BitStream.h"
+#include "endgate/network/legacy/raknet/GetTime.h"
+#include "endgate/network/legacy/raknet/MessageIdentifiers.h"
 #include "endgate/server.h"
 
 namespace endgate {

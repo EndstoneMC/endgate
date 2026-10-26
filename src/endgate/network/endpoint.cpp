@@ -9,8 +9,8 @@
 
 #include "endgate/config.h"
 #include "endgate/logging/manager.h"
-#include "endgate/network/raknet/PacketPriority.h"
-#include "endgate/network/raknet/RakPeer.h"
+#include "endgate/network/legacy/raknet/PacketPriority.h"
+#include "endgate/network/legacy/raknet/RakPeer.h"
 #include "endgate/server.h"
 
 namespace endgate {

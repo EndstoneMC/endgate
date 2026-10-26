@@ -7,7 +7,7 @@
 #include <string>
 
 #include "endgate/network/buffer.h"
-#include "endgate/network/raknet/RakNetTypes.h"
+#include "endgate/network/legacy/raknet/RakNetTypes.h"
 
 namespace endgate {
 

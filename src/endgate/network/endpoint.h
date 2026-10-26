@@ -10,7 +10,7 @@
 #include <spdlog/logger.h>
 
 #include "endgate/network/buffer.h"
-#include "endgate/network/raknet/RakNetTypes.h"
+#include "endgate/network/legacy/raknet/RakNetTypes.h"
 
 namespace RakNet {
 class RakPeer;

@@ -2,9 +2,13 @@
 asio/1.38.2
 glaze/8.3.0
 libdeflate/1.25
+openssl/3.6.4
 replxx/0.0.4
 snappy/1.2.1
 spdlog/1.17.0
+
+[test_requires]
+gtest/1.17.0
 
 [generators]
 CMakeDeps

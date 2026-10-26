@@ -14,9 +14,9 @@
 
 #include "endgate/network/endpoint.h"
 #include "endgate/network/offline.h"
-#include "endgate/network/raknet/BitStream.h"
-#include "endgate/network/raknet/MTUSize.h"
-#include "endgate/network/raknet/RakPeer.h"
+#include "endgate/network/legacy/raknet/BitStream.h"
+#include "endgate/network/legacy/raknet/MTUSize.h"
+#include "endgate/network/legacy/raknet/RakPeer.h"
 
 namespace endgate {
 
