@@ -6,6 +6,7 @@ add_library(endgate_sctp STATIC
         packet.cpp
         receiver.cpp
         sender.cpp
+        transport.cpp
 )
 
 target_include_directories(endgate_sctp PUBLIC ${PROJECT_SOURCE_DIR}/src)

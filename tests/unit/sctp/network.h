@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "endgate/network/rtc/sctp/association.h"
+#include "endgate/network/rtc/sctp/transport.h"
 
 namespace endgate::rtc::sctp {
 
@@ -67,7 +68,48 @@ inline ByteBuf bufferOf(const std::string &value)
     return ByteBuf::copyBuffer(std::as_bytes(std::span{value}));
 }
 
-class Network {
+struct TransportEndpoint : SctpTransport::Listener {
+    void sendPacket(std::span<const std::byte> packet) override { outbox.emplace_back(packet.begin(), packet.end()); }
+    void onStateChange(SctpTransport::State state) override { states.push_back(state); }
+    void onChannelOpen(const DataChannel &channel) override { opened.push_back(channel); }
+    void onChannelMessage(const DataChannel &channel, ByteBuf message, bool binary) override
+    {
+        if (on_message) {
+            on_message(channel, message);
+        }
+        messages.push_back({channel.stream, channel.label, text(message), binary});
+    }
+    void onChannelClosed(const DataChannel &channel) override { closed.push_back(channel); }
+
+    struct Received {
+        std::uint16_t stream;
+        std::string label;
+        std::string payload;
+        bool binary;
+    };
+
+    std::vector<std::vector<std::byte>> outbox;
+    std::vector<SctpTransport::State> states;
+    std::vector<DataChannel> opened;
+    std::vector<Received> messages;
+    std::vector<DataChannel> closed;
+    std::function<void(const DataChannel &, const ByteBuf &)> on_message;
+};
+
+inline void seedRandom(Association::Config &config, std::uint32_t seed)
+{
+    if (!config.random) {
+        config.random = seeded(seed);
+    }
+}
+
+inline void seedRandom(SctpTransport::Config &config, std::uint32_t seed)
+{
+    seedRandom(config.association, seed);
+}
+
+template <typename Engine, typename Recorder>
+class BasicNetwork {
 public:
     using Clock = std::chrono::steady_clock;
 
@@ -83,22 +125,19 @@ public:
         std::vector<std::byte> packet;
     };
 
-    explicit Network(Association::Config a_config = {}, Association::Config b_config = {}, std::uint32_t seed = 1)
+    explicit BasicNetwork(typename Engine::Config a_config = {}, typename Engine::Config b_config = {},
+                          std::uint32_t seed = 1)
         : engine_(seed)
     {
-        if (!a_config.random) {
-            a_config.random = seeded(seed * 2 + 1);
-        }
-        if (!b_config.random) {
-            b_config.random = seeded(seed * 2 + 2);
-        }
+        seedRandom(a_config, seed * 2 + 1);
+        seedRandom(b_config, seed * 2 + 2);
         a.emplace(endpoint_a, std::move(a_config));
         b.emplace(endpoint_b, std::move(b_config));
     }
 
     void collect()
     {
-        const auto take = [&](Endpoint &from, bool to_b) {
+        const auto take = [&](Recorder &from, bool to_b) {
             for (auto &packet : from.outbox) {
                 ++sent;
                 if (filter && !filter(packet, to_b)) {
@@ -173,10 +212,10 @@ public:
         return true;
     }
 
-    Endpoint endpoint_a;
-    Endpoint endpoint_b;
-    std::optional<Association> a;
-    std::optional<Association> b;
+    Recorder endpoint_a;
+    Recorder endpoint_b;
+    std::optional<Engine> a;
+    std::optional<Engine> b;
     Clock::time_point now{Clock::time_point{} + std::chrono::hours{1}};
     Clock::duration latency{std::chrono::milliseconds{20}};
     Impairment impairment;
@@ -192,6 +231,9 @@ private:
 
     std::mt19937 engine_;
 };
+
+using Network = BasicNetwork<Association, Endpoint>;
+using TransportNetwork = BasicNetwork<SctpTransport, TransportEndpoint>;
 
 inline std::optional<std::uint8_t> firstChunk(std::span<const std::byte> packet)
 {
