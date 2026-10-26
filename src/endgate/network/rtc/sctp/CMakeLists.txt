@@ -1,4 +1,5 @@
 add_library(endgate_sctp STATIC
+        cookie.cpp
         crc32c.cpp
         packet.cpp
 )
