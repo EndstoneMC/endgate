@@ -72,6 +72,7 @@ enum class MessageId : std::uint8_t {
     OpenConnectionRequest2 = 0x07,
     OpenConnectionReply2 = 0x08,
     ConnectionRequest = 0x09,
+    OutOfBandInternal = 0x0D,
     SndReceiptAcked = 0x0E,
     SndReceiptLoss = 0x0F,
     ConnectionRequestAccepted = 0x10,

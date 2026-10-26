@@ -1,5 +1,6 @@
 add_library(endgate_raknet STATIC
         codec.cpp
+        message.cpp
 )
 
 target_include_directories(endgate_raknet PUBLIC ${PROJECT_SOURCE_DIR}/src)
