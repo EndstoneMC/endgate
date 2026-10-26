@@ -2,6 +2,7 @@ add_library(endgate_sctp STATIC
         association.cpp
         cookie.cpp
         crc32c.cpp
+        dcep.cpp
         packet.cpp
         receiver.cpp
         sender.cpp

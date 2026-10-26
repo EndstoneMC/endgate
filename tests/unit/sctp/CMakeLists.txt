@@ -5,6 +5,7 @@ add_executable(endgate_sctp_tests
         test_chunks.cpp
         test_cookie.cpp
         test_crc32c.cpp
+        test_dcep.cpp
         test_packet.cpp
         test_receiver.cpp
         test_sender.cpp
