@@ -95,7 +95,8 @@ void UnconnectedPong::encode(Writer &writer) const
 
 std::optional<OpenConnectionRequest1> OpenConnectionRequest1::decode(std::span<const std::byte> message)
 {
-    if (!isOfflineMessage(message) || static_cast<MessageId>(message.front()) != MessageId::OpenConnectionRequest1) {
+    if (message.size() <= 2 || !isOfflineMessage(message) ||
+        static_cast<MessageId>(message.front()) != MessageId::OpenConnectionRequest1) {
         return std::nullopt;
     }
     const auto mtu = std::min<std::size_t>(message.size() + UDP_HEADER_SIZE, std::numeric_limits<std::uint16_t>::max());
@@ -117,7 +118,8 @@ void OpenConnectionRequest1::encode(Writer &writer) const
 
 std::optional<OpenConnectionReply1> OpenConnectionReply1::decode(std::span<const std::byte> message)
 {
-    if (!isOfflineMessage(message) || static_cast<MessageId>(message.front()) != MessageId::OpenConnectionReply1) {
+    if (message.size() <= 2 || !isOfflineMessage(message) ||
+        static_cast<MessageId>(message.front()) != MessageId::OpenConnectionReply1) {
         return std::nullopt;
     }
     Reader reader{message.subspan(1 + OFFLINE_MESSAGE_DATA_ID.size())};
@@ -155,7 +157,8 @@ void OpenConnectionReply1::encode(Writer &writer) const
 
 std::optional<OpenConnectionRequest2> OpenConnectionRequest2::decode(std::span<const std::byte> message)
 {
-    if (!isOfflineMessage(message) || static_cast<MessageId>(message.front()) != MessageId::OpenConnectionRequest2) {
+    if (message.size() <= 2 || !isOfflineMessage(message) ||
+        static_cast<MessageId>(message.front()) != MessageId::OpenConnectionRequest2) {
         return std::nullopt;
     }
     Reader reader{message.subspan(1 + OFFLINE_MESSAGE_DATA_ID.size())};
@@ -184,7 +187,8 @@ void OpenConnectionRequest2::encode(Writer &writer) const
 
 std::optional<OpenConnectionReply2> OpenConnectionReply2::decode(std::span<const std::byte> message)
 {
-    if (!isOfflineMessage(message) || static_cast<MessageId>(message.front()) != MessageId::OpenConnectionReply2) {
+    if (message.size() <= 2 || !isOfflineMessage(message) ||
+        static_cast<MessageId>(message.front()) != MessageId::OpenConnectionReply2) {
         return std::nullopt;
     }
     Reader reader{message.subspan(1 + OFFLINE_MESSAGE_DATA_ID.size())};
@@ -213,7 +217,7 @@ void OpenConnectionReply2::encode(Writer &writer) const
 
 std::optional<IncompatibleProtocolVersion> IncompatibleProtocolVersion::decode(std::span<const std::byte> message)
 {
-    if (!isOfflineMessage(message) ||
+    if (message.size() <= 2 || !isOfflineMessage(message) ||
         static_cast<MessageId>(message.front()) != MessageId::IncompatibleProtocolVersion) {
         return std::nullopt;
     }
@@ -236,7 +240,7 @@ void IncompatibleProtocolVersion::encode(Writer &writer) const
 
 std::optional<OfflineRejection> OfflineRejection::decode(std::span<const std::byte> message)
 {
-    if (!isOfflineMessage(message)) {
+    if (message.size() <= 2 || !isOfflineMessage(message)) {
         return std::nullopt;
     }
     const auto id = static_cast<MessageId>(message.front());

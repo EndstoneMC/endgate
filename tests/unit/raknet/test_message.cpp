@@ -296,6 +296,18 @@ TEST(Message, InvalidPasswordCarriesTheGuid)
     EXPECT_EQ(encode(InvalidPassword{guid}), "180123456789abcdef");
 }
 
+TEST(Message, OfflineDecodersRefuseDatagramsTooShortToClassify)
+{
+    for (const auto id : {"05", "06", "07", "08", "12", "19"}) {
+        EXPECT_FALSE(OpenConnectionRequest1::decode(bytes(id)));
+        EXPECT_FALSE(OpenConnectionReply1::decode(bytes(id)));
+        EXPECT_FALSE(OpenConnectionRequest2::decode(bytes(id)));
+        EXPECT_FALSE(OpenConnectionReply2::decode(bytes(std::string{id} + "00")));
+        EXPECT_FALSE(IncompatibleProtocolVersion::decode(bytes(id)));
+        EXPECT_FALSE(OfflineRejection::decode(bytes(std::string{id} + "00")));
+    }
+}
+
 TEST(Message, OfflineClassificationFollowsTheReference)
 {
     EXPECT_TRUE(isOfflineMessage({}));
