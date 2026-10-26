@@ -481,6 +481,24 @@ TEST(Connection, SecondConnectionRequestIsAcceptedAgain)
     EXPECT_NE(reply.find("000000000000004d"), std::string::npos);
 }
 
+TEST(Connection, DetectLostConnectionsIsAcknowledgedAndIgnored)
+{
+    Handshake handshake;
+    ASSERT_TRUE(handshake.connect());
+    const auto before = handshake.server.events.datagrams.size();
+    handshake.server.connection->handleDatagram(fromHex("84"
+                                                        "500000"
+                                                        "400008"
+                                                        "000000"
+                                                        "04"),
+                                                handshake.simulation.now());
+    handshake.simulation.runUntil([] { return false; }, 50ms);
+    EXPECT_TRUE(handshake.server.connection->isConnected());
+    EXPECT_TRUE(handshake.server.events.messages.empty());
+    EXPECT_TRUE(handshake.server.events.disconnected.empty());
+    EXPECT_GT(handshake.server.events.datagrams.size(), before);
+}
+
 TEST(Connection, UserMessagesReachTheListenerAndControlMessagesDoNot)
 {
     Handshake handshake;
