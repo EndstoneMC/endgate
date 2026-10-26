@@ -486,12 +486,10 @@ TEST(Connection, DetectLostConnectionsIsAcknowledgedAndIgnored)
     Handshake handshake;
     ASSERT_TRUE(handshake.connect());
     const auto before = handshake.server.events.datagrams.size();
-    handshake.server.connection->handleDatagram(fromHex("84"
-                                                        "500000"
-                                                        "400008"
-                                                        "000000"
-                                                        "04"),
-                                                handshake.simulation.now());
+    const auto unreliable_detect_lost_connections = fromHex("84500000"
+                                                            "000008"
+                                                            "04");
+    handshake.server.connection->handleDatagram(unreliable_detect_lost_connections, handshake.simulation.now());
     handshake.simulation.runUntil([] { return false; }, 50ms);
     EXPECT_TRUE(handshake.server.connection->isConnected());
     EXPECT_TRUE(handshake.server.events.messages.empty());
