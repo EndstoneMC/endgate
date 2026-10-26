@@ -978,6 +978,9 @@ void Association::queueResetRequest()
 void Association::transmit(Clock::time_point now)
 {
     constexpr unsigned max_burst = 4;
+    if (state_ == State::CookieEchoed) {
+        control_.clear();
+    }
     if (!tcb_ || state_ == State::CookieEchoed) {
         return;
     }
