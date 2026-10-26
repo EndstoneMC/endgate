@@ -346,6 +346,57 @@ TEST_F(RawPeerTest, ClosesChannelOnUnsupportedPpid)
     EXPECT_EQ(server.closed[0].label, "chan");
 }
 
+TEST_F(RawPeerTest, ListenerMayCloseTheChannelItIsHearingFrom)
+{
+    open(1, DataChannelOpen::of("chan", "", reliable, 256).serialize());
+    std::string label;
+    server.on_message = [&](const DataChannel &channel, const ByteBuf &) {
+        transport.abort(now);
+        transport.closeDataChannel(channel.stream, now);
+        label = channel.label;
+    };
+    ASSERT_TRUE(peer.send(1, static_cast<std::uint32_t>(Ppid::Binary), bufferOf("x"), {}, now));
+    pump();
+    EXPECT_EQ(label, "chan");
+    ASSERT_EQ(server.closed.size(), 1U);
+    EXPECT_EQ(server.closed[0].label, "chan");
+    EXPECT_EQ(transport.state(), SctpTransport::State::Failed);
+}
+
+TEST_F(RawPeerTest, ClosesChannelWhosePeerDeniesTheReset)
+{
+    open(1, DataChannelOpen::of("chan", "", reliable, 256).serialize());
+    ASSERT_TRUE(peer.send(1, static_cast<std::uint32_t>(Ppid::Binary), bufferOf("x"), {}, now));
+    const auto tag = Packet::parse(raw.outbox.front())->header.verification_tag;
+    pump();
+
+    transport.closeDataChannel(1, now);
+    std::optional<std::uint32_t> sequence;
+    for (const auto &packet : std::exchange(server.outbox, {})) {
+        const auto parsed = Packet::parse(packet);
+        for (const auto &chunk : parsed->chunks) {
+            if (chunk.type == static_cast<std::uint8_t>(ChunkType::ReConfig)) {
+                sequence = OutgoingResetRequest::parse(Tlv::parseAll(chunk.value)->front())->request_sequence;
+            }
+        }
+    }
+    ASSERT_TRUE(sequence);
+    EXPECT_TRUE(server.closed.empty());
+
+    std::vector<std::byte> fields;
+    ByteWriter fields_writer(fields);
+    fields_writer.write32(*sequence);
+    fields_writer.write32(static_cast<std::uint32_t>(ReconfigResult::Denied));
+    std::vector<std::byte> value;
+    ByteWriter(value).writeTlv(static_cast<std::uint16_t>(ParameterType::ReconfigurationResponse), fields);
+    std::vector<std::byte> buffer;
+    PacketBuilder builder(buffer, {.source_port = 5000, .destination_port = 5000, .verification_tag = tag}, 1200);
+    builder.addChunk(ChunkType::ReConfig, 0, value);
+    transport.handlePacket(builder.build(), now);
+    ASSERT_EQ(server.closed.size(), 1U);
+    EXPECT_EQ(server.closed[0].label, "chan");
+}
+
 TEST_F(RawPeerTest, RefusesOversizedLabel)
 {
     open(1, DataChannelOpen::of(std::string(1025, 'l'), "", reliable, 256).serialize());

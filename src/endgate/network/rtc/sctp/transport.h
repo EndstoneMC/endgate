@@ -110,6 +110,7 @@ private:
 
     void handleOpen(std::uint16_t stream, std::span<const std::byte> message);
     void refuse(std::uint16_t stream);
+    void finish(std::uint16_t stream);
     void closeAll();
     void changeState(State state);
 
@@ -117,6 +118,8 @@ private:
     Config config_;
     State state_{State::Connecting};
     std::map<std::uint16_t, Channel> channels_;
+    std::optional<std::uint16_t> notifying_;
+    bool finish_after_notify_{false};
     Clock::time_point now_{};
     sctp::Association association_;
 };

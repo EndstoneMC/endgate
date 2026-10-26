@@ -99,9 +99,7 @@ void SctpTransport::closeDataChannel(std::uint16_t stream, Clock::time_point now
     channel->second.closing = true;
     const std::array streams{stream};
     if (!association_.resetStreams(streams, now)) {
-        auto info = std::move(channel->second.info);
-        channels_.erase(channel);
-        listener_.onChannelClosed(info);
+        finish(stream);
     }
 }
 
@@ -169,8 +167,13 @@ void SctpTransport::onMessage(sctp::Message message)
         channel->second.acknowledged = true;
         const auto ppid = static_cast<Ppid>(message.ppid);
         const auto empty = ppid == Ppid::StringEmpty || ppid == Ppid::BinaryEmpty;
+        notifying_ = message.stream;
         listener_.onChannelMessage(channel->second.info, empty ? ByteBuf{} : std::move(message.payload),
                                    ppid == Ppid::Binary || ppid == Ppid::BinaryEmpty);
+        notifying_.reset();
+        if (std::exchange(finish_after_notify_, false)) {
+            finish(message.stream);
+        }
         return;
     }
     default:
@@ -203,14 +206,12 @@ void SctpTransport::onIncomingStreamsReset(std::span<const std::uint16_t> stream
             }
         }
         if (channel->second.outgoing_reset) {
-            auto info = std::move(channel->second.info);
-            channels_.erase(channel);
-            listener_.onChannelClosed(info);
+            finish(stream);
         }
     }
 }
 
-void SctpTransport::onOutgoingStreamsReset(std::span<const std::uint16_t> streams, bool)
+void SctpTransport::onOutgoingStreamsReset(std::span<const std::uint16_t> streams, bool performed)
 {
     for (const auto stream : streams) {
         const auto channel = channels_.find(stream);
@@ -218,10 +219,8 @@ void SctpTransport::onOutgoingStreamsReset(std::span<const std::uint16_t> stream
             continue;
         }
         channel->second.outgoing_reset = true;
-        if (channel->second.incoming_reset) {
-            auto info = std::move(channel->second.info);
-            channels_.erase(channel);
-            listener_.onChannelClosed(info);
+        if (channel->second.incoming_reset || !performed) {
+            finish(stream);
         }
     }
 }
@@ -253,7 +252,12 @@ void SctpTransport::handleOpen(std::uint16_t stream, std::span<const std::byte> 
                                            .acknowledged = true,
                                        })
                               .first->second;
+    notifying_ = stream;
     listener_.onChannelOpen(channel.info);
+    notifying_.reset();
+    if (std::exchange(finish_after_notify_, false)) {
+        finish(stream);
+    }
 }
 
 void SctpTransport::refuse(std::uint16_t stream)
@@ -265,6 +269,21 @@ void SctpTransport::refuse(std::uint16_t stream)
     }
     const std::array streams{stream};
     association_.resetStreams(streams, now_);
+}
+
+void SctpTransport::finish(std::uint16_t stream)
+{
+    if (notifying_ == stream) {
+        finish_after_notify_ = true;
+        return;
+    }
+    const auto channel = channels_.find(stream);
+    if (channel == channels_.end()) {
+        return;
+    }
+    auto info = std::move(channel->second.info);
+    channels_.erase(channel);
+    listener_.onChannelClosed(info);
 }
 
 void SctpTransport::closeAll()
