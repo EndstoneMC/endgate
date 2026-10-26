@@ -9,6 +9,7 @@ add_executable(endgate_sctp_tests
         test_receiver.cpp
         test_sender.cpp
         test_sequence.cpp
+        test_stream_reset.cpp
         test_transfer.cpp
 )
 
