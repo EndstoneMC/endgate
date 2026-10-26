@@ -202,7 +202,7 @@ void RangeList::insert(std::uint32_t index)
         next->min = index;
         return;
     }
-    ranges_.insert(next, Range{index, index});
+    ranges_.insert(next, Range{.min = index, .max = index});
 }
 
 void RangeList::serialize(Writer &writer, std::size_t max_bits)
@@ -249,14 +249,14 @@ std::expected<std::vector<Range>, RangeListError> RangeList::deserialize(Reader 
             return std::unexpected(RangeListError::Truncated);
         }
         if (*max_equal_to_min != 0) {
-            ranges.push_back({*min, *min});
+            ranges.push_back({.min = *min, .max = *min});
             continue;
         }
         const auto max = reader.readUint24();
         if (!max || *max < *min) {
             return std::unexpected(RangeListError::Truncated);
         }
-        ranges.push_back({*min, *max});
+        ranges.push_back({.min = *min, .max = *max});
     }
     if (ranges.size() > MAX_ACKNOWLEDGEMENT_RANGES_PER_DATAGRAM) {
         return std::unexpected(RangeListError::TooManyRanges);
