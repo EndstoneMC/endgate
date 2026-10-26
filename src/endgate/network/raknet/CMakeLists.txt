@@ -4,6 +4,7 @@ add_library(endgate_raknet STATIC
         datagram.cpp
         congestion.cpp
         reliability.cpp
+        connection.cpp
 )
 
 target_include_directories(endgate_raknet PUBLIC ${PROJECT_SOURCE_DIR}/src)
