@@ -5,6 +5,7 @@ add_library(endgate_rtc STATIC
         ice.cpp
         stun.cpp
 )
+add_library(endgate::rtc ALIAS endgate_rtc)
 
 target_include_directories(endgate_rtc PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(endgate_rtc
