@@ -479,8 +479,13 @@ void Sender::abandon(std::size_t index)
 {
     const auto message = outstanding_[index].message;
     const auto stream_id = outstanding_[index].stream;
-    for (auto &item : outstanding_) {
-        if (item.message == message && item.state != State::Abandoned) {
+    auto first = index;
+    while (first > 0 && outstanding_[first - 1].message == message) {
+        --first;
+    }
+    for (auto at = first; at < outstanding_.size() && outstanding_[at].message == message; ++at) {
+        auto &item = outstanding_[at];
+        if (item.state != State::Abandoned) {
             leaveFlight(item);
             item.state = State::Abandoned;
             item.fast = false;

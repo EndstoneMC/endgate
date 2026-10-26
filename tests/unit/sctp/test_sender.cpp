@@ -301,6 +301,22 @@ TEST_F(SenderTest, DiscardsTheUnsentRestOfAnAbandonedMessage)
     EXPECT_EQ(data->flags & DataChunk::beginning_flag, DataChunk::beginning_flag);
 }
 
+TEST_F(SenderTest, AbandonsEveryFragmentOfTheMessage)
+{
+    ASSERT_TRUE(sender.send(1, 53, payload(100), {.max_retransmits = 0}, start));
+    ASSERT_TRUE(sender.send(1, 53, payload(3000), {.max_retransmits = 0}, start));
+    ASSERT_TRUE(sender.send(1, 53, payload(100), {}, start));
+    transmit(start);
+    ASSERT_EQ(sender.outstandingChunks(), 5U);
+    sack(999, {{.start = 2, .end = 2}, {.start = 5, .end = 5}});
+    sender.handleTimeout(start + 500ms);
+    const auto forward = sender.forwardTsn(start + 500ms, 1188);
+    ASSERT_TRUE(forward);
+    EXPECT_EQ(forward->new_cumulative_tsn, 1003U);
+    EXPECT_EQ(forward->skipped, (std::vector<ForwardTsnChunk::SkippedStream>{{.stream = 1, .ssn = 1}}));
+    EXPECT_TRUE(transmit(start + 500ms).empty());
+}
+
 TEST_F(SenderTest, RetransmitsLimitedTimesThenAbandons)
 {
     ASSERT_TRUE(sender.send(0, 53, payload(100), {.max_retransmits = 1}, start));
