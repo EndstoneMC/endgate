@@ -4,7 +4,7 @@
 
 namespace endgate::rtc::sctp {
 
-std::uint32_t crc32c(std::span<const std::byte> data)
+std::uint32_t crc32c(std::span<const std::byte> data, std::uint32_t previous)
 {
     static constexpr auto tables = [] {
         std::array<std::array<std::uint32_t, 256>, 8> result{};
@@ -17,14 +17,14 @@ std::uint32_t crc32c(std::span<const std::byte> data)
         }
         for (std::size_t table = 1; table < result.size(); ++table) {
             for (std::size_t i = 0; i < 256; ++i) {
-                const auto previous = result[table - 1][i];
-                result[table][i] = (previous >> 8U) ^ result[0][previous & 0xFFU];
+                const auto entry = result[table - 1][i];
+                result[table][i] = (entry >> 8U) ^ result[0][entry & 0xFFU];
             }
         }
         return result;
     }();
 
-    std::uint32_t crc = 0xFFFFFFFFU;
+    std::uint32_t crc = ~previous;
     auto remaining = data;
     while (remaining.size() >= 8) {
         const auto low =

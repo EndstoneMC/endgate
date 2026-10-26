@@ -73,5 +73,14 @@ TEST(Crc32c, EveryLengthMatchesBytewise)
     }
 }
 
+TEST(Crc32c, ContinuesFromPreviousValue)
+{
+    const auto data = filled(41, 3, 5);
+    for (std::size_t split = 0; split <= data.size(); ++split) {
+        const auto head = crc32c(std::span{data}.first(split));
+        EXPECT_EQ(crc32c(std::span{data}.subspan(split), head), crc32c(data)) << split;
+    }
+}
+
 }  // namespace
 }  // namespace endgate::rtc::sctp
