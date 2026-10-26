@@ -1,0 +1,8 @@
+include(GoogleTest)
+
+add_executable(endgate_raknet_tests
+        test_codec.cpp
+)
+
+target_link_libraries(endgate_raknet_tests PRIVATE endgate_raknet GTest::gtest_main)
+gtest_discover_tests(endgate_raknet_tests)
