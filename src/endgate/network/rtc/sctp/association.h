@@ -140,6 +140,7 @@ private:
         std::uint32_t sequence;
         std::uint32_t last_assigned_tsn;
         std::vector<std::uint16_t> streams;
+        unsigned in_progress_answers{0};
         bool in_progress{false};
     };
 

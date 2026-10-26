@@ -822,9 +822,10 @@ void Association::handleReconfig(const Chunk &chunk, Clock::time_point now)
             if (!response || !tcb_->request || response->response_sequence != tcb_->request->sequence) {
                 break;
             }
-            if (response->result == ReconfigResult::InProgress) {
+            const auto in_progress = response->result == ReconfigResult::InProgress;
+            if (in_progress && ++tcb_->request->in_progress_answers <= config_.max_retransmissions) {
                 tcb_->request->in_progress = true;
-                tcb_->reconfig_backoff = tcb_->sender.rto();
+                tcb_->reconfig_backoff = std::min(tcb_->reconfig_backoff * 2, config_.rto_max);
                 tcb_->reconfig_at = now + tcb_->reconfig_backoff;
                 break;
             }

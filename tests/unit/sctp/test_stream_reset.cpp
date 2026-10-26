@@ -338,6 +338,56 @@ TEST(StreamReset, ReportsOnlyStreamsThatExist)
     EXPECT_EQ(network.endpoint_b.incoming_resets[0], (Streams{3, 5}));
 }
 
+TEST(StreamReset, GivesUpOnAPeerThatStaysInProgress)
+{
+    Association::Config config;
+    config.max_retransmissions = 3;
+    config.heartbeat_interval = {};
+    Network network{config};
+    connect(network);
+    std::uint32_t tag = 0;
+    network.filter = [&](std::span<const std::byte> packet, bool to_b) {
+        if (!to_b) {
+            tag = Packet::parse(packet)->header.verification_tag;
+        }
+        return true;
+    };
+    ASSERT_TRUE(network.b->send(0, 51, bufferOf("x"), {}, network.now));
+    network.run(1s);
+    ASSERT_NE(tag, 0U);
+
+    std::vector<std::uint32_t> sequences;
+    network.filter = [&](std::span<const std::byte> packet, bool to_b) {
+        if (!to_b) {
+            return true;
+        }
+        for (const auto &chunk : Packet::parse(packet)->chunks) {
+            if (chunk.type == static_cast<std::uint8_t>(ChunkType::ReConfig)) {
+                sequences.push_back(OutgoingResetRequest::parse(Tlv::parseAll(chunk.value)->front())->request_sequence);
+            }
+        }
+        return false;
+    };
+    const Streams streams{1};
+    ASSERT_TRUE(network.a->resetStreams(streams, network.now));
+    for (auto answer = 0; answer < 6 && network.endpoint_a.outgoing_resets.empty(); ++answer) {
+        ASSERT_TRUE(network.runUntil([&] { return sequences.size() > static_cast<std::size_t>(answer); }, 120s));
+        std::vector<std::byte> fields;
+        ByteWriter fields_writer(fields);
+        fields_writer.write32(sequences.back());
+        fields_writer.write32(static_cast<std::uint32_t>(ReconfigResult::InProgress));
+        std::vector<std::byte> value;
+        ByteWriter(value).writeTlv(static_cast<std::uint16_t>(ParameterType::ReconfigurationResponse), fields);
+        std::vector<std::byte> buffer;
+        PacketBuilder builder(buffer, {.source_port = 5000, .destination_port = 5000, .verification_tag = tag}, 1200);
+        builder.addChunk(ChunkType::ReConfig, 0, value);
+        network.a->handlePacket(builder.build(), network.now);
+    }
+    ASSERT_EQ(network.endpoint_a.outgoing_resets.size(), 1U);
+    EXPECT_FALSE(network.endpoint_a.outgoing_resets[0].second);
+    EXPECT_FALSE(network.endpoint_a.closed);
+}
+
 TEST(StreamReset, RefusesResetBeforeEstablishment)
 {
     Network network;
