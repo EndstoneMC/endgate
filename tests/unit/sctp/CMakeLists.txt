@@ -9,6 +9,7 @@ add_executable(endgate_sctp_tests
         test_receiver.cpp
         test_sender.cpp
         test_sequence.cpp
+        test_transfer.cpp
 )
 
 target_link_libraries(endgate_sctp_tests PRIVATE endgate_sctp GTest::gtest_main)
