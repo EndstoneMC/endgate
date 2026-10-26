@@ -3,6 +3,7 @@ add_library(endgate_raknet STATIC
         message.cpp
         datagram.cpp
         congestion.cpp
+        reliability.cpp
 )
 
 target_include_directories(endgate_raknet PUBLIC ${PROJECT_SOURCE_DIR}/src)
