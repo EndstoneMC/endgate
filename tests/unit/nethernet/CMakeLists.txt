@@ -2,6 +2,7 @@ add_executable(endgate_nethernet_tests
         test_candidates.cpp
         test_framing.cpp
         test_identity.cpp
+        test_session.cpp
         test_signaling.cpp
 )
 
