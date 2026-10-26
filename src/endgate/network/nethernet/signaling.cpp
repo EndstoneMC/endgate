@@ -24,7 +24,7 @@ namespace endgate::nethernet {
 
 namespace {
 
-constexpr auto Awaitable = asio::as_tuple(asio::use_awaitable);
+constexpr auto AWAITABLE = asio::as_tuple(asio::use_awaitable);
 
 struct Ping {
     std::string name;
@@ -145,10 +145,10 @@ void HttpSignalingServer::close()
 asio::awaitable<void> HttpSignalingServer::accept(std::shared_ptr<HttpSignalingServer> self)
 {
     while (self->acceptor_.is_open()) {
-        auto [error, socket] = co_await self->acceptor_.async_accept(Awaitable);
+        auto [error, socket] = co_await self->acceptor_.async_accept(AWAITABLE);
         if (error) {
             asio::steady_timer pause(self->strand_, std::chrono::milliseconds{100});
-            co_await pause.async_wait(Awaitable);
+            co_await pause.async_wait(AWAITABLE);
             continue;
         }
         if (self->connections_.size() >= self->config_.max_connections) {
@@ -170,7 +170,7 @@ asio::awaitable<void> HttpSignalingServer::serve(std::shared_ptr<HttpSignalingSe
 
     std::array<std::uint8_t, 1> first{};
     const auto [peek_error, peeked] = co_await socket.async_receive(
-        asio::buffer(first), asio::socket_base::message_peek, asio::cancel_after(remainingUntil(deadline), Awaitable));
+        asio::buffer(first), asio::socket_base::message_peek, asio::cancel_after(remainingUntil(deadline), AWAITABLE));
     if (peek_error || peeked == 0) {
         co_return;
     }
@@ -183,21 +183,21 @@ asio::awaitable<void> HttpSignalingServer::serve(std::shared_ptr<HttpSignalingSe
     if (!self->tls_) {
         std::array<char, 16384> client_hello{};
         co_await socket.async_read_some(asio::buffer(client_hello),
-                                        asio::cancel_after(std::chrono::milliseconds{100}, Awaitable));
+                                        asio::cancel_after(std::chrono::milliseconds{100}, AWAITABLE));
         constexpr std::array<std::uint8_t, 7> handshake_failure{0x15, 0x03, 0x01, 0x00, 0x02, 0x02, 0x28};
         co_await asio::async_write(socket, asio::buffer(handshake_failure),
-                                   asio::cancel_after(self->config_.write_timeout, Awaitable));
+                                   asio::cancel_after(self->config_.write_timeout, AWAITABLE));
         co_return;
     }
 
     asio::ssl::stream<asio::ip::tcp::socket &> stream(socket, *self->tls_);
     const auto [handshake_error] = co_await stream.async_handshake(
-        asio::ssl::stream_base::server, asio::cancel_after(remainingUntil(deadline), Awaitable));
+        asio::ssl::stream_base::server, asio::cancel_after(remainingUntil(deadline), AWAITABLE));
     if (handshake_error) {
         co_return;
     }
     co_await self->exchange(stream, deadline);
-    co_await stream.async_shutdown(asio::cancel_after(std::chrono::seconds{1}, Awaitable));
+    co_await stream.async_shutdown(asio::cancel_after(std::chrono::seconds{1}, AWAITABLE));
 }
 
 template <typename Stream>
@@ -208,7 +208,7 @@ asio::awaitable<void> HttpSignalingServer::exchange(Stream &stream, std::chrono:
     while (!request) {
         std::array<char, 4096> chunk{};
         const auto [error, received] = co_await stream.async_read_some(
-            asio::buffer(chunk), asio::cancel_after(remainingUntil(deadline), Awaitable));
+            asio::buffer(chunk), asio::cancel_after(remainingUntil(deadline), AWAITABLE));
         if (error || buffer.size() + received > config_.max_request_bytes) {
             co_return;
         }
@@ -327,7 +327,7 @@ asio::awaitable<void> HttpSignalingServer::exchange(Stream &stream, std::chrono:
         std::format("HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: "
                     "close\r\n\r\n{}",
                     response.status, response.reason, response.content_type, response.body.size(), response.body);
-    co_await asio::async_write(stream, asio::buffer(serialized), asio::cancel_after(config_.write_timeout, Awaitable));
+    co_await asio::async_write(stream, asio::buffer(serialized), asio::cancel_after(config_.write_timeout, AWAITABLE));
 }
 
 asio::awaitable<HttpSignalingServer::Response> HttpSignalingServer::respond(Request request)
@@ -397,7 +397,7 @@ asio::awaitable<HttpSignalingServer::Response> HttpSignalingServer::respond(Requ
                                 .host = std::move(request.host),
                                 .port = request.port},
                     JoinResponse{pending});
-    co_await pending->timer.async_wait(Awaitable);
+    co_await pending->timer.async_wait(AWAITABLE);
     if (!pending->result) {
         co_return error(504, "Gateway Timeout");
     }

@@ -42,7 +42,7 @@ std::optional<std::vector<std::uint16_t>> parseStreams(std::span<const std::byte
 std::optional<Packet> Packet::parse(std::span<const std::byte> data)
 {
     constexpr std::size_t max_packet_size = 65535;
-    if (data.size() < CommonHeader::Size + Chunk::HeaderSize || data.size() > max_packet_size) {
+    if (data.size() < CommonHeader::SIZE + Chunk::HEADER_SIZE || data.size() > max_packet_size) {
         return std::nullopt;
     }
 
@@ -52,7 +52,7 @@ std::optional<Packet> Packet::parse(std::span<const std::byte> data)
     constexpr std::array<std::byte, 4> zero_checksum{};
     auto checksum = crc32c(data.first(8));
     checksum = crc32c(zero_checksum, checksum);
-    checksum = crc32c(data.subspan(CommonHeader::Size), checksum);
+    checksum = crc32c(data.subspan(CommonHeader::SIZE), checksum);
     if (checksum != received_checksum) {
         return std::nullopt;
     }
@@ -63,19 +63,19 @@ std::optional<Packet> Packet::parse(std::span<const std::byte> data)
                    .verification_tag = load32(data, 4)},
         .chunks = {},
     };
-    auto remaining = data.subspan(CommonHeader::Size);
+    auto remaining = data.subspan(CommonHeader::SIZE);
     while (!remaining.empty()) {
-        if (remaining.size() < Chunk::HeaderSize) {
+        if (remaining.size() < Chunk::HEADER_SIZE) {
             return std::nullopt;
         }
         const auto length = load16(remaining, 2);
-        if (length < Chunk::HeaderSize || length > remaining.size()) {
+        if (length < Chunk::HEADER_SIZE || length > remaining.size()) {
             return std::nullopt;
         }
         packet.chunks.push_back({
             .type = std::to_integer<std::uint8_t>(remaining[0]),
             .flags = std::to_integer<std::uint8_t>(remaining[1]),
-            .value = remaining.subspan(Chunk::HeaderSize, length - Chunk::HeaderSize),
+            .value = remaining.subspan(Chunk::HEADER_SIZE, length - Chunk::HEADER_SIZE),
         });
         remaining = remaining.subspan(std::min(padded(length), remaining.size()));
     }
@@ -86,16 +86,16 @@ std::optional<std::vector<Tlv>> Tlv::parseAll(std::span<const std::byte> data)
 {
     std::vector<Tlv> tlvs;
     while (!data.empty()) {
-        if (data.size() < HeaderSize) {
+        if (data.size() < HEADER_SIZE) {
             return std::nullopt;
         }
         const auto length = load16(data, 2);
-        if (length < HeaderSize || length > data.size()) {
+        if (length < HEADER_SIZE || length > data.size()) {
             return std::nullopt;
         }
         tlvs.push_back({
             .type = load16(data, 0),
-            .value = data.subspan(HeaderSize, length - HeaderSize),
+            .value = data.subspan(HEADER_SIZE, length - HEADER_SIZE),
             .raw = data.first(length),
         });
         data = data.subspan(std::min(padded(length), data.size()));
@@ -105,7 +105,7 @@ std::optional<std::vector<Tlv>> Tlv::parseAll(std::span<const std::byte> data)
 
 std::optional<DataChunk> DataChunk::parse(const Chunk &chunk)
 {
-    constexpr std::size_t fields_size = HeaderSize - Chunk::HeaderSize;
+    constexpr std::size_t fields_size = HEADER_SIZE - Chunk::HEADER_SIZE;
     if (chunk.value.size() < fields_size) {
         return std::nullopt;
     }
@@ -257,7 +257,7 @@ void ByteWriter::writeTlv(std::uint16_t type, std::span<const std::byte> value)
 {
     pad();
     write16(type);
-    write16(static_cast<std::uint16_t>(Tlv::HeaderSize + value.size()));
+    write16(static_cast<std::uint16_t>(Tlv::HEADER_SIZE + value.size()));
     write(value);
 }
 
@@ -287,7 +287,7 @@ void PacketBuilder::addChunk(ChunkType type, std::uint8_t flags, std::span<const
     ByteWriter writer(buffer_);
     writer.write8(static_cast<std::uint8_t>(type));
     writer.write8(flags);
-    writer.write16(static_cast<std::uint16_t>(Chunk::HeaderSize + value.size()));
+    writer.write16(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + value.size()));
     writer.write(value);
     writer.pad();
 }
@@ -297,7 +297,7 @@ void PacketBuilder::addData(const DataChunk &header, const ByteBuf &payload)
     ByteWriter writer(buffer_);
     writer.write8(static_cast<std::uint8_t>(ChunkType::Data));
     writer.write8(header.flags);
-    writer.write16(static_cast<std::uint16_t>(DataChunk::HeaderSize + payload.length()));
+    writer.write16(static_cast<std::uint16_t>(DataChunk::HEADER_SIZE + payload.length()));
     writer.write32(header.tsn);
     writer.write16(header.stream);
     writer.write16(header.ssn);
@@ -313,7 +313,7 @@ void PacketBuilder::addInit(ChunkType type, const InitChunk &init, std::span<con
     ByteWriter writer(buffer_);
     writer.write8(static_cast<std::uint8_t>(type));
     writer.write8(0);
-    writer.write16(static_cast<std::uint16_t>(Chunk::HeaderSize + 16 + parameters.size()));
+    writer.write16(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + 16 + parameters.size()));
     writer.write32(init.initiate_tag);
     writer.write32(init.a_rwnd);
     writer.write16(init.outbound_streams);
@@ -328,8 +328,8 @@ void PacketBuilder::addSack(const SackChunk &sack)
     ByteWriter writer(buffer_);
     writer.write8(static_cast<std::uint8_t>(ChunkType::Sack));
     writer.write8(0);
-    writer.write16(
-        static_cast<std::uint16_t>(Chunk::HeaderSize + 12 + 4 * (sack.gap_blocks.size() + sack.duplicate_tsns.size())));
+    writer.write16(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + 12 +
+                                              4 * (sack.gap_blocks.size() + sack.duplicate_tsns.size())));
     writer.write32(sack.cumulative_tsn_ack);
     writer.write32(sack.a_rwnd);
     writer.write16(static_cast<std::uint16_t>(sack.gap_blocks.size()));
@@ -348,7 +348,7 @@ void PacketBuilder::addForwardTsn(const ForwardTsnChunk &forward_tsn)
     ByteWriter writer(buffer_);
     writer.write8(static_cast<std::uint8_t>(ChunkType::ForwardTsn));
     writer.write8(0);
-    writer.write16(static_cast<std::uint16_t>(Chunk::HeaderSize + 4 + 4 * forward_tsn.skipped.size()));
+    writer.write16(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + 4 + 4 * forward_tsn.skipped.size()));
     writer.write32(forward_tsn.new_cumulative_tsn);
     for (const auto &skipped : forward_tsn.skipped) {
         writer.write16(skipped.stream);

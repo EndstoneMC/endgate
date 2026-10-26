@@ -11,8 +11,8 @@
 namespace endgate::nethernet {
 namespace {
 
-constexpr std::size_t FragmentSize = PacketQueue::DEFAULT_MAX_MESSAGE_SIZE - 1;
-constexpr std::size_t MaxPacketSize = 8 * 1024 * 1024;
+constexpr std::size_t FRAGMENT_SIZE = PacketQueue::DEFAULT_MAX_MESSAGE_SIZE - 1;
+constexpr std::size_t MAX_PACKET_SIZE = 8 * 1024 * 1024;
 
 std::vector<std::byte> bytesOf(const ByteBuf &buf)
 {
@@ -50,159 +50,160 @@ class PacketQueueTest : public testing::Test {
 protected:
     void deliverEverySentFragment()
     {
-        for (const auto &fragment : recorder.fragments) {
+        for (const auto &fragment : recorder_.fragments) {
             const auto message = ByteBuf::copyBuffer(fragment.bytes);
             if (fragment.type == ESendType::Reliable) {
-                queue.onOrderedMessage(message);
+                queue_.onOrderedMessage(message);
             }
             else {
-                queue.onUnorderedMessage(message);
+                queue_.onUnorderedMessage(message);
             }
         }
     }
 
-    Recorder recorder;
-    PacketQueue queue{recorder, MaxPacketSize};
+    Recorder recorder_;
+    PacketQueue queue_{recorder_, MAX_PACKET_SIZE};
 };
 
 TEST_F(PacketQueueTest, SendsASmallPacketAsOneFragmentWithHeaderZero)
 {
     const std::vector payload{std::byte{'A'}};
-    ASSERT_TRUE(queue.push(ByteBuf::copyBuffer(payload), ESendType::Reliable));
+    ASSERT_TRUE(queue_.push(ByteBuf::copyBuffer(payload), ESendType::Reliable));
 
-    ASSERT_EQ(recorder.fragments.size(), 1U);
-    EXPECT_EQ(recorder.fragments[0].type, ESendType::Reliable);
-    EXPECT_EQ(recorder.fragments[0].bytes, (std::vector{std::byte{0x00}, std::byte{'A'}}));
+    ASSERT_EQ(recorder_.fragments.size(), 1U);
+    EXPECT_EQ(recorder_.fragments[0].type, ESendType::Reliable);
+    EXPECT_EQ(recorder_.fragments[0].bytes, (std::vector{std::byte{0x00}, std::byte{'A'}}));
 }
 
 TEST_F(PacketQueueTest, SendsAnUnreliablePacketOnTheUnorderedChannel)
 {
     const std::vector payload{std::byte{'h'}, std::byte{'i'}};
-    ASSERT_TRUE(queue.push(ByteBuf::copyBuffer(payload), ESendType::Unreliable));
+    ASSERT_TRUE(queue_.push(ByteBuf::copyBuffer(payload), ESendType::Unreliable));
 
-    ASSERT_EQ(recorder.fragments.size(), 1U);
-    EXPECT_EQ(recorder.fragments[0].type, ESendType::Unreliable);
-    EXPECT_EQ(recorder.fragments[0].bytes, (std::vector{std::byte{0x00}, std::byte{'h'}, std::byte{'i'}}));
+    ASSERT_EQ(recorder_.fragments.size(), 1U);
+    EXPECT_EQ(recorder_.fragments[0].type, ESendType::Unreliable);
+    EXPECT_EQ(recorder_.fragments[0].bytes, (std::vector{std::byte{0x00}, std::byte{'h'}, std::byte{'i'}}));
 }
 
 TEST_F(PacketQueueTest, KeepsAPacketOfExactlyOneFragmentWhole)
 {
-    ASSERT_TRUE(queue.push(ByteBuf::copyBuffer(payloadOf(FragmentSize, 1)), ESendType::Reliable));
+    ASSERT_TRUE(queue_.push(ByteBuf::copyBuffer(payloadOf(FRAGMENT_SIZE, 1)), ESendType::Reliable));
 
-    ASSERT_EQ(recorder.fragments.size(), 1U);
-    EXPECT_EQ(recorder.fragments[0].bytes.size(), FragmentSize + 1);
-    EXPECT_EQ(recorder.fragments[0].bytes.front(), std::byte{0x00});
+    ASSERT_EQ(recorder_.fragments.size(), 1U);
+    EXPECT_EQ(recorder_.fragments[0].bytes.size(), FRAGMENT_SIZE + 1);
+    EXPECT_EQ(recorder_.fragments[0].bytes.front(), std::byte{0x00});
 }
 
 TEST_F(PacketQueueTest, CountsFragmentsDownToZero)
 {
-    const auto payload = payloadOf(FragmentSize * 2 + 5, 2);
-    ASSERT_TRUE(queue.push(ByteBuf::copyBuffer(payload), ESendType::Reliable));
+    const auto payload = payloadOf(FRAGMENT_SIZE * 2 + 5, 2);
+    ASSERT_TRUE(queue_.push(ByteBuf::copyBuffer(payload), ESendType::Reliable));
 
-    ASSERT_EQ(recorder.fragments.size(), 3U);
-    EXPECT_EQ(recorder.fragments[0].bytes.front(), std::byte{2});
-    EXPECT_EQ(recorder.fragments[1].bytes.front(), std::byte{1});
-    EXPECT_EQ(recorder.fragments[2].bytes.front(), std::byte{0});
-    EXPECT_EQ(recorder.fragments[0].bytes.size(), FragmentSize + 1);
-    EXPECT_EQ(recorder.fragments[1].bytes.size(), FragmentSize + 1);
-    EXPECT_EQ(recorder.fragments[2].bytes.size(), 5U + 1);
+    ASSERT_EQ(recorder_.fragments.size(), 3U);
+    EXPECT_EQ(recorder_.fragments[0].bytes.front(), std::byte{2});
+    EXPECT_EQ(recorder_.fragments[1].bytes.front(), std::byte{1});
+    EXPECT_EQ(recorder_.fragments[2].bytes.front(), std::byte{0});
+    EXPECT_EQ(recorder_.fragments[0].bytes.size(), FRAGMENT_SIZE + 1);
+    EXPECT_EQ(recorder_.fragments[1].bytes.size(), FRAGMENT_SIZE + 1);
+    EXPECT_EQ(recorder_.fragments[2].bytes.size(), 5U + 1);
 }
 
 TEST_F(PacketQueueTest, SplitsOneByteOverAFragmentIntoTwo)
 {
-    const auto payload = payloadOf(FragmentSize + 1, 3);
-    ASSERT_TRUE(queue.push(ByteBuf::copyBuffer(payload), ESendType::Reliable));
+    const auto payload = payloadOf(FRAGMENT_SIZE + 1, 3);
+    ASSERT_TRUE(queue_.push(ByteBuf::copyBuffer(payload), ESendType::Reliable));
 
-    ASSERT_EQ(recorder.fragments.size(), 2U);
-    EXPECT_EQ(recorder.fragments[0].bytes.front(), std::byte{1});
-    EXPECT_EQ(recorder.fragments[1].bytes, (std::vector{std::byte{0}, payload.back()}));
+    ASSERT_EQ(recorder_.fragments.size(), 2U);
+    EXPECT_EQ(recorder_.fragments[0].bytes.front(), std::byte{1});
+    EXPECT_EQ(recorder_.fragments[1].bytes, (std::vector{std::byte{0}, payload.back()}));
 }
 
 TEST_F(PacketQueueTest, ReassemblesWhatItSent)
 {
-    for (const auto size : {std::size_t{1}, std::size_t{1000}, FragmentSize, FragmentSize + 1, FragmentSize * 3 + 17}) {
-        recorder = {};
+    for (const auto size :
+         {std::size_t{1}, std::size_t{1000}, FRAGMENT_SIZE, FRAGMENT_SIZE + 1, FRAGMENT_SIZE * 3 + 17}) {
+        recorder_ = {};
         const auto payload = payloadOf(size, static_cast<std::uint8_t>(size));
-        ASSERT_TRUE(queue.push(ByteBuf::copyBuffer(payload), ESendType::Reliable));
+        ASSERT_TRUE(queue_.push(ByteBuf::copyBuffer(payload), ESendType::Reliable));
         deliverEverySentFragment();
-        ASSERT_EQ(recorder.packets.size(), 1U) << size;
-        EXPECT_EQ(recorder.packets[0], payload) << size;
-        EXPECT_TRUE(recorder.closed.empty()) << size;
+        ASSERT_EQ(recorder_.packets.size(), 1U) << size;
+        EXPECT_EQ(recorder_.packets[0], payload) << size;
+        EXPECT_TRUE(recorder_.closed.empty()) << size;
     }
 }
 
 TEST_F(PacketQueueTest, DeliversNothingBeforeTheLastFragment)
 {
-    ASSERT_TRUE(queue.push(ByteBuf::copyBuffer(payloadOf(FragmentSize * 2 + 1, 4)), ESendType::Reliable));
-    queue.onOrderedMessage(ByteBuf::copyBuffer(recorder.fragments[0].bytes));
-    queue.onOrderedMessage(ByteBuf::copyBuffer(recorder.fragments[1].bytes));
-    EXPECT_TRUE(recorder.packets.empty());
+    ASSERT_TRUE(queue_.push(ByteBuf::copyBuffer(payloadOf(FRAGMENT_SIZE * 2 + 1, 4)), ESendType::Reliable));
+    queue_.onOrderedMessage(ByteBuf::copyBuffer(recorder_.fragments[0].bytes));
+    queue_.onOrderedMessage(ByteBuf::copyBuffer(recorder_.fragments[1].bytes));
+    EXPECT_TRUE(recorder_.packets.empty());
 
-    queue.onOrderedMessage(ByteBuf::copyBuffer(recorder.fragments[2].bytes));
-    EXPECT_EQ(recorder.packets.size(), 1U);
+    queue_.onOrderedMessage(ByteBuf::copyBuffer(recorder_.fragments[2].bytes));
+    EXPECT_EQ(recorder_.packets.size(), 1U);
 }
 
 TEST_F(PacketQueueTest, RefusesToFragmentAnUnreliablePacket)
 {
-    EXPECT_FALSE(queue.push(ByteBuf::copyBuffer(payloadOf(FragmentSize + 1, 5)), ESendType::Unreliable));
-    EXPECT_TRUE(recorder.fragments.empty());
+    EXPECT_FALSE(queue_.push(ByteBuf::copyBuffer(payloadOf(FRAGMENT_SIZE + 1, 5)), ESendType::Unreliable));
+    EXPECT_TRUE(recorder_.fragments.empty());
 }
 
 TEST_F(PacketQueueTest, RefusesAPacketBeyondTheFragmentCount)
 {
-    ASSERT_TRUE(queue.setMaxMessageSize(3));
-    EXPECT_TRUE(queue.push(ByteBuf::copyBuffer(payloadOf(PacketQueue::MAX_FRAGMENTS * 2, 6)), ESendType::Reliable));
-    EXPECT_EQ(recorder.fragments.size(), PacketQueue::MAX_FRAGMENTS);
+    ASSERT_TRUE(queue_.setMaxMessageSize(3));
+    EXPECT_TRUE(queue_.push(ByteBuf::copyBuffer(payloadOf(PacketQueue::MAX_FRAGMENTS * 2, 6)), ESendType::Reliable));
+    EXPECT_EQ(recorder_.fragments.size(), PacketQueue::MAX_FRAGMENTS);
 
-    recorder = {};
+    recorder_ = {};
     EXPECT_FALSE(
-        queue.push(ByteBuf::copyBuffer(payloadOf(PacketQueue::MAX_FRAGMENTS * 2 + 1, 7)), ESendType::Reliable));
-    EXPECT_TRUE(recorder.fragments.empty());
+        queue_.push(ByteBuf::copyBuffer(payloadOf(PacketQueue::MAX_FRAGMENTS * 2 + 1, 7)), ESendType::Reliable));
+    EXPECT_TRUE(recorder_.fragments.empty());
 }
 
 TEST_F(PacketQueueTest, FragmentsToTheNegotiatedMessageSize)
 {
-    EXPECT_FALSE(queue.setMaxMessageSize(1));
-    ASSERT_TRUE(queue.setMaxMessageSize(5));
-    ASSERT_TRUE(queue.push(ByteBuf::copyBuffer(payloadOf(9, 8)), ESendType::Reliable));
+    EXPECT_FALSE(queue_.setMaxMessageSize(1));
+    ASSERT_TRUE(queue_.setMaxMessageSize(5));
+    ASSERT_TRUE(queue_.push(ByteBuf::copyBuffer(payloadOf(9, 8)), ESendType::Reliable));
 
-    ASSERT_EQ(recorder.fragments.size(), 3U);
-    EXPECT_EQ(recorder.fragments[0].bytes.size(), 5U);
-    EXPECT_EQ(recorder.fragments[1].bytes.size(), 5U);
-    EXPECT_EQ(recorder.fragments[2].bytes.size(), 2U);
+    ASSERT_EQ(recorder_.fragments.size(), 3U);
+    EXPECT_EQ(recorder_.fragments[0].bytes.size(), 5U);
+    EXPECT_EQ(recorder_.fragments[1].bytes.size(), 5U);
+    EXPECT_EQ(recorder_.fragments[2].bytes.size(), 2U);
 }
 
 TEST_F(PacketQueueTest, StripsTheHeaderFromAnUnorderedMessage)
 {
-    queue.onUnorderedMessage(ByteBuf::copyBuffer(std::vector{std::byte{0}, std::byte{0xAB}}));
-    ASSERT_EQ(recorder.packets.size(), 1U);
-    EXPECT_EQ(recorder.packets[0], (std::vector{std::byte{0xAB}}));
+    queue_.onUnorderedMessage(ByteBuf::copyBuffer(std::vector{std::byte{0}, std::byte{0xAB}}));
+    ASSERT_EQ(recorder_.packets.size(), 1U);
+    EXPECT_EQ(recorder_.packets[0], (std::vector{std::byte{0xAB}}));
 }
 
 TEST_F(PacketQueueTest, ClosesTheOrderedChannelOnAHeaderOnlyMessage)
 {
-    queue.onOrderedMessage(ByteBuf::copyBuffer(std::vector{std::byte{0}}));
-    EXPECT_TRUE(recorder.packets.empty());
-    EXPECT_EQ(recorder.closed, (std::vector{ESendType::Reliable}));
+    queue_.onOrderedMessage(ByteBuf::copyBuffer(std::vector{std::byte{0}}));
+    EXPECT_TRUE(recorder_.packets.empty());
+    EXPECT_EQ(recorder_.closed, (std::vector{ESendType::Reliable}));
 }
 
 TEST_F(PacketQueueTest, ClosesTheUnorderedChannelOnAnEmptyMessage)
 {
-    queue.onUnorderedMessage(ByteBuf{});
-    EXPECT_TRUE(recorder.packets.empty());
-    EXPECT_EQ(recorder.closed, (std::vector{ESendType::Unreliable}));
+    queue_.onUnorderedMessage(ByteBuf{});
+    EXPECT_TRUE(recorder_.packets.empty());
+    EXPECT_EQ(recorder_.closed, (std::vector{ESendType::Unreliable}));
 }
 
 TEST_F(PacketQueueTest, ClosesOnAFragmentOutOfCountdown)
 {
-    queue.onOrderedMessage(ByteBuf::copyBuffer(std::vector{std::byte{2}, std::byte{0x01}}));
-    queue.onOrderedMessage(ByteBuf::copyBuffer(std::vector{std::byte{0}, std::byte{0x02}}));
-    EXPECT_TRUE(recorder.packets.empty());
-    EXPECT_EQ(recorder.closed, (std::vector{ESendType::Reliable}));
+    queue_.onOrderedMessage(ByteBuf::copyBuffer(std::vector{std::byte{2}, std::byte{0x01}}));
+    queue_.onOrderedMessage(ByteBuf::copyBuffer(std::vector{std::byte{0}, std::byte{0x02}}));
+    EXPECT_TRUE(recorder_.packets.empty());
+    EXPECT_EQ(recorder_.closed, (std::vector{ESendType::Reliable}));
 
-    queue.onOrderedMessage(ByteBuf::copyBuffer(std::vector{std::byte{0}, std::byte{0x03}}));
-    ASSERT_EQ(recorder.packets.size(), 1U);
-    EXPECT_EQ(recorder.packets[0], (std::vector{std::byte{0x03}}));
+    queue_.onOrderedMessage(ByteBuf::copyBuffer(std::vector{std::byte{0}, std::byte{0x03}}));
+    ASSERT_EQ(recorder_.packets.size(), 1U);
+    EXPECT_EQ(recorder_.packets[0], (std::vector{std::byte{0x03}}));
 }
 
 TEST_F(PacketQueueTest, ClosesWhenReassemblyOutgrowsTheBound)
@@ -220,10 +221,10 @@ TEST_F(PacketQueueTest, ReadsAMessageSpreadOverSegments)
 {
     auto message = ByteBuf::copyBuffer(std::vector{std::byte{0}, std::byte{0x10}});
     message.appendToChain(ByteBuf::copyBuffer(std::vector{std::byte{0x11}, std::byte{0x12}}));
-    queue.onOrderedMessage(message);
+    queue_.onOrderedMessage(message);
 
-    ASSERT_EQ(recorder.packets.size(), 1U);
-    EXPECT_EQ(recorder.packets[0], (std::vector{std::byte{0x10}, std::byte{0x11}, std::byte{0x12}}));
+    ASSERT_EQ(recorder_.packets.size(), 1U);
+    EXPECT_EQ(recorder_.packets[0], (std::vector{std::byte{0x10}, std::byte{0x11}, std::byte{0x12}}));
 }
 
 }  // namespace

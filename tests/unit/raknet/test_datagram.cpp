@@ -15,15 +15,15 @@ namespace {
 using test::fromHex;
 using test::toHex;
 
-const auto payload = fromHex("fe0102");
+const auto PAYLOAD = fromHex("fe0102");
 
 std::string encodeFrame(const FrameHeader &header)
 {
     std::array<std::byte, 64> buffer{};
     Writer writer{buffer};
-    header.encode(writer, payload.size());
-    writer.writeBytes(payload);
-    EXPECT_EQ(writer.size(), header.length() + payload.size());
+    header.encode(writer, PAYLOAD.size());
+    writer.writeBytes(PAYLOAD);
+    EXPECT_EQ(writer.size(), header.length() + PAYLOAD.size());
     return toHex(writer.written());
 }
 
@@ -40,7 +40,7 @@ struct GoldenFrame {
     std::string_view legacy;
 };
 
-const std::array<GoldenFrame, 8> golden_frames{{
+const std::array<GoldenFrame, 8> GOLDEN_FRAMES{{
     {{PacketReliability::Unreliable}, "000018fe0102"},
     {{PacketReliability::UnreliableSequenced, UINT24_MASK, 0x010203, 0x040506, 7}, "20001803020106050407fe0102"},
     {{PacketReliability::Reliable, 0x0A0B0C}, "4000180c0b0afe0102"},
@@ -54,24 +54,24 @@ const std::array<GoldenFrame, 8> golden_frames{{
 
 TEST(Datagram, FramesMatchLegacyPort)
 {
-    for (const auto &frame : golden_frames) {
+    for (const auto &frame : GOLDEN_FRAMES) {
         EXPECT_EQ(encodeFrame(frame.header), frame.legacy);
     }
 }
 
 TEST(Datagram, FramesMatchWirePy)
 {
-    EXPECT_EQ(encodeFrame(golden_frames[0].header), "000018fe0102");
-    EXPECT_EQ(encodeFrame(golden_frames[1].header), "20001803020106050407fe0102");
-    EXPECT_EQ(encodeFrame(golden_frames[2].header), "4000180c0b0afe0102");
-    EXPECT_EQ(encodeFrame(golden_frames[3].header), "6000180c0b0a0605041ffe0102");
-    EXPECT_EQ(encodeFrame(golden_frames[4].header), "8000180c0b0a03020106050403fe0102");
-    EXPECT_EQ(encodeFrame(golden_frames[5].header), "7000180201000900000000000005123400000004fe0102");
+    EXPECT_EQ(encodeFrame(GOLDEN_FRAMES[0].header), "000018fe0102");
+    EXPECT_EQ(encodeFrame(GOLDEN_FRAMES[1].header), "20001803020106050407fe0102");
+    EXPECT_EQ(encodeFrame(GOLDEN_FRAMES[2].header), "4000180c0b0afe0102");
+    EXPECT_EQ(encodeFrame(GOLDEN_FRAMES[3].header), "6000180c0b0a0605041ffe0102");
+    EXPECT_EQ(encodeFrame(GOLDEN_FRAMES[4].header), "8000180c0b0a03020106050403fe0102");
+    EXPECT_EQ(encodeFrame(GOLDEN_FRAMES[5].header), "7000180201000900000000000005123400000004fe0102");
 }
 
 TEST(Datagram, FramesRoundTrip)
 {
-    for (const auto &frame : std::span{golden_frames}.first(6)) {
+    for (const auto &frame : std::span{GOLDEN_FRAMES}.first(6)) {
         const auto bytes = fromHex(frame.legacy);
         Reader reader{bytes};
         const auto decoded = Frame::decode(reader);

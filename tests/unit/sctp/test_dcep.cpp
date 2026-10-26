@@ -13,16 +13,16 @@ namespace {
 using namespace std::chrono_literals;
 using sctp::bytes;
 
-const auto pion_open =
+const auto PION_OPEN =
     bytes({0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x03, 'f', 'o', 'o', 'b', 'a', 'r'});
 
-const auto unreliable_open =
+const auto UNRELIABLE_OPEN =
     bytes({0x03, 0x81, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x15, 0x00, 0x00, 'U', 'n', 'r', 'e', 'l',
            'i',  'a',  'b',  'l',  'e',  'D',  'a',  't',  'a',  'C',  'h',  'a',  'n', 'n', 'e', 'l'});
 
 TEST(DataChannelOpen, ParsesPionGolden)
 {
-    const auto open = DataChannelOpen::parse(pion_open);
+    const auto open = DataChannelOpen::parse(PION_OPEN);
     ASSERT_TRUE(open);
     EXPECT_EQ(open->channel_type, 0x00);
     EXPECT_EQ(open->priority, 0);
@@ -30,12 +30,12 @@ TEST(DataChannelOpen, ParsesPionGolden)
     EXPECT_EQ(open->label, "foo");
     EXPECT_EQ(open->protocol, "bar");
     EXPECT_EQ(open->reliability(), (Reliability{}));
-    EXPECT_EQ(open->serialize(), pion_open);
+    EXPECT_EQ(open->serialize(), PION_OPEN);
 }
 
 TEST(DataChannelOpen, ReadsNetherNetUnreliableChannel)
 {
-    const auto open = DataChannelOpen::parse(unreliable_open);
+    const auto open = DataChannelOpen::parse(UNRELIABLE_OPEN);
     ASSERT_TRUE(open);
     EXPECT_EQ(open->label, "UnreliableDataChannel");
     EXPECT_TRUE(open->protocol.empty());
@@ -48,7 +48,7 @@ TEST(DataChannelOpen, WritesEveryChannelType)
     EXPECT_EQ(DataChannelOpen::of("UnreliableDataChannel", "",
                                   {.unordered = true, .max_retransmits = 0, .max_packet_life_time = {}}, 256)
                   .serialize(),
-              unreliable_open);
+              UNRELIABLE_OPEN);
     EXPECT_EQ(DataChannelOpen::of("a", "", {}, 256).channel_type, 0x00);
     EXPECT_EQ(DataChannelOpen::of("a", "", {.unordered = true}, 256).channel_type, 0x80);
     EXPECT_EQ(DataChannelOpen::of("a", "", {.max_retransmits = 3}, 256).channel_type, 0x01);
@@ -74,22 +74,22 @@ TEST(DataChannelOpen, RoundTripsReliability)
 TEST(DataChannelOpen, RejectsMalformedMessages)
 {
     EXPECT_FALSE(DataChannelOpen::parse({}));
-    EXPECT_FALSE(DataChannelOpen::parse(std::span{pion_open}.first(11)));
-    EXPECT_FALSE(DataChannelOpen::parse(std::span{pion_open}.first(17)));
-    auto longer = pion_open;
+    EXPECT_FALSE(DataChannelOpen::parse(std::span{PION_OPEN}.first(11)));
+    EXPECT_FALSE(DataChannelOpen::parse(std::span{PION_OPEN}.first(17)));
+    auto longer = PION_OPEN;
     longer.push_back(std::byte{0});
     EXPECT_FALSE(DataChannelOpen::parse(longer));
-    auto ack = pion_open;
+    auto ack = PION_OPEN;
     ack[0] = std::byte{0x02};
     EXPECT_FALSE(DataChannelOpen::parse(ack));
-    auto overstated = pion_open;
+    auto overstated = PION_OPEN;
     overstated[9] = std::byte{0xff};
     EXPECT_FALSE(DataChannelOpen::parse(overstated));
 }
 
 TEST(DataChannelOpen, RefusesUnknownChannelType)
 {
-    auto unknown = pion_open;
+    auto unknown = PION_OPEN;
     unknown[1] = std::byte{0x03};
     const auto open = DataChannelOpen::parse(unknown);
     ASSERT_TRUE(open);

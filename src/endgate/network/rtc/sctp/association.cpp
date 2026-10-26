@@ -11,7 +11,7 @@
 namespace endgate::rtc::sctp {
 namespace {
 
-constexpr std::uint8_t ReflectedTag = 0x01;
+constexpr std::uint8_t REFLECTED_TAG = 0x01;
 
 std::vector<std::byte> cause(CauseCode code, std::span<const std::byte> value = {})
 {
@@ -308,7 +308,7 @@ bool Association::verify(const Packet &packet) const
     switch (static_cast<ChunkType>(first.type)) {
     case ChunkType::Abort:
     case ChunkType::ShutdownComplete:
-        if ((first.flags & ReflectedTag) != 0) {
+        if ((first.flags & REFLECTED_TAG) != 0) {
             return !tcb_ || tag == tcb_->peer_tag;
         }
         return local != 0 && tag == local;
@@ -359,7 +359,7 @@ void Association::dispatch(const Packet &packet, Clock::time_point now)
             }
             break;
         case ChunkType::Heartbeat:
-            if (tcb_ && CommonHeader::Size + Chunk::HeaderSize + chunk.value.size() <= config_.mtu) {
+            if (tcb_ && CommonHeader::SIZE + Chunk::HEADER_SIZE + chunk.value.size() <= config_.mtu) {
                 queue(ChunkType::HeartbeatAck, 0, {chunk.value.begin(), chunk.value.end()});
             }
             break;
@@ -497,7 +497,8 @@ void Association::handleInit(const Chunk &chunk, Clock::time_point now)
     writer.writeTlv(static_cast<std::uint16_t>(ParameterType::StateCookie), cookie.seal(cookie_key_, now));
     writeCapabilities(writer);
     for (const auto unrecognized : parameters.unrecognized) {
-        if (CommonHeader::Size + Chunk::HeaderSize + 16 + padded(value.size()) + Tlv::HeaderSize + unrecognized.size() >
+        if (CommonHeader::SIZE + Chunk::HEADER_SIZE + 16 + padded(value.size()) + Tlv::HEADER_SIZE +
+                unrecognized.size() >
             config_.mtu) {
             break;
         }
@@ -533,7 +534,7 @@ void Association::handleInitAck(const Chunk &chunk, Clock::time_point now)
     const auto parameters = readParameters(init_ack->parameters);
     if (init_ack->initiate_tag == 0 || init_ack->outbound_streams == 0 || init_ack->inbound_streams == 0 ||
         !parameters.state_cookie ||
-        parameters.state_cookie->size() + CommonHeader::Size + Chunk::HeaderSize > config_.mtu) {
+        parameters.state_cookie->size() + CommonHeader::SIZE + Chunk::HEADER_SIZE > config_.mtu) {
         if (init_ack->initiate_tag != 0) {
             sendStandalone(init_ack->initiate_tag, ChunkType::Abort, 0,
                            parameters.state_cookie
@@ -731,7 +732,7 @@ void Association::handleShutdownAck(const Packet &packet)
         close(CloseReason::Shutdown);
     }
     else if (state_ == State::CookieWait || state_ == State::CookieEchoed) {
-        sendStandalone(packet.header.verification_tag, ChunkType::ShutdownComplete, ReflectedTag, {});
+        sendStandalone(packet.header.verification_tag, ChunkType::ShutdownComplete, REFLECTED_TAG, {});
     }
 }
 
@@ -868,14 +869,14 @@ void Association::handleReconfig(const Chunk &chunk, Clock::time_point now)
 bool Association::handleUnknown(const Chunk &chunk, std::vector<std::byte> &unrecognized) const
 {
     const auto action = chunk.type >> 6U;
-    if ((action == 1 || action == 3) && CommonHeader::Size + 2 * Chunk::HeaderSize + padded(unrecognized.size()) +
-                                                Tlv::HeaderSize + Chunk::HeaderSize + chunk.value.size() <=
+    if ((action == 1 || action == 3) && CommonHeader::SIZE + 2 * Chunk::HEADER_SIZE + padded(unrecognized.size()) +
+                                                Tlv::HEADER_SIZE + Chunk::HEADER_SIZE + chunk.value.size() <=
                                             config_.mtu) {
         std::vector<std::byte> original;
         ByteWriter original_writer(original);
         original_writer.write8(chunk.type);
         original_writer.write8(chunk.flags);
-        original_writer.write16(static_cast<std::uint16_t>(Chunk::HeaderSize + chunk.value.size()));
+        original_writer.write16(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + chunk.value.size()));
         original_writer.write(chunk.value);
         ByteWriter(unrecognized).writeTlv(static_cast<std::uint16_t>(CauseCode::UnrecognizedChunkType), original);
     }
@@ -1044,16 +1045,16 @@ void Association::transmit(Clock::time_point now)
                                .verification_tag = tcb.peer_tag},
                               config_.mtu);
         while (!control_.empty() &&
-               (builder.empty() || Chunk::HeaderSize + padded(control_.front().value.size()) <= builder.remaining())) {
+               (builder.empty() || Chunk::HEADER_SIZE + padded(control_.front().value.size()) <= builder.remaining())) {
             const auto &front = control_.front();
             builder.addChunk(front.type, front.flags, front.value);
             control_.pop_front();
         }
         if ((receiver.sackRequired() || (receiver.sackPending() && sends_data && sender.hasDataToSend())) &&
-            builder.remaining() >= Chunk::HeaderSize + 12) {
+            builder.remaining() >= Chunk::HEADER_SIZE + 12) {
             builder.addSack(receiver.makeSack(builder.remaining()));
         }
-        if (builder.remaining() >= Chunk::HeaderSize + 4) {
+        if (builder.remaining() >= Chunk::HEADER_SIZE + 4) {
             if (const auto forward_tsn = sender.forwardTsn(now, builder.remaining())) {
                 builder.addForwardTsn(*forward_tsn);
             }

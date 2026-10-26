@@ -17,7 +17,7 @@
 namespace endgate {
 
 namespace {
-constexpr auto history_file = ".console_history";
+constexpr auto HISTORY_FILE = ".console_history";
 
 bool isInteractive()
 {
@@ -37,14 +37,14 @@ Console::Console(ProxyServer &server) : server_(server), logger_(LogManager::get
         rx_ = replxx::Replxx{};
         rx_->bind_key_internal(replxx::Replxx::KEY::control('J'), "commit_line");
         rx_->set_max_history_size(max_history_size);
-        rx_->history_load(history_file);
+        rx_->history_load(HISTORY_FILE);
     }
 }
 
 Console::~Console()
 {
     if (rx_.has_value()) {
-        rx_->history_save(history_file);
+        rx_->history_save(HISTORY_FILE);
     }
 }
 

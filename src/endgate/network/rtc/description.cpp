@@ -13,11 +13,11 @@ namespace endgate::rtc {
 
 namespace {
 
-constexpr std::size_t MaxDescriptionLength = 65536;
-constexpr std::size_t MaxCandidates = 32;
-constexpr std::size_t MaxFingerprints = 8;
-constexpr std::size_t MaxTokens = 8;
-constexpr std::string_view LineEnding = "\r\n";
+constexpr std::size_t MAX_DESCRIPTION_LENGTH = 65536;
+constexpr std::size_t MAX_CANDIDATES = 32;
+constexpr std::size_t MAX_FINGERPRINTS = 8;
+constexpr std::size_t MAX_TOKENS = 8;
+constexpr std::string_view LINE_ENDING = "\r\n";
 
 template <typename Number>
 std::optional<Number> parseNumber(std::string_view text)
@@ -101,7 +101,7 @@ std::string IceCandidate::toString() const
 
 std::optional<Description> Description::parse(std::string_view sdp)
 {
-    if (sdp.size() > MaxDescriptionLength) {
+    if (sdp.size() > MAX_DESCRIPTION_LENGTH) {
         return std::nullopt;
     }
 
@@ -157,7 +157,7 @@ std::optional<Description> Description::parse(std::string_view sdp)
         auto &level = in_media ? media : session;
         if (key == "group") {
             const auto tokens = tokensOf(argument);
-            if (!in_media && !tokens.empty() && tokens.front() == "BUNDLE" && tokens.size() <= MaxTokens + 1) {
+            if (!in_media && !tokens.empty() && tokens.front() == "BUNDLE" && tokens.size() <= MAX_TOKENS + 1) {
                 description.bundle.assign(tokens.begin() + 1, tokens.end());
             }
         }
@@ -180,7 +180,7 @@ std::optional<Description> Description::parse(std::string_view sdp)
             level.ice_pwd = argument;
         }
         else if (key == "ice-options") {
-            const auto tokens = tokensOf(argument) | std::views::take(MaxTokens);
+            const auto tokens = tokensOf(argument) | std::views::take(MAX_TOKENS);
             level.ice_options.emplace(tokens.begin(), tokens.end());
         }
         else if (key == "fingerprint") {
@@ -190,7 +190,7 @@ std::optional<Description> Description::parse(std::string_view sdp)
                                      [](char c) { return std::isxdigit(static_cast<unsigned char>(c)) || c == ':'; })) {
                 return std::nullopt;
             }
-            if (level.fingerprints.size() < MaxFingerprints) {
+            if (level.fingerprints.size() < MAX_FINGERPRINTS) {
                 level.fingerprints.push_back({.algorithm = std::string(tokens[0]), .value = std::string(tokens[1])});
             }
         }
@@ -227,7 +227,7 @@ std::optional<Description> Description::parse(std::string_view sdp)
         }
         else if (key == "candidate" && in_media) {
             auto candidate = IceCandidate::parse(argument);
-            if (candidate && description.candidates.size() < MaxCandidates) {
+            if (candidate && description.candidates.size() < MAX_CANDIDATES) {
                 description.candidates.push_back(std::move(*candidate));
             }
         }
@@ -272,7 +272,7 @@ Description Description::answer(const Description &offer, const IceCredentials &
     answer.setup = offer.setup == DtlsSetup::Active ? DtlsSetup::Passive : DtlsSetup::Active;
     answer.sctp_port = 5000;
     answer.max_message_size = 262144;
-    for (std::size_t index = 0; index < std::min(addresses.size(), MaxCandidates); ++index) {
+    for (std::size_t index = 0; index < std::min(addresses.size(), MAX_CANDIDATES); ++index) {
         constexpr std::uint32_t host_type_preference = 126;
         constexpr std::uint32_t server_reflexive_type_preference = 100;
         const auto unmapped = [](const asio::ip::address &address) {
@@ -303,7 +303,7 @@ std::string Description::generate(std::uint64_t session_id) const
     std::string sdp;
     const auto line = [&sdp](std::string_view text) {
         sdp += text;
-        sdp += LineEnding;
+        sdp += LINE_ENDING;
     };
     line("v=0");
     line(std::format("o=- {} 2 IN IP4 127.0.0.1", session_id));

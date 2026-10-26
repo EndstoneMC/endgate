@@ -90,7 +90,7 @@ enum class ReconfigResult : std::uint32_t {
  * @see RFC 9260 section 3.1
  */
 struct CommonHeader {
-    static constexpr std::size_t Size = 12;
+    static constexpr std::size_t SIZE = 12;
 
     std::uint16_t source_port;
     std::uint16_t destination_port;
@@ -103,7 +103,7 @@ struct CommonHeader {
  * @see RFC 9260 section 3.2
  */
 struct Chunk {
-    static constexpr std::size_t HeaderSize = 4;
+    static constexpr std::size_t HEADER_SIZE = 4;
 
     std::uint8_t type;
     std::uint8_t flags;
@@ -126,7 +126,7 @@ struct Packet {
  * @see RFC 9260 section 3.2.1
  */
 struct Tlv {
-    static constexpr std::size_t HeaderSize = 4;
+    static constexpr std::size_t HEADER_SIZE = 4;
 
     std::uint16_t type;
     std::span<const std::byte> value;
@@ -139,11 +139,11 @@ struct Tlv {
  * @see RFC 9260 section 3.3.1
  */
 struct DataChunk {
-    static constexpr std::size_t HeaderSize = 16;
-    static constexpr std::uint8_t EndFlag = 0x01;
-    static constexpr std::uint8_t BeginningFlag = 0x02;
-    static constexpr std::uint8_t UnorderedFlag = 0x04;
-    static constexpr std::uint8_t ImmediateFlag = 0x08;
+    static constexpr std::size_t HEADER_SIZE = 16;
+    static constexpr std::uint8_t END_FLAG = 0x01;
+    static constexpr std::uint8_t BEGINNING_FLAG = 0x02;
+    static constexpr std::uint8_t UNORDERED_FLAG = 0x04;
+    static constexpr std::uint8_t IMMEDIATE_FLAG = 0x08;
 
     std::uint32_t tsn;
     std::uint16_t stream;
@@ -270,7 +270,7 @@ class PacketBuilder {
 public:
     PacketBuilder(std::vector<std::byte> &buffer, const CommonHeader &header, std::size_t max_size);
 
-    [[nodiscard]] bool empty() const { return buffer_.size() == CommonHeader::Size; }
+    [[nodiscard]] bool empty() const { return buffer_.size() == CommonHeader::SIZE; }
 
     [[nodiscard]] std::size_t remaining() const;
 

@@ -22,8 +22,8 @@ using test::fromHex;
 using test::Simulation;
 using test::toHex;
 
-const SystemAddress client_address{asio::ip::make_address("10.0.0.2"), 50000};
-const SystemAddress server_address{asio::ip::make_address("10.0.0.1"), 19132};
+const SystemAddress CLIENT_ADDRESS{asio::ip::make_address("10.0.0.2"), 50000};
+const SystemAddress SERVER_ADDRESS{asio::ip::make_address("10.0.0.1"), 19132};
 
 struct Events : Connection::Listener {
     Events(Simulation &simulation, std::size_t index) : simulation(simulation), index(index) {}
@@ -80,7 +80,7 @@ struct Server : OfflineHandler::Listener {
 
     void sendTo(const SystemAddress &address, std::span<const std::byte> datagram) override
     {
-        EXPECT_EQ(address, client_address);
+        EXPECT_EQ(address, CLIENT_ADDRESS);
         offline_replies.emplace_back(datagram.begin(), datagram.end());
         simulation.transmit(1, datagram);
     }
@@ -91,7 +91,7 @@ struct Server : OfflineHandler::Listener {
         const bool offline_message = isOfflineMessage(datagram);
         if (offline_message && (id == MessageId::UnconnectedPing || id == MessageId::UnconnectedPingOpenConnections ||
                                 id == MessageId::OpenConnectionRequest1)) {
-            static_cast<void>(offline.handle(datagram, client_address, accepting));
+            static_cast<void>(offline.handle(datagram, CLIENT_ADDRESS, accepting));
             return;
         }
         if (connection && !connection->isClosed()) {
@@ -101,15 +101,15 @@ struct Server : OfflineHandler::Listener {
         if (!offline_message || id != MessageId::OpenConnectionRequest2) {
             return;
         }
-        const auto request = offline.handle(datagram, client_address, accepting);
+        const auto request = offline.handle(datagram, CLIENT_ADDRESS, accepting);
         if (!request) {
             return;
         }
         if (!accepting) {
-            offline.reject(client_address, MessageId::NoFreeIncomingConnections);
+            offline.reject(CLIENT_ADDRESS, MessageId::NoFreeIncomingConnections);
             return;
         }
-        connection = std::make_unique<Connection>(events, configuration, client_address, *request, 0, now);
+        connection = std::make_unique<Connection>(events, configuration, CLIENT_ADDRESS, *request, 0, now);
         connection->handleDatagram(datagram, now);
     }
 
@@ -125,7 +125,7 @@ struct Server : OfflineHandler::Listener {
 struct Handshake {
     explicit Handshake(ConnectionConfiguration client_configuration = {.guid = 0xC1C1}, std::uint32_t seed = 1)
         : simulation(seed), client_events(simulation, 0), server(simulation),
-          client(client_events, std::move(client_configuration), server_address, simulation.now())
+          client(client_events, std::move(client_configuration), SERVER_ADDRESS, simulation.now())
     {
         simulation.attach(
             0, {[this](std::span<const std::byte> datagram, TimePoint now) { client.handleDatagram(datagram, now); },
@@ -167,8 +167,8 @@ TEST(Connection, HandshakeCompletesInBothRoles)
     EXPECT_EQ(handshake.client.getGuid(), 0x5E5EU);
     EXPECT_EQ(handshake.server.connection->getGuid(), 0xC1C1U);
     EXPECT_EQ(handshake.client.getMtuSize(), 1600U);
-    EXPECT_EQ(handshake.client.getExternalId(), client_address);
-    EXPECT_EQ(handshake.server.connection->getExternalId(), server_address);
+    EXPECT_EQ(handshake.client.getExternalId(), CLIENT_ADDRESS);
+    EXPECT_EQ(handshake.server.connection->getExternalId(), SERVER_ADDRESS);
     EXPECT_TRUE(handshake.client.weInitiatedTheConnection());
     EXPECT_FALSE(handshake.server.connection->weInitiatedTheConnection());
     EXPECT_EQ(handshake.client_events.errors + handshake.server.events.errors, 0);

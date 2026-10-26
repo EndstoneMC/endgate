@@ -19,21 +19,21 @@ namespace {
 
 using namespace std::chrono_literals;
 
-const std::string AnswerSdp = "v=0\r\n"
-                              "o=- 1 2 IN IP4 127.0.0.1\r\n"
-                              "s=-\r\n"
-                              "t=0 0\r\n"
-                              "a=group:BUNDLE 0\r\n"
-                              "a=ice-lite\r\n"
-                              "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n"
-                              "c=IN IP4 0.0.0.0\r\n"
-                              "a=ice-ufrag:wxyzWXYZ\r\n"
-                              "a=ice-pwd:zyxwvutsrqponmlkjihgfedc\r\n"
-                              "a=fingerprint:sha-256 11:22:33\r\n"
-                              "a=setup:active\r\n"
-                              "a=mid:0\r\n";
+const std::string ANSWER_SDP = "v=0\r\n"
+                               "o=- 1 2 IN IP4 127.0.0.1\r\n"
+                               "s=-\r\n"
+                               "t=0 0\r\n"
+                               "a=group:BUNDLE 0\r\n"
+                               "a=ice-lite\r\n"
+                               "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n"
+                               "c=IN IP4 0.0.0.0\r\n"
+                               "a=ice-ufrag:wxyzWXYZ\r\n"
+                               "a=ice-pwd:zyxwvutsrqponmlkjihgfedc\r\n"
+                               "a=fingerprint:sha-256 11:22:33\r\n"
+                               "a=setup:active\r\n"
+                               "a=mid:0\r\n";
 
-const std::chrono::system_clock::time_point Now{std::chrono::seconds{1'800'000'000}};
+const std::chrono::system_clock::time_point NOW{std::chrono::seconds{1'800'000'000}};
 
 PrivateKey generateKey(const char *curve)
 {
@@ -69,16 +69,16 @@ TEST(IdentityAssertionTest, SerialisesFingerprintsAsBdsDoes)
 TEST(IdentityAssertionTest, InjectsTheEnvelopeBeforeTheFirstMediaLine)
 {
     const ServerIdentityAssertionGenerator generator(generateKey("P-384"), {.domain = "endgate.test"});
-    const auto identity = IdentityAssertion::create(generator, AnswerSdp, Now);
+    const auto identity = IdentityAssertion::create(generator, ANSWER_SDP, NOW);
     ASSERT_TRUE(identity);
-    const auto signed_sdp = identity->injectIntoSdp(AnswerSdp);
+    const auto signed_sdp = identity->injectIntoSdp(ANSWER_SDP);
 
     const auto identity_at = signed_sdp.find("a=identity:");
     const auto media_at = signed_sdp.find("m=application");
     ASSERT_NE(identity_at, std::string::npos);
     EXPECT_EQ(signed_sdp.find("\r\n", identity_at) + 2, media_at);
     EXPECT_TRUE(signed_sdp.ends_with("a=mid:0\r\n"));
-    EXPECT_EQ(IdentityAssertion::stripFromSdp(signed_sdp), AnswerSdp);
+    EXPECT_EQ(IdentityAssertion::stripFromSdp(signed_sdp), ANSWER_SDP);
 
     const auto encoded = signed_sdp.substr(identity_at + 11, signed_sdp.find("\r\n", identity_at) - identity_at - 11);
     const auto envelope = base64Decoded(encoded);
@@ -90,7 +90,7 @@ TEST(IdentityAssertionTest, SignsAsBdsDoesByDefault)
 {
     const ServerIdentityAssertionGenerator generator(generateKey("P-384"), {});
     const auto identity = IdentityAssertion::extractFromSdp(
-        IdentityAssertion::create(generator, AnswerSdp, Now)->injectIntoSdp(AnswerSdp));
+        IdentityAssertion::create(generator, ANSWER_SDP, NOW)->injectIntoSdp(ANSWER_SDP));
     ASSERT_TRUE(identity);
     EXPECT_EQ(identity->getIdpDomain(), "self");
     const auto token = JsonWebToken::decode(identity->getToken().value_or(""));
@@ -102,7 +102,7 @@ TEST(IdentityAssertionTest, ReadsBackAndVerifiesItsOwnAssertion)
 {
     const auto key = generateKey("P-384");
     const ServerIdentityAssertionGenerator generator(key, {.domain = "endgate.test"});
-    const auto signed_sdp = IdentityAssertion::create(generator, AnswerSdp, Now)->injectIntoSdp(AnswerSdp);
+    const auto signed_sdp = IdentityAssertion::create(generator, ANSWER_SDP, NOW)->injectIntoSdp(ANSWER_SDP);
 
     const auto identity = IdentityAssertion::extractFromSdp(signed_sdp);
     ASSERT_TRUE(identity);
@@ -138,7 +138,7 @@ TEST(IdentityAssertionTest, CanCarryTheKeyAsSubjectPublicKeyInfo)
     const ServerIdentityAssertionGenerator generator(
         key, {.domain = "endgate.test", .token_lifetime = 1h, .cpk_encoding = CpkEncoding::SubjectPublicKeyInfo});
     const auto identity = IdentityAssertion::extractFromSdp(
-        IdentityAssertion::create(generator, AnswerSdp, Now)->injectIntoSdp(AnswerSdp));
+        IdentityAssertion::create(generator, ANSWER_SDP, NOW)->injectIntoSdp(ANSWER_SDP));
     ASSERT_TRUE(identity);
     const auto token = JsonWebToken::decode(identity->getToken().value_or(""));
     ASSERT_TRUE(token);
@@ -179,9 +179,9 @@ TEST(IdentityAssertionTest, VerifiesTheRfc7515Es256Example)
 TEST(IdentityAssertionTest, RejectsBrokenEnvelopes)
 {
     const auto with = [](std::string_view value) {
-        return AnswerSdp + "a=identity:" + std::string(value) + "\r\n";
+        return ANSWER_SDP + "a=identity:" + std::string(value) + "\r\n";
     };
-    EXPECT_FALSE(IdentityAssertion::extractFromSdp(AnswerSdp));
+    EXPECT_FALSE(IdentityAssertion::extractFromSdp(ANSWER_SDP));
     EXPECT_FALSE(IdentityAssertion::extractFromSdp(with("not base64!")));
     EXPECT_FALSE(IdentityAssertion::extractFromSdp(with("e30=")));
     EXPECT_FALSE(IdentityAssertion::extractFromSdp(with("eyJhc3NlcnRpb24iOjF9")));

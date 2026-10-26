@@ -31,8 +31,8 @@ namespace {
 
 using namespace std::chrono_literals;
 
-constexpr auto Awaitable = asio::as_tuple(asio::use_awaitable);
-constexpr std::string_view Offer = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n";
+constexpr auto AWAITABLE = asio::as_tuple(asio::use_awaitable);
+constexpr std::string_view OFFER = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n";
 
 class RecordingHandler : public JoinHandler {
 public:
@@ -103,14 +103,14 @@ protected:
             client,
             [&]() -> asio::awaitable<void> {
                 asio::ip::tcp::socket socket(client);
-                const auto [connect_error] = co_await socket.async_connect(endpoint_, Awaitable);
+                const auto [connect_error] = co_await socket.async_connect(endpoint_, AWAITABLE);
                 if (connect_error) {
                     co_return;
                 }
-                co_await asio::async_write(socket, asio::buffer(request), Awaitable);
+                co_await asio::async_write(socket, asio::buffer(request), AWAITABLE);
                 std::array<char, 4096> chunk{};
                 for (;;) {
-                    const auto [error, received] = co_await socket.async_read_some(asio::buffer(chunk), Awaitable);
+                    const auto [error, received] = co_await socket.async_read_some(asio::buffer(chunk), AWAITABLE);
                     response.append(chunk.data(), received);
                     if (error) {
                         break;
@@ -142,7 +142,7 @@ TEST_F(HttpSignalingServerTest, PassesOnTheAddressTheClientReachedUsAt)
              std::tuple{std::string_view{""}, std::string_view{""}, std::optional<std::uint16_t>{}},
          }) {
         const auto response = roundTrip(
-            std::format("POST /v1/join/1 HTTP/1.1\r\n{}Content-Length: {}\r\n\r\n{}", header, Offer.size(), Offer));
+            std::format("POST /v1/join/1 HTTP/1.1\r\n{}Content-Length: {}\r\n\r\n{}", header, OFFER.size(), OFFER));
         EXPECT_TRUE(response.starts_with("HTTP/1.1 200 OK\r\n")) << header;
         const std::scoped_lock lock(handler_.mutex);
         ASSERT_FALSE(handler_.joins.empty()) << header;
@@ -156,7 +156,7 @@ TEST_F(HttpSignalingServerTest, ClosesOnAHostItCannotRead)
     for (const auto header : {"Host: a\r\nHost: b\r\n", "Host: example.com:port\r\n", "Host: [::1\r\n", "Host: ::1\r\n",
                               "Host: :19132\r\n", "Host: example.com:70000\r\n"}) {
         EXPECT_EQ(roundTrip(std::format("POST /v1/join/1 HTTP/1.1\r\n{}Content-Length: {}\r\n\r\n{}", header,
-                                        Offer.size(), Offer)),
+                                        OFFER.size(), OFFER)),
                   "")
             << header;
     }
@@ -201,19 +201,19 @@ TEST_F(HttpSignalingServerTest, IgnoresAProtocolItCannotRead)
 
 TEST_F(HttpSignalingServerTest, TradesAnOfferForAnAnswer)
 {
-    const auto response = roundTrip(post("/v1/join/9876543210123456789", Offer));
+    const auto response = roundTrip(post("/v1/join/9876543210123456789", OFFER));
     EXPECT_TRUE(response.starts_with("HTTP/1.1 200 OK\r\n")) << response;
     EXPECT_NE(response.find("Content-Type: application/sdp\r\n"), std::string::npos);
     EXPECT_TRUE(response.ends_with("\r\n\r\nv=0\r\nanswer\r\n")) << response;
     const std::scoped_lock lock(handler_.mutex);
     ASSERT_EQ(handler_.joins.size(), 1U);
     EXPECT_EQ(handler_.joins[0].network_id, "9876543210123456789");
-    EXPECT_EQ(handler_.joins[0].offer, Offer);
+    EXPECT_EQ(handler_.joins[0].offer, OFFER);
 }
 
 TEST_F(HttpSignalingServerTest, TakesAnOpaqueNetworkId)
 {
-    EXPECT_TRUE(roundTrip(post("/v1/join/0a1b-C2d3_e.f~g%20", Offer)).starts_with("HTTP/1.1 200 OK\r\n"));
+    EXPECT_TRUE(roundTrip(post("/v1/join/0a1b-C2d3_e.f~g%20", OFFER)).starts_with("HTTP/1.1 200 OK\r\n"));
 }
 
 TEST_F(HttpSignalingServerTest, AcceptsAnAnswerFromAnotherThreadLater)
@@ -226,7 +226,7 @@ TEST_F(HttpSignalingServerTest, AcceptsAnAnswerFromAnotherThreadLater)
             response.answer("ignored");
         });
     };
-    const auto response = roundTrip(post("/v1/join/1", Offer));
+    const auto response = roundTrip(post("/v1/join/1", OFFER));
     answering.join();
     EXPECT_TRUE(response.ends_with("\r\n\r\nlater")) << response;
 }
@@ -236,7 +236,7 @@ TEST_F(HttpSignalingServerTest, ReturnsASessionErrorAsTheBody)
     handler_.behaviour = [](const JoinResponse &response) {
         response.reject(37);
     };
-    const auto response = roundTrip(post("/v1/join/1", Offer));
+    const auto response = roundTrip(post("/v1/join/1", OFFER));
     EXPECT_TRUE(response.starts_with("HTTP/1.1 200 OK\r\n")) << response;
     EXPECT_NE(response.find("Content-Type: application/sdp\r\n"), std::string::npos);
     EXPECT_TRUE(response.ends_with("Content-Length: 2\r\nConnection: close\r\n\r\n37")) << response;
@@ -247,7 +247,7 @@ TEST_F(HttpSignalingServerTest, TimesOutAJoinNobodyAnswers)
     handler_.behaviour = [](const JoinResponse &) {
     };
     const auto started = std::chrono::steady_clock::now();
-    const auto response = roundTrip(post("/v1/join/1", Offer));
+    const auto response = roundTrip(post("/v1/join/1", OFFER));
     EXPECT_GE(std::chrono::steady_clock::now() - started, 300ms);
     EXPECT_TRUE(response.starts_with("HTTP/1.1 504 Gateway Timeout\r\n")) << response;
     EXPECT_TRUE(response.ends_with("\r\n\r\nGateway Timeout")) << response;
@@ -257,16 +257,16 @@ TEST_F(HttpSignalingServerTest, RoutesOnlyTheTwoEndpoints)
 {
     EXPECT_TRUE(roundTrip("GET /v2/join HTTP/1.1\r\n\r\n").starts_with("HTTP/1.1 404 Not Found\r\n"));
     EXPECT_TRUE(roundTrip("GET /v1/join/1 HTTP/1.1\r\n\r\n").starts_with("HTTP/1.1 404 Not Found\r\n"));
-    EXPECT_TRUE(roundTrip(post("/v1/join", Offer)).starts_with("HTTP/1.1 404 Not Found\r\n"));
+    EXPECT_TRUE(roundTrip(post("/v1/join", OFFER)).starts_with("HTTP/1.1 404 Not Found\r\n"));
     EXPECT_TRUE(roundTrip("PUT /v1/join HTTP/1.1\r\n\r\n").starts_with("HTTP/1.1 404 Not Found\r\n"));
 }
 
 TEST_F(HttpSignalingServerTest, RejectsABadNetworkIdOrAMissingOffer)
 {
     for (const auto *path : {"/v1/join/", "/v1/join/a/b", "/v1/join/?b", "/v1/join/a\"b"}) {
-        EXPECT_TRUE(roundTrip(post(path, Offer)).starts_with("HTTP/1.1 400 Expected /v1/join/{networkId}\r\n")) << path;
+        EXPECT_TRUE(roundTrip(post(path, OFFER)).starts_with("HTTP/1.1 400 Expected /v1/join/{networkId}\r\n")) << path;
     }
-    EXPECT_TRUE(roundTrip(post("/v1/join/" + std::string(129, '1'), Offer)).starts_with("HTTP/1.1 400 "));
+    EXPECT_TRUE(roundTrip(post("/v1/join/" + std::string(129, '1'), OFFER)).starts_with("HTTP/1.1 400 "));
     const auto response = roundTrip(post("/v1/join/1", ""));
     EXPECT_TRUE(response.starts_with("HTTP/1.1 400 Missing SDP offer in request body\r\n")) << response;
     EXPECT_TRUE(response.ends_with("\r\n\r\nMissing SDP offer in request body"));
@@ -282,16 +282,16 @@ TEST_F(HttpSignalingServerTest, ReadsARequestArrivingInPieces)
         client,
         [&]() -> asio::awaitable<void> {
             asio::ip::tcp::socket socket(client);
-            co_await socket.async_connect(endpoint_, Awaitable);
+            co_await socket.async_connect(endpoint_, AWAITABLE);
             const std::string head =
-                "POST /v1/join/7 HTTP/1.1\r\ncOnTeNt-LeNgTh:  " + std::to_string(Offer.size()) + " \r\n\r\n";
-            co_await asio::async_write(socket, asio::buffer(head), Awaitable);
+                "POST /v1/join/7 HTTP/1.1\r\ncOnTeNt-LeNgTh:  " + std::to_string(OFFER.size()) + " \r\n\r\n";
+            co_await asio::async_write(socket, asio::buffer(head), AWAITABLE);
             asio::steady_timer pause(client, 50ms);
-            co_await pause.async_wait(Awaitable);
-            co_await asio::async_write(socket, asio::buffer(Offer), Awaitable);
+            co_await pause.async_wait(AWAITABLE);
+            co_await asio::async_write(socket, asio::buffer(OFFER), AWAITABLE);
             std::array<char, 4096> chunk{};
             for (;;) {
-                const auto [error, received] = co_await socket.async_read_some(asio::buffer(chunk), Awaitable);
+                const auto [error, received] = co_await socket.async_read_some(asio::buffer(chunk), AWAITABLE);
                 response.append(chunk.data(), received);
                 if (error) {
                     break;
@@ -303,7 +303,7 @@ TEST_F(HttpSignalingServerTest, ReadsARequestArrivingInPieces)
     EXPECT_TRUE(response.starts_with("HTTP/1.1 200 OK\r\n")) << response;
     const std::scoped_lock lock(handler_.mutex);
     ASSERT_EQ(handler_.joins.size(), 1U);
-    EXPECT_EQ(handler_.joins[0].offer, Offer);
+    EXPECT_EQ(handler_.joins[0].offer, OFFER);
 }
 
 TEST_F(HttpSignalingServerTest, DropsOversizeRequestsWithoutAnswering)
@@ -390,16 +390,16 @@ TEST_F(TlsSignalingServerTest, ServesHttpsAndHttpOnOnePort)
         client,
         [&]() -> asio::awaitable<void> {
             asio::ssl::stream<asio::ip::tcp::socket> stream(client, context);
-            co_await stream.next_layer().async_connect(endpoint_, Awaitable);
-            const auto [handshake_error] = co_await stream.async_handshake(asio::ssl::stream_base::client, Awaitable);
+            co_await stream.next_layer().async_connect(endpoint_, AWAITABLE);
+            const auto [handshake_error] = co_await stream.async_handshake(asio::ssl::stream_base::client, AWAITABLE);
             if (handshake_error) {
                 co_return;
             }
-            const auto request = post("/v1/join/42", Offer);
-            co_await asio::async_write(stream, asio::buffer(request), Awaitable);
+            const auto request = post("/v1/join/42", OFFER);
+            co_await asio::async_write(stream, asio::buffer(request), AWAITABLE);
             std::array<char, 4096> chunk{};
             for (;;) {
-                const auto [error, received] = co_await stream.async_read_some(asio::buffer(chunk), Awaitable);
+                const auto [error, received] = co_await stream.async_read_some(asio::buffer(chunk), AWAITABLE);
                 response.append(chunk.data(), received);
                 if (error) {
                     break;

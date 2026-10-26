@@ -16,8 +16,8 @@ namespace {
 using test::fromHex;
 using test::toHex;
 
-constexpr std::uint64_t guid = 0x0123456789ABCDEF;
-constexpr std::string_view magic = "00ffff00fefefefefdfdfdfd12345678";
+constexpr std::uint64_t GUID = 0x0123456789ABCDEF;
+constexpr std::string_view MAGIC = "00ffff00fefefefefdfdfdfd12345678";
 
 template <typename Message>
 std::string encode(const Message &message)
@@ -42,11 +42,11 @@ std::vector<std::byte> bytes(std::string_view hex)
 TEST(Message, UnconnectedPingMatchesLegacyPortAndWirePy)
 {
     constexpr std::string_view golden = "01010203040506070800ffff00fefefefefdfdfdfd123456780123456789abcdef";
-    EXPECT_EQ(encode(UnconnectedPing{MessageId::UnconnectedPing, 0x0102030405060708, guid}), golden);
+    EXPECT_EQ(encode(UnconnectedPing{MessageId::UnconnectedPing, 0x0102030405060708, GUID}), golden);
     const auto decoded = UnconnectedPing::decode(bytes(golden));
     ASSERT_TRUE(decoded);
     EXPECT_EQ(decoded->send_ping_time, 0x0102030405060708U);
-    EXPECT_EQ(decoded->client_guid, guid);
+    EXPECT_EQ(decoded->client_guid, GUID);
 
     const auto open = UnconnectedPing::decode(bytes("02" + std::string{golden.substr(2)}));
     ASSERT_TRUE(open);
@@ -55,7 +55,7 @@ TEST(Message, UnconnectedPingMatchesLegacyPortAndWirePy)
 
 TEST(Message, UnconnectedPingWithoutGuidStillDecodes)
 {
-    const auto decoded = UnconnectedPing::decode(bytes("010102030405060708" + std::string{magic}));
+    const auto decoded = UnconnectedPing::decode(bytes("010102030405060708" + std::string{MAGIC}));
     ASSERT_TRUE(decoded);
     EXPECT_EQ(decoded->client_guid, UNASSIGNED_RAKNET_GUID);
 }
@@ -74,7 +74,7 @@ TEST(Message, UnconnectedPongMatchesLegacyPort)
 {
     const auto data = bytes("4d4350453b");
     constexpr std::string_view golden = "1c01020304050607080123456789abcdef00ffff00fefefefefdfdfdfd123456784d4350453b";
-    EXPECT_EQ(encode(UnconnectedPong{0x0102030405060708, guid, data}), golden);
+    EXPECT_EQ(encode(UnconnectedPong{0x0102030405060708, GUID, data}), golden);
     const auto message = bytes(golden);
     const auto decoded = UnconnectedPong::decode(message);
     ASSERT_TRUE(decoded);
@@ -85,7 +85,7 @@ TEST(Message, OpenConnectionRequest1PadsToTheProbedMtu)
 {
     const auto encoded = bytes(encode(OpenConnectionRequest1{RAKNET_PROTOCOL_VERSION, 1200}));
     EXPECT_EQ(encoded.size(), 0x494U);
-    EXPECT_EQ(toHex(std::span{encoded}.first(18)), "05" + std::string{magic} + "0b");
+    EXPECT_EQ(toHex(std::span{encoded}.first(18)), "05" + std::string{MAGIC} + "0b");
     EXPECT_TRUE(std::ranges::all_of(std::span{encoded}.subspan(18), [](std::byte b) { return b == std::byte{0}; }));
 
     const auto decoded = OpenConnectionRequest1::decode(encoded);
@@ -96,8 +96,8 @@ TEST(Message, OpenConnectionRequest1PadsToTheProbedMtu)
 
 TEST(Message, OpenConnectionRequest1NeedsTheOfflineLength)
 {
-    EXPECT_FALSE(OpenConnectionRequest1::decode(bytes("05" + std::string{magic} + "0b")));
-    const auto shortest = OpenConnectionRequest1::decode(bytes("05" + std::string{magic} + "0b00000000000000"));
+    EXPECT_FALSE(OpenConnectionRequest1::decode(bytes("05" + std::string{MAGIC} + "0b")));
+    const auto shortest = OpenConnectionRequest1::decode(bytes("05" + std::string{MAGIC} + "0b00000000000000"));
     ASSERT_TRUE(shortest);
     EXPECT_EQ(shortest->mtu, 25 + UDP_HEADER_SIZE);
     EXPECT_FALSE(OpenConnectionRequest1::decode(bytes("05"
@@ -108,10 +108,10 @@ TEST(Message, OpenConnectionRequest1NeedsTheOfflineLength)
 TEST(Message, OpenConnectionReply1MatchesLegacyPortAndWirePy)
 {
     constexpr std::string_view golden = "0600ffff00fefefefefdfdfdfd123456780123456789abcdef000578";
-    EXPECT_EQ(encode(OpenConnectionReply1{guid, std::nullopt, 1400}), golden);
+    EXPECT_EQ(encode(OpenConnectionReply1{GUID, std::nullopt, 1400}), golden);
     const auto decoded = OpenConnectionReply1::decode(bytes(golden));
     ASSERT_TRUE(decoded);
-    EXPECT_EQ(decoded->server_guid, guid);
+    EXPECT_EQ(decoded->server_guid, GUID);
     EXPECT_FALSE(decoded->cookie);
     EXPECT_EQ(decoded->mtu, 1400);
 }
@@ -119,7 +119,7 @@ TEST(Message, OpenConnectionReply1MatchesLegacyPortAndWirePy)
 TEST(Message, OpenConnectionReply1WithCookieMatchesLegacyPort)
 {
     constexpr std::string_view golden = "0600ffff00fefefefefdfdfdfd123456780123456789abcdef01cafebabe0578";
-    EXPECT_EQ(encode(OpenConnectionReply1{guid, 0xCAFEBABE, 1400}), golden);
+    EXPECT_EQ(encode(OpenConnectionReply1{GUID, 0xCAFEBABE, 1400}), golden);
     const auto decoded = OpenConnectionReply1::decode(bytes(golden));
     ASSERT_TRUE(decoded);
     EXPECT_EQ(decoded->cookie, 0xCAFEBABEU);
@@ -130,17 +130,17 @@ TEST(Message, OpenConnectionReply1WithCookieMatchesLegacyPort)
 TEST(Message, OpenConnectionRequest2MatchesLegacyPortAndWirePy)
 {
     constexpr std::string_view golden = "0700ffff00fefefefefdfdfdfd123456780480fffffe4abc05780123456789abcdef";
-    EXPECT_EQ(encode(OpenConnectionRequest2{std::nullopt, endpoint("127.0.0.1", 19132), 1400, guid}), golden);
+    EXPECT_EQ(encode(OpenConnectionRequest2{std::nullopt, endpoint("127.0.0.1", 19132), 1400, GUID}), golden);
     const auto decoded = OpenConnectionRequest2::decode(bytes(golden));
     ASSERT_TRUE(decoded);
     EXPECT_EQ(decoded->server_address, endpoint("127.0.0.1", 19132));
     EXPECT_EQ(decoded->mtu, 1400);
-    EXPECT_EQ(decoded->client_guid, guid);
+    EXPECT_EQ(decoded->client_guid, GUID);
 }
 
 TEST(Message, OpenConnectionRequest2CarriesTheCookieTheWayTheReferenceClientWritesIt)
 {
-    EXPECT_EQ(encode(OpenConnectionRequest2{0xCAFEBABE, endpoint("127.0.0.1", 19132), 1400, guid}),
+    EXPECT_EQ(encode(OpenConnectionRequest2{0xCAFEBABE, endpoint("127.0.0.1", 19132), 1400, GUID}),
               "0700ffff00fefefefefdfdfdfd12345678cafebabe000480fffffe4abc05780123456789abcdef");
 }
 
@@ -156,7 +156,7 @@ TEST(Message, OpenConnectionRequest2WithoutGuidKeepsTheUnassignedGuid)
 TEST(Message, OpenConnectionReply2MatchesLegacyPortAndWirePy)
 {
     constexpr std::string_view golden = "0800ffff00fefefefefdfdfdfd123456780123456789abcdef043f57fef5d431057800";
-    EXPECT_EQ(encode(OpenConnectionReply2{guid, endpoint("192.168.1.10", 54321), 1400, false}), golden);
+    EXPECT_EQ(encode(OpenConnectionReply2{GUID, endpoint("192.168.1.10", 54321), 1400, false}), golden);
     const auto decoded = OpenConnectionReply2::decode(bytes(golden));
     ASSERT_TRUE(decoded);
     EXPECT_EQ(decoded->client_address, endpoint("192.168.1.10", 54321));
@@ -167,18 +167,18 @@ TEST(Message, OpenConnectionReply2MatchesLegacyPortAndWirePy)
 TEST(Message, OpenConnectionReply2SecurityIsOneBitMatchingLegacyPort)
 {
     constexpr std::string_view golden = "0800ffff00fefefefefdfdfdfd123456780123456789abcdef043f57fef5d431057880";
-    EXPECT_EQ(encode(OpenConnectionReply2{guid, endpoint("192.168.1.10", 54321), 1400, true}), golden);
+    EXPECT_EQ(encode(OpenConnectionReply2{GUID, endpoint("192.168.1.10", 54321), 1400, true}), golden);
     EXPECT_TRUE(OpenConnectionReply2::decode(bytes(golden))->security);
 }
 
 TEST(Message, IncompatibleProtocolVersionMatchesLegacyPort)
 {
     constexpr std::string_view golden = "190b00ffff00fefefefefdfdfdfd123456780123456789abcdef";
-    EXPECT_EQ(encode(IncompatibleProtocolVersion{11, guid}), golden);
+    EXPECT_EQ(encode(IncompatibleProtocolVersion{11, GUID}), golden);
     const auto decoded = IncompatibleProtocolVersion::decode(bytes(golden));
     ASSERT_TRUE(decoded);
     EXPECT_EQ(decoded->protocol, 11);
-    EXPECT_EQ(decoded->server_guid, guid);
+    EXPECT_EQ(decoded->server_guid, GUID);
     EXPECT_FALSE(IncompatibleProtocolVersion::decode(bytes(std::string{golden} + "00")));
 }
 
@@ -191,25 +191,25 @@ TEST(Message, OfflineRejectionsMatchLegacyPort)
         {MessageId::IpRecentlyConnected, "1a"},
     }};
     for (const auto &[id, prefix] : rejections) {
-        const auto golden = std::string{prefix} + std::string{magic} + "0123456789abcdef";
-        EXPECT_EQ(encode(OfflineRejection{id, guid}), golden);
+        const auto golden = std::string{prefix} + std::string{MAGIC} + "0123456789abcdef";
+        EXPECT_EQ(encode(OfflineRejection{id, GUID}), golden);
         const auto decoded = OfflineRejection::decode(bytes(golden));
         ASSERT_TRUE(decoded);
         EXPECT_EQ(decoded->id, id);
-        EXPECT_EQ(decoded->server_guid, guid);
+        EXPECT_EQ(decoded->server_guid, GUID);
     }
-    EXPECT_FALSE(OfflineRejection::decode(bytes("13" + std::string{magic} + "0123456789abcdef")));
+    EXPECT_FALSE(OfflineRejection::decode(bytes("13" + std::string{MAGIC} + "0123456789abcdef")));
 }
 
 TEST(Message, ConnectionRequestMatchesLegacyPortAndWirePy)
 {
     constexpr std::string_view golden = "090123456789abcdef1122334455667788007077";
     const auto password = bytes("7077");
-    EXPECT_EQ(encode(ConnectionRequest{guid, 0x1122334455667788, false, password}), golden);
+    EXPECT_EQ(encode(ConnectionRequest{GUID, 0x1122334455667788, false, password}), golden);
     const auto message = bytes(golden);
     const auto decoded = ConnectionRequest::decode(message);
     ASSERT_TRUE(decoded);
-    EXPECT_EQ(decoded->client_guid, guid);
+    EXPECT_EQ(decoded->client_guid, GUID);
     EXPECT_EQ(decoded->send_ping_time, 0x1122334455667788U);
     EXPECT_EQ(toHex(decoded->password), "7077");
 }
@@ -293,7 +293,7 @@ TEST(Message, ConnectedPingAndPongMustBeExactLength)
 
 TEST(Message, InvalidPasswordCarriesTheGuid)
 {
-    EXPECT_EQ(encode(InvalidPassword{guid}), "180123456789abcdef");
+    EXPECT_EQ(encode(InvalidPassword{GUID}), "180123456789abcdef");
 }
 
 TEST(Message, OfflineDecodersRefuseDatagramsTooShortToClassify)
@@ -312,15 +312,15 @@ TEST(Message, OfflineClassificationFollowsTheReference)
 {
     EXPECT_TRUE(isOfflineMessage({}));
     EXPECT_TRUE(isOfflineMessage(bytes("8400")));
-    EXPECT_TRUE(isOfflineMessage(bytes("010102030405060708" + std::string{magic})));
-    EXPECT_FALSE(isOfflineMessage(bytes("0101020304050607" + std::string{magic})));
-    EXPECT_TRUE(isOfflineMessage(bytes("05" + std::string{magic} + "0b00000000000000")));
-    EXPECT_FALSE(isOfflineMessage(bytes("05" + std::string{magic} + "0b")));
-    EXPECT_TRUE(isOfflineMessage(bytes("190b" + std::string{magic} + "0123456789abcdef")));
-    EXPECT_FALSE(isOfflineMessage(bytes("190b" + std::string{magic} + "0123456789abcdef00")));
-    EXPECT_TRUE(isOfflineMessage(bytes("1c01020304050607080123456789abcdef" + std::string{magic})));
+    EXPECT_TRUE(isOfflineMessage(bytes("010102030405060708" + std::string{MAGIC})));
+    EXPECT_FALSE(isOfflineMessage(bytes("0101020304050607" + std::string{MAGIC})));
+    EXPECT_TRUE(isOfflineMessage(bytes("05" + std::string{MAGIC} + "0b00000000000000")));
+    EXPECT_FALSE(isOfflineMessage(bytes("05" + std::string{MAGIC} + "0b")));
+    EXPECT_TRUE(isOfflineMessage(bytes("190b" + std::string{MAGIC} + "0123456789abcdef")));
+    EXPECT_FALSE(isOfflineMessage(bytes("190b" + std::string{MAGIC} + "0123456789abcdef00")));
+    EXPECT_TRUE(isOfflineMessage(bytes("1c01020304050607080123456789abcdef" + std::string{MAGIC})));
     EXPECT_FALSE(isOfflineMessage(bytes("1c01020304050607080123456789abcdef00ffff00fefefefe")));
-    EXPECT_FALSE(isOfflineMessage(bytes("09" + std::string{magic} + "0123456789abcdef")));
+    EXPECT_FALSE(isOfflineMessage(bytes("09" + std::string{MAGIC} + "0123456789abcdef")));
     EXPECT_FALSE(isOfflineMessage(bytes("84000000000018fe0102")));
 }
 

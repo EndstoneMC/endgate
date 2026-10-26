@@ -16,13 +16,13 @@ namespace endgate::rtc {
 
 namespace {
 
-constexpr std::uint32_t MagicCookie = 0x2112A442;
-constexpr std::size_t HeaderSize = 20;
-constexpr std::size_t AttributeHeaderSize = 4;
-constexpr std::size_t IntegritySize = 20;
-constexpr std::size_t MaxUsernameLength = 513;
-constexpr std::size_t MaxTextLength = 763;
-constexpr std::size_t MaxUnknownAttributes = 16;
+constexpr std::uint32_t MAGIC_COOKIE = 0x2112A442;
+constexpr std::size_t HEADER_SIZE = 20;
+constexpr std::size_t ATTRIBUTE_HEADER_SIZE = 4;
+constexpr std::size_t INTEGRITY_SIZE = 20;
+constexpr std::size_t MAX_USERNAME_LENGTH = 513;
+constexpr std::size_t MAX_TEXT_LENGTH = 763;
+constexpr std::size_t MAX_UNKNOWN_ATTRIBUTES = 16;
 
 std::uint16_t readU16(std::span<const std::byte> bytes, std::size_t offset)
 {
@@ -63,10 +63,10 @@ std::span<const std::byte> asBytes(std::string_view text)
 std::array<std::byte, 16> xorMask(const StunMessage::TransactionId &transaction_id)
 {
     std::array<std::byte, 16> mask{};
-    mask[0] = static_cast<std::byte>(MagicCookie >> 24U);
-    mask[1] = static_cast<std::byte>(MagicCookie >> 16U);
-    mask[2] = static_cast<std::byte>(MagicCookie >> 8U);
-    mask[3] = static_cast<std::byte>(MagicCookie);
+    mask[0] = static_cast<std::byte>(MAGIC_COOKIE >> 24U);
+    mask[1] = static_cast<std::byte>(MAGIC_COOKIE >> 16U);
+    mask[2] = static_cast<std::byte>(MAGIC_COOKIE >> 8U);
+    mask[3] = static_cast<std::byte>(MAGIC_COOKIE);
     std::ranges::copy(transaction_id, mask.begin() + 4);
     return mask;
 }
@@ -76,11 +76,11 @@ std::uint32_t fingerprintOf(std::span<const std::byte> bytes)
     return static_cast<std::uint32_t>(libdeflate_crc32(0, bytes.data(), bytes.size())) ^ 0x5354554EU;
 }
 
-std::array<std::byte, IntegritySize> hmacSha1(std::span<const std::byte> header, std::span<const std::byte> body,
-                                              std::string_view key)
+std::array<std::byte, INTEGRITY_SIZE> hmacSha1(std::span<const std::byte> header, std::span<const std::byte> body,
+                                               std::string_view key)
 {
     static EVP_MAC *const mac = EVP_MAC_fetch(nullptr, "HMAC", nullptr);
-    std::array<std::byte, IntegritySize> digest{};
+    std::array<std::byte, INTEGRITY_SIZE> digest{};
     const std::unique_ptr<EVP_MAC_CTX, decltype(&EVP_MAC_CTX_free)> context(EVP_MAC_CTX_new(mac), EVP_MAC_CTX_free);
     std::array<char, 5> digest_name{"SHA1"};
     const std::array params{OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST, digest_name.data(), 0),
@@ -102,7 +102,7 @@ std::optional<asio::ip::udp::endpoint> readXorAddress(std::span<const std::byte>
 {
     const auto mask = xorMask(transaction_id);
     const auto family = std::to_integer<std::uint8_t>(value[1]);
-    const auto port = static_cast<std::uint16_t>(readU16(value, 2) ^ (MagicCookie >> 16U));
+    const auto port = static_cast<std::uint16_t>(readU16(value, 2) ^ (MAGIC_COOKIE >> 16U));
     if (family == 0x01 && value.size() == 8) {
         asio::ip::address_v4::bytes_type bytes{};
         for (std::size_t i = 0; i < bytes.size(); ++i) {
@@ -122,11 +122,11 @@ std::optional<asio::ip::udp::endpoint> readXorAddress(std::span<const std::byte>
 
 bool isHeaderValid(std::span<const std::byte> datagram)
 {
-    if (datagram.size() < HeaderSize || (std::to_integer<std::uint8_t>(datagram[0]) & 0xC0U) != 0) {
+    if (datagram.size() < HEADER_SIZE || (std::to_integer<std::uint8_t>(datagram[0]) & 0xC0U) != 0) {
         return false;
     }
     const auto length = readU16(datagram, 2);
-    return readU32(datagram, 4) == MagicCookie && length % 4 == 0 && datagram.size() == HeaderSize + length;
+    return readU32(datagram, 4) == MAGIC_COOKIE && length % 4 == 0 && datagram.size() == HEADER_SIZE + length;
 }
 
 }  // namespace
@@ -145,20 +145,20 @@ std::optional<StunMessage> StunMessage::decode(std::span<const std::byte> datagr
 
     bool after_integrity = false;
     bool after_integrity_sha256 = false;
-    std::size_t offset = HeaderSize;
+    std::size_t offset = HEADER_SIZE;
     while (offset < datagram.size()) {
-        if (message.fingerprint || datagram.size() - offset < AttributeHeaderSize) {
+        if (message.fingerprint || datagram.size() - offset < ATTRIBUTE_HEADER_SIZE) {
             return std::nullopt;
         }
         const auto attribute = readU16(datagram, offset);
         const std::size_t length = readU16(datagram, offset + 2);
         const auto padded = (length + 3) & ~std::size_t{3};
-        if (datagram.size() - offset - AttributeHeaderSize < padded) {
+        if (datagram.size() - offset - ATTRIBUTE_HEADER_SIZE < padded) {
             return std::nullopt;
         }
-        const auto value = datagram.subspan(offset + AttributeHeaderSize, length);
+        const auto value = datagram.subspan(offset + ATTRIBUTE_HEADER_SIZE, length);
         const auto attribute_offset = offset;
-        offset += AttributeHeaderSize + padded;
+        offset += ATTRIBUTE_HEADER_SIZE + padded;
 
         if (attribute == static_cast<std::uint16_t>(StunAttribute::Fingerprint)) {
             if (length != 4 || readU32(value, 0) != fingerprintOf(datagram.first(attribute_offset))) {
@@ -183,7 +183,7 @@ std::optional<StunMessage> StunMessage::decode(std::span<const std::byte> datagr
 
         switch (static_cast<StunAttribute>(attribute)) {
         case StunAttribute::Username:
-            if (length > MaxUsernameLength) {
+            if (length > MAX_USERNAME_LENGTH) {
                 return std::nullopt;
             }
             if (!message.username) {
@@ -191,14 +191,14 @@ std::optional<StunMessage> StunMessage::decode(std::span<const std::byte> datagr
             }
             break;
         case StunAttribute::MessageIntegrity:
-            if (length != IntegritySize) {
+            if (length != INTEGRITY_SIZE) {
                 return std::nullopt;
             }
             message.integrity_offset = attribute_offset;
             after_integrity = true;
             break;
         case StunAttribute::ErrorCode:
-            if (length < 4 || length - 4 > MaxTextLength) {
+            if (length < 4 || length - 4 > MAX_TEXT_LENGTH) {
                 return std::nullopt;
             }
             if (!message.error_code) {
@@ -212,7 +212,7 @@ std::optional<StunMessage> StunMessage::decode(std::span<const std::byte> datagr
             if (length % 2 != 0) {
                 return std::nullopt;
             }
-            for (std::size_t i = 0; i < length && message.unknown_attributes.size() < MaxUnknownAttributes; i += 2) {
+            for (std::size_t i = 0; i < length && message.unknown_attributes.size() < MAX_UNKNOWN_ATTRIBUTES; i += 2) {
                 message.unknown_attributes.push_back(readU16(value, i));
             }
             break;
@@ -239,7 +239,7 @@ std::optional<StunMessage> StunMessage::decode(std::span<const std::byte> datagr
             message.use_candidate = true;
             break;
         case StunAttribute::Software:
-            if (length > MaxTextLength) {
+            if (length > MAX_TEXT_LENGTH) {
                 return std::nullopt;
             }
             if (!message.software) {
@@ -260,7 +260,7 @@ std::optional<StunMessage> StunMessage::decode(std::span<const std::byte> datagr
             break;
         }
         default:
-            if (attribute < 0x8000 && message.unknown_comprehension_required.size() < MaxUnknownAttributes &&
+            if (attribute < 0x8000 && message.unknown_comprehension_required.size() < MAX_UNKNOWN_ATTRIBUTES &&
                 !std::ranges::contains(message.unknown_comprehension_required, attribute)) {
                 message.unknown_comprehension_required.push_back(attribute);
             }
@@ -275,28 +275,28 @@ std::optional<std::string_view> StunMessage::peekLocalUfrag(std::span<const std:
     if (!isHeaderValid(datagram) || readU16(datagram, 0) != static_cast<std::uint16_t>(StunMethod::Binding)) {
         return std::nullopt;
     }
-    std::size_t offset = HeaderSize;
-    while (datagram.size() - offset >= AttributeHeaderSize) {
+    std::size_t offset = HEADER_SIZE;
+    while (datagram.size() - offset >= ATTRIBUTE_HEADER_SIZE) {
         const auto attribute = readU16(datagram, offset);
         const std::size_t length = readU16(datagram, offset + 2);
         const auto padded = (length + 3) & ~std::size_t{3};
-        if (datagram.size() - offset - AttributeHeaderSize < padded ||
+        if (datagram.size() - offset - ATTRIBUTE_HEADER_SIZE < padded ||
             attribute == static_cast<std::uint16_t>(StunAttribute::MessageIntegrity)) {
             return std::nullopt;
         }
         if (attribute == static_cast<std::uint16_t>(StunAttribute::Username)) {
-            if (length > MaxUsernameLength) {
+            if (length > MAX_USERNAME_LENGTH) {
                 return std::nullopt;
             }
             const std::string_view username(
-                reinterpret_cast<const char *>(datagram.data()) + offset + AttributeHeaderSize, length);
+                reinterpret_cast<const char *>(datagram.data()) + offset + ATTRIBUTE_HEADER_SIZE, length);
             const auto colon = username.find(':');
             if (colon == std::string_view::npos || colon == 0) {
                 return std::nullopt;
             }
             return username.substr(0, colon);
         }
-        offset += AttributeHeaderSize + padded;
+        offset += ATTRIBUTE_HEADER_SIZE + padded;
     }
     return std::nullopt;
 }
@@ -310,7 +310,7 @@ std::vector<std::byte> StunMessage::encode(std::optional<std::string_view> integ
              static_cast<std::uint16_t>((method_bits & 0x000FU) | ((method_bits & 0x0070U) << 1U) |
                                         ((method_bits & 0x0F80U) << 2U) | static_cast<std::uint16_t>(message_class)));
     writeU16(out, 0);
-    writeU32(out, MagicCookie);
+    writeU32(out, MAGIC_COOKIE);
     out.insert(out.end(), transaction_id.begin(), transaction_id.end());
 
     if (xor_mapped_address) {
@@ -319,7 +319,7 @@ std::vector<std::byte> StunMessage::encode(std::optional<std::string_view> integ
         std::vector<std::byte> value;
         value.push_back(std::byte{0});
         value.push_back(address.is_v4() ? std::byte{0x01} : std::byte{0x02});
-        writeU16(value, static_cast<std::uint16_t>(xor_mapped_address->port() ^ (MagicCookie >> 16U)));
+        writeU16(value, static_cast<std::uint16_t>(xor_mapped_address->port() ^ (MAGIC_COOKIE >> 16U)));
         if (address.is_v4()) {
             const auto bytes = address.to_v4().to_bytes();
             for (std::size_t i = 0; i < bytes.size(); ++i) {
@@ -337,20 +337,20 @@ std::vector<std::byte> StunMessage::encode(std::optional<std::string_view> integ
     if (error_code) {
         std::vector<std::byte> value{std::byte{0}, std::byte{0}, static_cast<std::byte>(error_code->code / 100),
                                      static_cast<std::byte>(error_code->code % 100)};
-        const auto reason = asBytes(error_code->reason).first(std::min(error_code->reason.size(), MaxTextLength));
+        const auto reason = asBytes(error_code->reason).first(std::min(error_code->reason.size(), MAX_TEXT_LENGTH));
         value.insert(value.end(), reason.begin(), reason.end());
         writeAttribute(out, StunAttribute::ErrorCode, value);
     }
     if (!unknown_attributes.empty()) {
         std::vector<std::byte> value;
-        for (const auto attribute : unknown_attributes | std::views::take(MaxUnknownAttributes)) {
+        for (const auto attribute : unknown_attributes | std::views::take(MAX_UNKNOWN_ATTRIBUTES)) {
             writeU16(value, attribute);
         }
         writeAttribute(out, StunAttribute::UnknownAttributes, value);
     }
     if (username) {
         writeAttribute(out, StunAttribute::Username,
-                       asBytes(*username).first(std::min(username->size(), MaxUsernameLength)));
+                       asBytes(*username).first(std::min(username->size(), MAX_USERNAME_LENGTH)));
     }
     if (priority) {
         std::vector<std::byte> value;
@@ -374,19 +374,19 @@ std::vector<std::byte> StunMessage::encode(std::optional<std::string_view> integ
     }
     if (software) {
         writeAttribute(out, StunAttribute::Software,
-                       asBytes(*software).first(std::min(software->size(), MaxTextLength)));
+                       asBytes(*software).first(std::min(software->size(), MAX_TEXT_LENGTH)));
     }
 
     if (integrity_key) {
-        const auto length_with_integrity = out.size() - HeaderSize + AttributeHeaderSize + IntegritySize;
+        const auto length_with_integrity = out.size() - HEADER_SIZE + ATTRIBUTE_HEADER_SIZE + INTEGRITY_SIZE;
         out[2] = static_cast<std::byte>(length_with_integrity >> 8U);
         out[3] = static_cast<std::byte>(length_with_integrity);
         const std::span<const std::byte> bytes{out};
-        const auto digest = hmacSha1(bytes.first(HeaderSize), bytes.subspan(HeaderSize), *integrity_key);
+        const auto digest = hmacSha1(bytes.first(HEADER_SIZE), bytes.subspan(HEADER_SIZE), *integrity_key);
         writeAttribute(out, StunAttribute::MessageIntegrity, digest);
     }
 
-    const auto length_with_fingerprint = out.size() - HeaderSize + AttributeHeaderSize + 4;
+    const auto length_with_fingerprint = out.size() - HEADER_SIZE + ATTRIBUTE_HEADER_SIZE + 4;
     out[2] = static_cast<std::byte>(length_with_fingerprint >> 8U);
     out[3] = static_cast<std::byte>(length_with_fingerprint);
     std::vector<std::byte> fingerprint_value;
@@ -397,17 +397,17 @@ std::vector<std::byte> StunMessage::encode(std::optional<std::string_view> integ
 
 bool StunMessage::verifyIntegrity(std::span<const std::byte> datagram, std::string_view key) const
 {
-    if (!integrity_offset || *integrity_offset + AttributeHeaderSize + IntegritySize > datagram.size()) {
+    if (!integrity_offset || *integrity_offset + ATTRIBUTE_HEADER_SIZE + INTEGRITY_SIZE > datagram.size()) {
         return false;
     }
-    std::array<std::byte, HeaderSize> header{};
-    std::ranges::copy(datagram.first(HeaderSize), header.begin());
-    const auto length = *integrity_offset - HeaderSize + AttributeHeaderSize + IntegritySize;
+    std::array<std::byte, HEADER_SIZE> header{};
+    std::ranges::copy(datagram.first(HEADER_SIZE), header.begin());
+    const auto length = *integrity_offset - HEADER_SIZE + ATTRIBUTE_HEADER_SIZE + INTEGRITY_SIZE;
     header[2] = static_cast<std::byte>(length >> 8U);
     header[3] = static_cast<std::byte>(length);
-    const auto digest = hmacSha1(header, datagram.subspan(HeaderSize, *integrity_offset - HeaderSize), key);
-    const auto expected = datagram.subspan(*integrity_offset + AttributeHeaderSize, IntegritySize);
-    return CRYPTO_memcmp(digest.data(), expected.data(), IntegritySize) == 0;
+    const auto digest = hmacSha1(header, datagram.subspan(HEADER_SIZE, *integrity_offset - HEADER_SIZE), key);
+    const auto expected = datagram.subspan(*integrity_offset + ATTRIBUTE_HEADER_SIZE, INTEGRITY_SIZE);
+    return CRYPTO_memcmp(digest.data(), expected.data(), INTEGRITY_SIZE) == 0;
 }
 
 }  // namespace endgate::rtc

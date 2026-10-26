@@ -69,7 +69,7 @@ public:
 
     void drive(Clock::time_point now)
     {
-        now_ = now;
+        now = now;
         if (dtls.getState() == rtc::DtlsTransport::State::Connected && !sctp_started) {
             sctp_started = true;
             sctp.start(now);
@@ -90,7 +90,7 @@ public:
     {
         outgoing.emplace_back(datagram.begin(), datagram.end());
     }
-    void onDtlsData(std::span<const std::byte> data) override { sctp.handlePacket(data, now_); }
+    void onDtlsData(std::span<const std::byte> data) override { sctp.handlePacket(data, now); }
     void onDtlsStateChanged(rtc::DtlsTransport::State) override {}
 
     void sendPacket(std::span<const std::byte> packet) override
@@ -112,7 +112,7 @@ public:
 
     void sendFragment(ESendType type, ByteBuf fragment) override
     {
-        sctp.send(type == ESendType::Reliable ? *reliable : *unreliable, std::move(fragment), true, now_);
+        sctp.send(type == ESendType::Reliable ? *reliable : *unreliable, std::move(fragment), true, now);
     }
     void onPacket(ByteBuf packet) override { packets.push_back(bytesOf(packet)); }
     void closeChannel(ESendType) override {}
@@ -120,7 +120,7 @@ public:
     rtc::DtlsTransport dtls;
     rtc::SctpTransport sctp;
     PacketQueue queue;
-    Clock::time_point now_{};
+    Clock::time_point now{};
     bool sctp_started{false};
     std::optional<std::uint16_t> reliable;
     std::optional<std::uint16_t> unreliable;

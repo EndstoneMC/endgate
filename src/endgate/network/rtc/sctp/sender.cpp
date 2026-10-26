@@ -10,7 +10,7 @@ namespace {
 
 std::size_t chunkSize(std::size_t payload)
 {
-    return DataChunk::HeaderSize + ((payload + 3) & ~std::size_t{3});
+    return DataChunk::HEADER_SIZE + ((payload + 3) & ~std::size_t{3});
 }
 
 }  // namespace
@@ -247,11 +247,11 @@ bool Sender::addData(PacketBuilder &builder, Clock::time_point now)
     }
 
     constexpr std::size_t min_fragment = 64;
-    const auto whole_packet = (config_.mtu & ~std::size_t{3}) - CommonHeader::Size - DataChunk::HeaderSize;
+    const auto whole_packet = (config_.mtu & ~std::size_t{3}) - CommonHeader::SIZE - DataChunk::HEADER_SIZE;
     constexpr std::size_t max_outstanding = 65535;
     while (lost_ == 0 && flight_ < cwnd_ && !ready_.empty() && (peer_window_ > 0 || flight_ == 0) &&
            outstanding_.size() < max_outstanding && held_ < config_.max_buffered &&
-           builder.remaining() > DataChunk::HeaderSize) {
+           builder.remaining() > DataChunk::HEADER_SIZE) {
         const auto after = ready_.upper_bound(last_stream_);
         const auto stream_id = current_.value_or(after != ready_.end() ? *after : *ready_.begin());
         auto &stream = streams_[stream_id];
@@ -262,7 +262,7 @@ bool Sender::addData(PacketBuilder &builder, Clock::time_point now)
         }
 
         const auto remaining = message.payload.length() - message.offset;
-        auto fragment = std::min(remaining, builder.remaining() - DataChunk::HeaderSize);
+        auto fragment = std::min(remaining, builder.remaining() - DataChunk::HEADER_SIZE);
         if (flight_ > 0) {
             fragment = std::min(fragment, peer_window_);
         }
@@ -273,10 +273,10 @@ bool Sender::addData(PacketBuilder &builder, Clock::time_point now)
         if (message.offset == 0) {
             message.ssn = message.unordered ? 0 : stream.next_ssn++;
         }
-        const auto flags = static_cast<std::uint8_t>((message.offset == 0 ? DataChunk::BeginningFlag : 0U) |
-                                                     (fragment == remaining ? DataChunk::EndFlag : 0U) |
-                                                     (message.unordered ? DataChunk::UnorderedFlag : 0U) |
-                                                     (cwnd_ < 10 * config_.mtu ? DataChunk::ImmediateFlag : 0U));
+        const auto flags = static_cast<std::uint8_t>((message.offset == 0 ? DataChunk::BEGINNING_FLAG : 0U) |
+                                                     (fragment == remaining ? DataChunk::END_FLAG : 0U) |
+                                                     (message.unordered ? DataChunk::UNORDERED_FLAG : 0U) |
+                                                     (cwnd_ < 10 * config_.mtu ? DataChunk::IMMEDIATE_FLAG : 0U));
         auto payload = message.payload.retainedSlice(message.offset, fragment);
         builder.addData({.tsn = static_cast<std::uint32_t>(nextTsn()),
                          .stream = stream_id,
@@ -328,20 +328,20 @@ std::optional<ForwardTsnChunk> Sender::forwardTsn(Clock::time_point now, std::si
     if (!config_.partial_reliability) {
         return std::nullopt;
     }
-    const auto capacity = max_size > Chunk::HeaderSize + 4 ? (max_size - Chunk::HeaderSize - 4) / 4 : 0;
+    const auto capacity = max_size > Chunk::HEADER_SIZE + 4 ? (max_size - Chunk::HEADER_SIZE - 4) / 4 : 0;
     auto advanced = cumulative_ack_;
     auto covered = cumulative_ack_;
     std::vector<ForwardTsnChunk::SkippedStream> skipped;
     for (std::size_t index = 0; index < outstanding_.size(); ++index) {
         const auto &item = outstanding_[index];
         if (item.state == State::Acked && (item.max_retransmits || item.expires_at) &&
-            (item.flags & DataChunk::BeginningFlag) != 0) {
+            (item.flags & DataChunk::BEGINNING_FLAG) != 0) {
             auto last = index;
-            while (last + 1 < outstanding_.size() && (outstanding_[last].flags & DataChunk::EndFlag) == 0 &&
+            while (last + 1 < outstanding_.size() && (outstanding_[last].flags & DataChunk::END_FLAG) == 0 &&
                    outstanding_[last + 1].state == State::Acked && outstanding_[last + 1].message == item.message) {
                 ++last;
             }
-            if ((outstanding_[last].flags & DataChunk::EndFlag) == 0) {
+            if ((outstanding_[last].flags & DataChunk::END_FLAG) == 0) {
                 break;
             }
             advanced += last - index + 1;
@@ -351,7 +351,7 @@ std::optional<ForwardTsnChunk> Sender::forwardTsn(Clock::time_point now, std::si
         if (item.state != State::Abandoned) {
             break;
         }
-        if ((item.flags & DataChunk::UnorderedFlag) == 0) {
+        if ((item.flags & DataChunk::UNORDERED_FLAG) == 0) {
             const auto entry = std::ranges::find(skipped, item.stream, &ForwardTsnChunk::SkippedStream::stream);
             if (entry != skipped.end()) {
                 entry->ssn = item.ssn;

@@ -18,25 +18,26 @@ std::vector<std::byte> bytesOf(std::string_view raw)
     return {bytes.begin(), bytes.end()};
 }
 
-const std::vector<std::byte> SampleRequest = bytesOf(std::string_view{"\x00\x01\x00\x58"
-                                                                      "\x21\x12\xa4\x42"
-                                                                      "\xb7\xe7\xa7\x01\xbc\x34\xd6\x86\xfa\x87\xdf\xae"
-                                                                      "\x80\x22\x00\x10"
-                                                                      "STUN test client"
-                                                                      "\x00\x24\x00\x04"
-                                                                      "\x6e\x00\x01\xff"
-                                                                      "\x80\x29\x00\x08"
-                                                                      "\x93\x2f\xf9\xb1\x51\x26\x3b\x36"
-                                                                      "\x00\x06\x00\x09"
-                                                                      "\x65\x76\x74\x6a\x3a\x68\x36\x76\x59\x20\x20\x20"
-                                                                      "\x00\x08\x00\x14"
-                                                                      "\x9a\xea\xa7\x0c\xbf\xd8\xcb\x56\x78\x1e\xf2\xb5"
-                                                                      "\xb2\xd3\xf2\x49\xc1\xb5\x71\xa2"
-                                                                      "\x80\x28\x00\x04"
-                                                                      "\xe5\x7a\x3b\xcf",
-                                                                      108});
+const std::vector<std::byte> SAMPLE_REQUEST =
+    bytesOf(std::string_view{"\x00\x01\x00\x58"
+                             "\x21\x12\xa4\x42"
+                             "\xb7\xe7\xa7\x01\xbc\x34\xd6\x86\xfa\x87\xdf\xae"
+                             "\x80\x22\x00\x10"
+                             "STUN test client"
+                             "\x00\x24\x00\x04"
+                             "\x6e\x00\x01\xff"
+                             "\x80\x29\x00\x08"
+                             "\x93\x2f\xf9\xb1\x51\x26\x3b\x36"
+                             "\x00\x06\x00\x09"
+                             "\x65\x76\x74\x6a\x3a\x68\x36\x76\x59\x20\x20\x20"
+                             "\x00\x08\x00\x14"
+                             "\x9a\xea\xa7\x0c\xbf\xd8\xcb\x56\x78\x1e\xf2\xb5"
+                             "\xb2\xd3\xf2\x49\xc1\xb5\x71\xa2"
+                             "\x80\x28\x00\x04"
+                             "\xe5\x7a\x3b\xcf",
+                             108});
 
-const std::vector<std::byte> SampleIpv4Response =
+const std::vector<std::byte> SAMPLE_IPV4_RESPONSE =
     bytesOf(std::string_view{"\x01\x01\x00\x3c"
                              "\x21\x12\xa4\x42"
                              "\xb7\xe7\xa7\x01\xbc\x34\xd6\x86\xfa\x87\xdf\xae"
@@ -51,7 +52,7 @@ const std::vector<std::byte> SampleIpv4Response =
                              "\xc0\x7d\x4c\x96",
                              80});
 
-const std::vector<std::byte> SampleIpv6Response =
+const std::vector<std::byte> SAMPLE_IPV6_RESPONSE =
     bytesOf(std::string_view{"\x01\x01\x00\x48"
                              "\x21\x12\xa4\x42"
                              "\xb7\xe7\xa7\x01\xbc\x34\xd6\x86\xfa\x87\xdf\xae"
@@ -68,7 +69,7 @@ const std::vector<std::byte> SampleIpv6Response =
                              "\xc8\xfb\x0b\x4c",
                              92});
 
-const std::vector<std::byte> SampleLongTermRequest =
+const std::vector<std::byte> SAMPLE_LONG_TERM_REQUEST =
     bytesOf(std::string_view{"\x00\x01\x00\x60"
                              "\x21\x12\xa4\x42"
                              "\x78\xad\x34\x33\xc6\xad\x72\xc0\x29\xda\x41\x2e"
@@ -86,11 +87,11 @@ const std::vector<std::byte> SampleLongTermRequest =
                              "\x2e\x85\xc9\xa2\x8c\xa8\x96\x66",
                              116});
 
-constexpr std::string_view SamplePassword = "VOkJxbRl1RmTxUk/WvJxBt";
+constexpr std::string_view SAMPLE_PASSWORD = "VOkJxbRl1RmTxUk/WvJxBt";
 
 TEST(StunMessageTest, DecodesTheRfc5769Request)
 {
-    const auto message = StunMessage::decode(SampleRequest);
+    const auto message = StunMessage::decode(SAMPLE_REQUEST);
     ASSERT_TRUE(message);
     EXPECT_EQ(message->message_class, StunClass::Request);
     EXPECT_EQ(message->method, StunMethod::Binding);
@@ -102,32 +103,32 @@ TEST(StunMessageTest, DecodesTheRfc5769Request)
     EXPECT_FALSE(message->use_candidate);
     EXPECT_TRUE(message->fingerprint);
     EXPECT_TRUE(message->unknown_comprehension_required.empty());
-    EXPECT_TRUE(message->verifyIntegrity(SampleRequest, SamplePassword));
-    EXPECT_FALSE(message->verifyIntegrity(SampleRequest, "wrong password"));
+    EXPECT_TRUE(message->verifyIntegrity(SAMPLE_REQUEST, SAMPLE_PASSWORD));
+    EXPECT_FALSE(message->verifyIntegrity(SAMPLE_REQUEST, "wrong password"));
 }
 
 TEST(StunMessageTest, DecodesTheRfc5769Ipv4Response)
 {
-    const auto message = StunMessage::decode(SampleIpv4Response);
+    const auto message = StunMessage::decode(SAMPLE_IPV4_RESPONSE);
     ASSERT_TRUE(message);
     EXPECT_EQ(message->message_class, StunClass::SuccessResponse);
     EXPECT_EQ(message->software, "test vector");
     EXPECT_EQ(message->xor_mapped_address, asio::ip::udp::endpoint(asio::ip::make_address("192.0.2.1"), 32853));
-    EXPECT_TRUE(message->verifyIntegrity(SampleIpv4Response, SamplePassword));
+    EXPECT_TRUE(message->verifyIntegrity(SAMPLE_IPV4_RESPONSE, SAMPLE_PASSWORD));
 }
 
 TEST(StunMessageTest, DecodesTheRfc5769Ipv6Response)
 {
-    const auto message = StunMessage::decode(SampleIpv6Response);
+    const auto message = StunMessage::decode(SAMPLE_IPV6_RESPONSE);
     ASSERT_TRUE(message);
     EXPECT_EQ(message->xor_mapped_address,
               asio::ip::udp::endpoint(asio::ip::make_address("2001:db8:1234:5678:11:2233:4455:6677"), 32853));
-    EXPECT_TRUE(message->verifyIntegrity(SampleIpv6Response, SamplePassword));
+    EXPECT_TRUE(message->verifyIntegrity(SAMPLE_IPV6_RESPONSE, SAMPLE_PASSWORD));
 }
 
 TEST(StunMessageTest, ReportsTheLongTermAttributesItDoesNotUnderstand)
 {
-    const auto message = StunMessage::decode(SampleLongTermRequest);
+    const auto message = StunMessage::decode(SAMPLE_LONG_TERM_REQUEST);
     ASSERT_TRUE(message);
     EXPECT_FALSE(message->fingerprint);
     EXPECT_TRUE(message->integrity_offset);
@@ -136,8 +137,8 @@ TEST(StunMessageTest, ReportsTheLongTermAttributesItDoesNotUnderstand)
 
 TEST(StunMessageTest, PeeksTheLocalUfrag)
 {
-    EXPECT_EQ(StunMessage::peekLocalUfrag(SampleRequest), "evtj");
-    EXPECT_FALSE(StunMessage::peekLocalUfrag(SampleIpv4Response));
+    EXPECT_EQ(StunMessage::peekLocalUfrag(SAMPLE_REQUEST), "evtj");
+    EXPECT_FALSE(StunMessage::peekLocalUfrag(SAMPLE_IPV4_RESPONSE));
 }
 
 TEST(StunMessageTest, EncodesWhatItDecodes)
@@ -212,36 +213,36 @@ TEST(StunMessageTest, IgnoresComprehensionOptionalAttributes)
 
 TEST(StunMessageTest, RejectsAHeaderThatIsNotStun)
 {
-    auto datagram = SampleRequest;
+    auto datagram = SAMPLE_REQUEST;
     datagram[0] = std::byte{0x40};
     EXPECT_FALSE(StunMessage::decode(datagram));
 
-    datagram = SampleRequest;
+    datagram = SAMPLE_REQUEST;
     datagram[4] = std::byte{0x00};
     EXPECT_FALSE(StunMessage::decode(datagram));
 
-    EXPECT_FALSE(StunMessage::decode(std::span{SampleRequest}.first(19)));
+    EXPECT_FALSE(StunMessage::decode(std::span{SAMPLE_REQUEST}.first(19)));
     EXPECT_FALSE(StunMessage::decode({}));
 }
 
 TEST(StunMessageTest, RejectsALengthThatDisagreesWithTheDatagram)
 {
-    auto datagram = SampleRequest;
+    auto datagram = SAMPLE_REQUEST;
     datagram.push_back(std::byte{0});
     EXPECT_FALSE(StunMessage::decode(datagram));
 
-    datagram = SampleRequest;
+    datagram = SAMPLE_REQUEST;
     datagram[3] = std::byte{0x5A};
     EXPECT_FALSE(StunMessage::decode(datagram));
 
-    datagram = SampleRequest;
+    datagram = SAMPLE_REQUEST;
     datagram.resize(datagram.size() - 4);
     EXPECT_FALSE(StunMessage::decode(datagram));
 }
 
 TEST(StunMessageTest, RejectsAnAttributeThatOverrunsTheMessage)
 {
-    auto datagram = SampleRequest;
+    auto datagram = SAMPLE_REQUEST;
     datagram[22] = std::byte{0xFF};
     EXPECT_FALSE(StunMessage::decode(datagram));
     EXPECT_FALSE(StunMessage::peekLocalUfrag(datagram));
@@ -249,7 +250,7 @@ TEST(StunMessageTest, RejectsAnAttributeThatOverrunsTheMessage)
 
 TEST(StunMessageTest, RejectsAWrongFingerprint)
 {
-    auto datagram = SampleRequest;
+    auto datagram = SAMPLE_REQUEST;
     datagram.back() ^= std::byte{0x01};
     EXPECT_FALSE(StunMessage::decode(datagram));
 }
@@ -266,7 +267,7 @@ TEST(StunMessageTest, RejectsAnAttributeAfterTheFingerprint)
 
 TEST(StunMessageTest, RejectsFixedSizeAttributesOfTheWrongSize)
 {
-    auto datagram = SampleRequest;
+    auto datagram = SAMPLE_REQUEST;
     datagram[43] = std::byte{0x03};
     EXPECT_FALSE(StunMessage::decode(datagram));
 }
@@ -298,14 +299,14 @@ TEST(StunMessageTest, PeekRejectsAUsernameWithoutAColon)
 
 TEST(StunMessageTest, SurvivesEveryTruncationAndBitFlip)
 {
-    for (std::size_t length = 0; length <= SampleRequest.size(); ++length) {
-        const auto prefix = std::span{SampleRequest}.first(length);
+    for (std::size_t length = 0; length <= SAMPLE_REQUEST.size(); ++length) {
+        const auto prefix = std::span{SAMPLE_REQUEST}.first(length);
         (void)StunMessage::decode(prefix);
         (void)StunMessage::peekLocalUfrag(prefix);
     }
-    for (std::size_t index = 0; index < SampleRequest.size(); ++index) {
+    for (std::size_t index = 0; index < SAMPLE_REQUEST.size(); ++index) {
         for (std::uint8_t bit = 0; bit < 8; ++bit) {
-            auto datagram = SampleRequest;
+            auto datagram = SAMPLE_REQUEST;
             datagram[index] ^= static_cast<std::byte>(1U << bit);
             (void)StunMessage::decode(datagram);
             (void)StunMessage::peekLocalUfrag(datagram);

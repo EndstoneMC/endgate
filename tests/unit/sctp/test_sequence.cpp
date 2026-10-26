@@ -7,11 +7,11 @@
 namespace endgate::rtc::sctp {
 namespace {
 
-constexpr std::uint64_t tsn_base = std::uint64_t{1} << 32U;
+constexpr std::uint64_t TSN_BASE = std::uint64_t{1} << 32U;
 
 TEST(Unwrap, FollowsTsnAcrossWrap)
 {
-    const auto reference = tsn_base + 0xFFFFFFF0U;
+    const auto reference = TSN_BASE + 0xFFFFFFF0U;
     EXPECT_EQ(unwrap<std::uint32_t>(0xFFFFFFF0U, reference), reference);
     EXPECT_EQ(unwrap<std::uint32_t>(0xFFFFFFFFU, reference), reference + 15);
     EXPECT_EQ(unwrap<std::uint32_t>(0U, reference), reference + 16);
@@ -21,13 +21,13 @@ TEST(Unwrap, FollowsTsnAcrossWrap)
 
 TEST(Unwrap, GoesBackwardsAcrossWrap)
 {
-    const auto reference = 2 * tsn_base + 3;
+    const auto reference = 2 * TSN_BASE + 3;
     EXPECT_EQ(unwrap<std::uint32_t>(0xFFFFFFFEU, reference), reference - 5);
 }
 
 TEST(Unwrap, SplitsAtHalfTheSpace)
 {
-    const auto reference = tsn_base;
+    const auto reference = TSN_BASE;
     EXPECT_EQ(unwrap<std::uint32_t>(0x7FFFFFFFU, reference), reference + 0x7FFFFFFF);
     EXPECT_EQ(unwrap<std::uint32_t>(0x80000000U, reference), reference - 0x80000000);
 }

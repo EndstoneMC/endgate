@@ -28,7 +28,7 @@ std::vector<std::byte> serialized(auto &&add)
     PacketBuilder builder(buffer, {}, 65536);
     add(builder);
     const auto packet = builder.build();
-    return {packet.begin() + CommonHeader::Size, packet.end()};
+    return {packet.begin() + CommonHeader::SIZE, packet.end()};
 }
 
 std::vector<std::byte> copy(std::span<const std::byte> span)
@@ -36,10 +36,10 @@ std::vector<std::byte> copy(std::span<const std::byte> span)
     return {span.begin(), span.end()};
 }
 
-const std::vector<std::byte> captured_data = bytes({0x00, 0x03, 0x00, 0x14, 0x55, 0x08, 0x36, 0x3c, 0x00, 0x02,
+const std::vector<std::byte> CAPTURED_DATA = bytes({0x00, 0x03, 0x00, 0x14, 0x55, 0x08, 0x36, 0x3c, 0x00, 0x02,
                                                     0x00, 0x01, 0x00, 0x00, 0x00, 0x35, 0x00, 0x01, 0x02, 0x03});
 
-const std::vector<std::byte> captured_init = bytes({
+const std::vector<std::byte> CAPTURED_INIT = bytes({
     0x01, 0x00, 0x00, 0x5a, 0xde, 0x7a, 0x16, 0x90, 0x00, 0x02, 0x00, 0x00, 0x03, 0xe8, 0x03, 0xe8, 0x25, 0x0d, 0x37,
     0xe8, 0x80, 0x00, 0x00, 0x04, 0xc0, 0x00, 0x00, 0x04, 0x80, 0x08, 0x00, 0x09, 0xc0, 0x0f, 0xc1, 0x80, 0x82, 0x00,
     0x00, 0x00, 0x80, 0x02, 0x00, 0x24, 0xab, 0x31, 0x44, 0x62, 0x12, 0x1a, 0x15, 0x13, 0xfd, 0x5a, 0x5f, 0x69, 0xef,
@@ -47,7 +47,7 @@ const std::vector<std::byte> captured_init = bytes({
     0x80, 0x04, 0x00, 0x06, 0x00, 0x01, 0x00, 0x00, 0x80, 0x03, 0x00, 0x06, 0x80, 0xc1, 0x00, 0x00,
 });
 
-const std::vector<std::byte> captured_init_ack = bytes({
+const std::vector<std::byte> CAPTURED_INIT_ACK = bytes({
     0x02, 0x00, 0x01, 0x24, 0x57, 0x9c, 0x2f, 0x98, 0x00, 0x02, 0x00, 0x00, 0x03, 0xe8, 0x08, 0x00, 0x63, 0x96, 0x8e,
     0xc7, 0xc0, 0x00, 0x00, 0x04, 0x80, 0x08, 0x00, 0x06, 0xc0, 0x82, 0x00, 0x00, 0x00, 0x07, 0x01, 0x04, 0x4b, 0x41,
     0x4d, 0x45, 0x2d, 0x42, 0x53, 0x44, 0x20, 0x31, 0x2e, 0x31, 0x00, 0x00, 0x00, 0x00, 0x96, 0xb8, 0x38, 0x60, 0x00,
@@ -66,15 +66,15 @@ const std::vector<std::byte> captured_init_ack = bytes({
     0xf9, 0xc6, 0x18, 0x5c, 0x4a, 0xbf, 0x39, 0x32, 0xe5, 0x63, 0x8e,
 });
 
-const std::vector<std::byte> captured_sack =
+const std::vector<std::byte> CAPTURED_SACK =
     bytes({0x03, 0x00, 0x00, 0x1c, 0x36, 0x9d, 0xd0, 0x0b, 0x00, 0x01, 0xed, 0x73, 0x00, 0x02,
            0x00, 0x01, 0x00, 0x02, 0x00, 0x06, 0x00, 0x08, 0x00, 0x08, 0x36, 0x9d, 0xd0, 0x11});
 
-const std::vector<std::byte> captured_reconfig =
+const std::vector<std::byte> CAPTURED_RECONFIG =
     bytes({0x82, 0x00, 0x00, 0x16, 0x00, 0x0d, 0x00, 0x12, 0x87, 0x55, 0xd8, 0x23,
            0x71, 0x97, 0x6a, 0x9e, 0x87, 0x55, 0xd8, 0x32, 0x00, 0x06, 0x00, 0x00});
 
-const std::vector<std::byte> captured_heartbeat = bytes({
+const std::vector<std::byte> CAPTURED_HEARTBEAT = bytes({
     0x04, 0x00, 0x00, 0x2c, 0x00, 0x01, 0x00, 0x28, 0xad, 0x24, 0x36, 0x60, 0x37, 0x26, 0x07,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7b, 0x10, 0x00, 0x00, 0x01, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -82,13 +82,13 @@ const std::vector<std::byte> captured_heartbeat = bytes({
 
 TEST(DataChunk, ParsesCapture)
 {
-    const auto data = DataChunk::parse(chunkOf(captured_data));
+    const auto data = DataChunk::parse(chunkOf(CAPTURED_DATA));
     ASSERT_TRUE(data);
     EXPECT_EQ(data->tsn, 1426601532U);
     EXPECT_EQ(data->stream, 2);
     EXPECT_EQ(data->ssn, 1);
     EXPECT_EQ(data->ppid, 53U);
-    EXPECT_EQ(data->flags, DataChunk::BeginningFlag | DataChunk::EndFlag);
+    EXPECT_EQ(data->flags, DataChunk::BEGINNING_FLAG | DataChunk::END_FLAG);
     EXPECT_EQ(copy(data->payload), bytes({0, 1, 2, 3}));
 }
 
@@ -98,7 +98,7 @@ TEST(DataChunk, SerializesCapture)
                   builder.addData({.tsn = 1426601532, .stream = 2, .ssn = 1, .ppid = 53, .flags = 3, .payload = {}},
                                   ByteBuf::copyBuffer(bytes({0, 1, 2, 3})));
               }),
-              captured_data);
+              CAPTURED_DATA);
 }
 
 TEST(DataChunk, PadsOddPayload)
@@ -138,7 +138,7 @@ TEST(DataChunk, ParsesEmptyPayload)
 
 TEST(InitChunk, ParsesCapture)
 {
-    const auto init = InitChunk::parse(chunkOf(captured_init));
+    const auto init = InitChunk::parse(chunkOf(CAPTURED_INIT));
     ASSERT_TRUE(init);
     EXPECT_EQ(init->initiate_tag, 0xde7a1690U);
     EXPECT_EQ(init->a_rwnd, 131072U);
@@ -158,7 +158,7 @@ TEST(InitChunk, ParsesCapture)
 
 TEST(InitChunk, SerializesCapture)
 {
-    const auto init = InitChunk::parse(chunkOf(captured_init));
+    const auto init = InitChunk::parse(chunkOf(CAPTURED_INIT));
     ASSERT_TRUE(init);
     std::vector<std::byte> parameters;
     ByteWriter writer(parameters);
@@ -166,12 +166,12 @@ TEST(InitChunk, SerializesCapture)
         writer.writeTlv(parameter.type, parameter.value);
     }
     EXPECT_EQ(serialized([&](PacketBuilder &builder) { builder.addInit(ChunkType::Init, *init, parameters); }),
-              captured_init);
+              CAPTURED_INIT);
 }
 
 TEST(InitChunk, ParsesCapturedInitAckWithKameCookie)
 {
-    const auto init_ack = InitChunk::parse(chunkOf(captured_init_ack));
+    const auto init_ack = InitChunk::parse(chunkOf(CAPTURED_INIT_ACK));
     ASSERT_TRUE(init_ack);
     EXPECT_EQ(init_ack->initiate_tag, 0x579c2f98U);
     EXPECT_EQ(init_ack->outbound_streams, 1000);
@@ -205,7 +205,7 @@ TEST(InitChunk, RejectsParameterShorterThanItsHeader)
 
 TEST(SackChunk, ParsesCapture)
 {
-    const auto sack = SackChunk::parse(chunkOf(captured_sack));
+    const auto sack = SackChunk::parse(chunkOf(CAPTURED_SACK));
     ASSERT_TRUE(sack);
     EXPECT_EQ(sack->cumulative_tsn_ack, 916312075U);
     EXPECT_EQ(sack->a_rwnd, 126323U);
@@ -223,16 +223,16 @@ TEST(SackChunk, SerializesCapture)
                       .duplicate_tsns = {916312081},
                   });
               }),
-              captured_sack);
+              CAPTURED_SACK);
 }
 
 TEST(SackChunk, RejectsCountsThatDisagreeWithLength)
 {
-    auto overcounted = captured_sack;
+    auto overcounted = CAPTURED_SACK;
     overcounted[13] = std::byte{3};
     EXPECT_FALSE(SackChunk::parse(chunkOf(overcounted)));
 
-    auto undercounted = captured_sack;
+    auto undercounted = CAPTURED_SACK;
     undercounted[15] = std::byte{0};
     EXPECT_FALSE(SackChunk::parse(chunkOf(undercounted)));
 
@@ -270,7 +270,7 @@ TEST(ForwardTsnChunk, RejectsPartialSkippedStream)
 
 TEST(ReconfigChunk, ParsesCapturedOutgoingResetRequest)
 {
-    const auto chunk = chunkOf(captured_reconfig);
+    const auto chunk = chunkOf(CAPTURED_RECONFIG);
     EXPECT_EQ(chunk.type, static_cast<std::uint8_t>(ChunkType::ReConfig));
     const auto parameters = Tlv::parseAll(chunk.value);
     ASSERT_TRUE(parameters);
@@ -295,7 +295,7 @@ TEST(ReconfigChunk, SerializesCapturedOutgoingResetRequest)
     field_writer.write16(6);
     ByteWriter(value).writeTlv(static_cast<std::uint16_t>(ParameterType::OutgoingSsnResetRequest), fields);
     EXPECT_EQ(serialized([&](PacketBuilder &builder) { builder.addChunk(ChunkType::ReConfig, 0, value); }),
-              captured_reconfig);
+              CAPTURED_RECONFIG);
 }
 
 TEST(ReconfigChunk, ParsesIncomingResetRequestAndResponse)
@@ -344,7 +344,7 @@ TEST(ReconfigChunk, RejectsMalformedParameters)
 
 TEST(HeartbeatChunk, ParsesCapturedInfo)
 {
-    const auto chunk = chunkOf(captured_heartbeat);
+    const auto chunk = chunkOf(CAPTURED_HEARTBEAT);
     const auto parameters = Tlv::parseAll(chunk.value);
     ASSERT_TRUE(parameters);
     ASSERT_EQ(parameters->size(), 1U);
@@ -354,8 +354,8 @@ TEST(HeartbeatChunk, ParsesCapturedInfo)
 
 TEST(HeartbeatChunk, EchoesInfoUnchanged)
 {
-    const auto chunk = chunkOf(captured_heartbeat);
-    auto expected = captured_heartbeat;
+    const auto chunk = chunkOf(CAPTURED_HEARTBEAT);
+    auto expected = CAPTURED_HEARTBEAT;
     expected[0] = std::byte{static_cast<std::uint8_t>(ChunkType::HeartbeatAck)};
     EXPECT_EQ(serialized([&](PacketBuilder &builder) { builder.addChunk(ChunkType::HeartbeatAck, 0, chunk.value); }),
               expected);

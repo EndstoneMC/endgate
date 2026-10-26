@@ -12,17 +12,17 @@ namespace {
 
 using namespace std::chrono_literals;
 
-constexpr std::size_t mtu = 1191;
-constexpr std::size_t fragment_size = 1188 - 12 - 16;
-const Sender::Config config{
-    .mtu = mtu,
+constexpr std::size_t MTU = 1191;
+constexpr std::size_t FRAGMENT_SIZE = 1188 - 12 - 16;
+const Sender::Config CONFIG{
+    .mtu = MTU,
     .max_buffered = 1 << 20,
     .rto_initial = 500ms,
     .rto_min = 400ms,
     .rto_max = 60s,
     .partial_reliability = true,
 };
-const auto start = std::chrono::steady_clock::time_point{} + 1h;
+const auto START = std::chrono::steady_clock::time_point{} + 1h;
 
 struct Sent {
     std::uint32_t tsn;
@@ -43,9 +43,9 @@ protected:
     {
         std::vector<Sent> sent;
         for (std::size_t i = 0; i < max_packets; ++i) {
-            PacketBuilder builder(buffer, {.source_port = 5000, .destination_port = 5000, .verification_tag = 1}, mtu);
-            const auto added =
-                sender.fastRetransmitPending() ? sender.addFastRetransmit(builder, now) : sender.addData(builder, now);
+            PacketBuilder builder(buffer_, {.source_port = 5000, .destination_port = 5000, .verification_tag = 1}, MTU);
+            const auto added = sender_.fastRetransmitPending() ? sender_.addFastRetransmit(builder, now)
+                                                               : sender_.addData(builder, now);
             if (!added) {
                 break;
             }
@@ -55,59 +55,59 @@ protected:
                 const auto data = DataChunk::parse(chunk);
                 sent.push_back({data->tsn, data->stream, data->ssn, data->flags, data->payload.size()});
             }
-            ++packets;
+            ++packets_;
         }
         return sent;
     }
 
     Sender::SackOutcome sack(std::uint32_t cumulative, std::vector<SackChunk::GapBlock> gaps = {},
-                             std::uint32_t window = 1 << 20, std::chrono::steady_clock::time_point now = start)
+                             std::uint32_t window = 1 << 20, std::chrono::steady_clock::time_point now = START)
     {
-        return sender.handleSack(
+        return sender_.handleSack(
             {.cumulative_tsn_ack = cumulative, .a_rwnd = window, .gap_blocks = std::move(gaps), .duplicate_tsns = {}},
             now);
     }
 
-    Sender sender{config, 1000, 1 << 20};
-    std::vector<std::byte> buffer;
-    std::size_t packets{0};
+    Sender sender_{CONFIG, 1000, 1 << 20};
+    std::vector<std::byte> buffer_;
+    std::size_t packets_{0};
 };
 
 TEST_F(SenderTest, AssignsTsnsAndPerStreamSequenceNumbers)
 {
-    ASSERT_TRUE(sender.send(1, 51, payload(10), {}, start));
-    ASSERT_TRUE(sender.send(1, 51, payload(10), {}, start));
-    ASSERT_TRUE(sender.send(3, 53, payload(10), {.unordered = true}, start));
-    ASSERT_TRUE(sender.send(3, 53, payload(10), {}, start));
-    const auto sent = transmit(start);
+    ASSERT_TRUE(sender_.send(1, 51, payload(10), {}, START));
+    ASSERT_TRUE(sender_.send(1, 51, payload(10), {}, START));
+    ASSERT_TRUE(sender_.send(3, 53, payload(10), {.unordered = true}, START));
+    ASSERT_TRUE(sender_.send(3, 53, payload(10), {}, START));
+    const auto sent = transmit(START);
     ASSERT_EQ(sent.size(), 4U);
-    EXPECT_EQ(packets, 1U);
+    EXPECT_EQ(packets_, 1U);
     EXPECT_EQ(sent[0].tsn, 1000U);
     EXPECT_EQ(sent[0].stream, 1);
     EXPECT_EQ(sent[0].ssn, 0);
-    EXPECT_EQ(sent[0].flags, DataChunk::BeginningFlag | DataChunk::EndFlag);
+    EXPECT_EQ(sent[0].flags, DataChunk::BEGINNING_FLAG | DataChunk::END_FLAG);
     EXPECT_EQ(sent[1].tsn, 1001U);
     EXPECT_EQ(sent[1].stream, 3);
-    EXPECT_EQ(sent[1].flags, DataChunk::BeginningFlag | DataChunk::EndFlag | DataChunk::UnorderedFlag);
+    EXPECT_EQ(sent[1].flags, DataChunk::BEGINNING_FLAG | DataChunk::END_FLAG | DataChunk::UNORDERED_FLAG);
     EXPECT_EQ(sent[2].stream, 1);
     EXPECT_EQ(sent[2].ssn, 1);
     EXPECT_EQ(sent[3].stream, 3);
     EXPECT_EQ(sent[3].ssn, 0);
-    EXPECT_EQ(sender.lastAssignedTsn(), 1003U);
+    EXPECT_EQ(sender_.lastAssignedTsn(), 1003U);
 }
 
 TEST_F(SenderTest, FragmentsToThePacketSize)
 {
-    ASSERT_TRUE(sender.send(2, 53, payload(3000), {}, start));
-    const auto sent = transmit(start);
+    ASSERT_TRUE(sender_.send(2, 53, payload(3000), {}, START));
+    const auto sent = transmit(START);
     ASSERT_EQ(sent.size(), 3U);
-    EXPECT_EQ(packets, 3U);
-    EXPECT_EQ(sent[0].length, fragment_size);
-    EXPECT_EQ(sent[0].flags, DataChunk::BeginningFlag);
-    EXPECT_EQ(sent[1].length, fragment_size);
+    EXPECT_EQ(packets_, 3U);
+    EXPECT_EQ(sent[0].length, FRAGMENT_SIZE);
+    EXPECT_EQ(sent[0].flags, DataChunk::BEGINNING_FLAG);
+    EXPECT_EQ(sent[1].length, FRAGMENT_SIZE);
     EXPECT_EQ(sent[1].flags, 0);
-    EXPECT_EQ(sent[2].length, 3000 - 2 * fragment_size);
-    EXPECT_EQ(sent[2].flags, DataChunk::EndFlag);
+    EXPECT_EQ(sent[2].length, 3000 - 2 * FRAGMENT_SIZE);
+    EXPECT_EQ(sent[2].flags, DataChunk::END_FLAG);
     for (const auto &chunk : sent) {
         EXPECT_EQ(chunk.ssn, 0);
         EXPECT_EQ(chunk.stream, 2);
@@ -117,118 +117,118 @@ TEST_F(SenderTest, FragmentsToThePacketSize)
 
 TEST_F(SenderTest, KeepsSmallMessagesWholeInTheNextPacket)
 {
-    ASSERT_TRUE(sender.send(0, 53, payload(fragment_size - 100), {}, start));
-    ASSERT_TRUE(sender.send(0, 53, payload(500), {}, start));
-    const auto sent = transmit(start);
+    ASSERT_TRUE(sender_.send(0, 53, payload(FRAGMENT_SIZE - 100), {}, START));
+    ASSERT_TRUE(sender_.send(0, 53, payload(500), {}, START));
+    const auto sent = transmit(START);
     ASSERT_EQ(sent.size(), 2U);
-    EXPECT_EQ(packets, 2U);
+    EXPECT_EQ(packets_, 2U);
     EXPECT_EQ(sent[1].length, 500U);
-    EXPECT_EQ(sent[1].flags, DataChunk::BeginningFlag | DataChunk::EndFlag);
+    EXPECT_EQ(sent[1].flags, DataChunk::BEGINNING_FLAG | DataChunk::END_FLAG);
 }
 
 TEST_F(SenderTest, StopsAtTheCongestionWindow)
 {
     for (auto i = 0; i < 20; ++i) {
-        ASSERT_TRUE(sender.send(0, 53, payload(fragment_size), {}, start));
+        ASSERT_TRUE(sender_.send(0, 53, payload(FRAGMENT_SIZE), {}, START));
     }
-    const auto sent = transmit(start);
+    const auto sent = transmit(START);
     EXPECT_EQ(sent.size(), 11U);
-    EXPECT_GE(sender.flightSize(), sender.cwnd());
-    EXPECT_LT(sender.flightSize(), sender.cwnd() + mtu);
+    EXPECT_GE(sender_.flightSize(), sender_.cwnd());
+    EXPECT_LT(sender_.flightSize(), sender_.cwnd() + MTU);
 }
 
 TEST_F(SenderTest, GrowsWindowInSlowStart)
 {
     for (auto i = 0; i < 20; ++i) {
-        ASSERT_TRUE(sender.send(0, 53, payload(fragment_size), {}, start));
+        ASSERT_TRUE(sender_.send(0, 53, payload(FRAGMENT_SIZE), {}, START));
     }
-    transmit(start);
-    const auto before = sender.cwnd();
+    transmit(START);
+    const auto before = sender_.cwnd();
     EXPECT_EQ(sack(1001), Sender::SackOutcome::Progressed);
-    EXPECT_EQ(sender.cwnd(), before + mtu);
-    EXPECT_EQ(sender.outstandingChunks(), 9U);
+    EXPECT_EQ(sender_.cwnd(), before + MTU);
+    EXPECT_EQ(sender_.outstandingChunks(), 9U);
 }
 
 TEST_F(SenderTest, DropsSacksOutOfOrderOrBeyondWhatWasSent)
 {
-    ASSERT_TRUE(sender.send(0, 53, payload(10), {}, start));
-    ASSERT_TRUE(sender.send(0, 53, payload(10), {}, start));
-    transmit(start);
+    ASSERT_TRUE(sender_.send(0, 53, payload(10), {}, START));
+    ASSERT_TRUE(sender_.send(0, 53, payload(10), {}, START));
+    transmit(START);
     EXPECT_EQ(sack(1002), Sender::SackOutcome::Dropped);
     EXPECT_EQ(sack(1000), Sender::SackOutcome::Progressed);
     EXPECT_EQ(sack(999), Sender::SackOutcome::Dropped);
     EXPECT_EQ(sack(1000), Sender::SackOutcome::Stalled);
-    EXPECT_EQ(sender.outstandingChunks(), 1U);
+    EXPECT_EQ(sender_.outstandingChunks(), 1U);
 }
 
 TEST_F(SenderTest, IgnoresMalformedGapBlocks)
 {
     for (auto i = 0; i < 4; ++i) {
-        ASSERT_TRUE(sender.send(0, 53, payload(10), {}, start));
+        ASSERT_TRUE(sender_.send(0, 53, payload(10), {}, START));
     }
-    transmit(start);
+    transmit(START);
     EXPECT_EQ(sack(999, {{.start = 0, .end = 1}, {.start = 3, .end = 2}, {.start = 9, .end = 20}}),
               Sender::SackOutcome::Stalled);
-    EXPECT_EQ(sender.outstandingChunks(), 4U);
+    EXPECT_EQ(sender_.outstandingChunks(), 4U);
     EXPECT_EQ(sack(999, {{.start = 3, .end = 4}, {.start = 2, .end = 9000}}), Sender::SackOutcome::Progressed);
     EXPECT_EQ(sack(1003), Sender::SackOutcome::Progressed);
-    EXPECT_TRUE(sender.idle());
+    EXPECT_TRUE(sender_.idle());
 }
 
 TEST_F(SenderTest, FastRetransmitsAfterThreeMissIndications)
 {
     for (auto i = 0; i < 10; ++i) {
-        ASSERT_TRUE(sender.send(0, 53, payload(100), {}, start));
+        ASSERT_TRUE(sender_.send(0, 53, payload(100), {}, START));
     }
-    transmit(start);
-    const auto cwnd = sender.cwnd();
+    transmit(START);
+    const auto cwnd = sender_.cwnd();
     sack(999, {{.start = 2, .end = 2}});
     sack(999, {{.start = 2, .end = 3}});
-    EXPECT_FALSE(sender.fastRetransmitPending());
+    EXPECT_FALSE(sender_.fastRetransmitPending());
     sack(999, {{.start = 2, .end = 4}});
-    EXPECT_TRUE(sender.fastRetransmitPending());
-    EXPECT_EQ(sender.cwnd(), std::max(cwnd / 2, 4 * mtu));
+    EXPECT_TRUE(sender_.fastRetransmitPending());
+    EXPECT_EQ(sender_.cwnd(), std::max(cwnd / 2, 4 * MTU));
 
-    const auto sent = transmit(start + 10ms);
+    const auto sent = transmit(START + 10ms);
     ASSERT_EQ(sent.size(), 1U);
     EXPECT_EQ(sent[0].tsn, 1000U);
 
     sack(999, {{.start = 2, .end = 5}});
     sack(999, {{.start = 2, .end = 6}});
     sack(999, {{.start = 2, .end = 7}});
-    EXPECT_FALSE(sender.fastRetransmitPending());
+    EXPECT_FALSE(sender_.fastRetransmitPending());
 }
 
 TEST_F(SenderTest, RetransmitsEverythingOnTimeout)
 {
     for (auto i = 0; i < 3; ++i) {
-        ASSERT_TRUE(sender.send(0, 53, payload(100), {}, start));
+        ASSERT_TRUE(sender_.send(0, 53, payload(100), {}, START));
     }
-    transmit(start);
-    ASSERT_EQ(sender.nextTimeout(), start + 500ms);
-    EXPECT_FALSE(sender.handleTimeout(start + 499ms));
-    EXPECT_TRUE(sender.handleTimeout(start + 500ms));
-    EXPECT_EQ(sender.cwnd(), mtu);
-    EXPECT_EQ(sender.rto(), 1s);
-    EXPECT_EQ(sender.nextTimeout(), start + 1500ms);
+    transmit(START);
+    ASSERT_EQ(sender_.nextTimeout(), START + 500ms);
+    EXPECT_FALSE(sender_.handleTimeout(START + 499ms));
+    EXPECT_TRUE(sender_.handleTimeout(START + 500ms));
+    EXPECT_EQ(sender_.cwnd(), MTU);
+    EXPECT_EQ(sender_.rto(), 1s);
+    EXPECT_EQ(sender_.nextTimeout(), START + 1500ms);
 
-    const auto sent = transmit(start + 500ms);
+    const auto sent = transmit(START + 500ms);
     ASSERT_EQ(sent.size(), 3U);
     EXPECT_EQ(sent[0].tsn, 1000U);
     EXPECT_EQ(sent[2].tsn, 1002U);
-    EXPECT_EQ(sack(1002, {}, 1 << 20, start + 600ms), Sender::SackOutcome::Progressed);
-    EXPECT_FALSE(sender.nextTimeout());
+    EXPECT_EQ(sack(1002, {}, 1 << 20, START + 600ms), Sender::SackOutcome::Progressed);
+    EXPECT_FALSE(sender_.nextTimeout());
 }
 
 TEST_F(SenderTest, RetransmitsBeforeSendingNewData)
 {
     for (auto i = 0; i < 2; ++i) {
-        ASSERT_TRUE(sender.send(0, 53, payload(100), {}, start));
+        ASSERT_TRUE(sender_.send(0, 53, payload(100), {}, START));
     }
-    transmit(start);
-    sender.handleTimeout(start + 500ms);
-    ASSERT_TRUE(sender.send(0, 53, payload(100), {}, start));
-    const auto sent = transmit(start + 500ms);
+    transmit(START);
+    sender_.handleTimeout(START + 500ms);
+    ASSERT_TRUE(sender_.send(0, 53, payload(100), {}, START));
+    const auto sent = transmit(START + 500ms);
     ASSERT_EQ(sent.size(), 3U);
     EXPECT_EQ(sent[0].tsn, 1000U);
     EXPECT_EQ(sent[1].tsn, 1001U);
@@ -238,36 +238,36 @@ TEST_F(SenderTest, RetransmitsBeforeSendingNewData)
 TEST_F(SenderTest, AbandonsUnreliableMessageInsteadOfRetransmitting)
 {
     const Sender::SendOptions unreliable{.unordered = true, .max_retransmits = 0};
-    ASSERT_TRUE(sender.send(1, 53, payload(100), unreliable, start));
-    ASSERT_TRUE(sender.send(1, 53, payload(100), unreliable, start));
-    transmit(start);
-    EXPECT_FALSE(sender.forwardTsn(start, 1188));
-    EXPECT_TRUE(sender.handleTimeout(start + 500ms));
-    EXPECT_TRUE(transmit(start + 500ms).empty());
-    EXPECT_EQ(sender.flightSize(), 0U);
+    ASSERT_TRUE(sender_.send(1, 53, payload(100), unreliable, START));
+    ASSERT_TRUE(sender_.send(1, 53, payload(100), unreliable, START));
+    transmit(START);
+    EXPECT_FALSE(sender_.forwardTsn(START, 1188));
+    EXPECT_TRUE(sender_.handleTimeout(START + 500ms));
+    EXPECT_TRUE(transmit(START + 500ms).empty());
+    EXPECT_EQ(sender_.flightSize(), 0U);
 
-    const auto forward = sender.forwardTsn(start + 500ms, 1188);
+    const auto forward = sender_.forwardTsn(START + 500ms, 1188);
     ASSERT_TRUE(forward);
     EXPECT_EQ(forward->new_cumulative_tsn, 1001U);
     EXPECT_TRUE(forward->skipped.empty());
 
     EXPECT_EQ(sack(1001), Sender::SackOutcome::Progressed);
-    EXPECT_TRUE(sender.idle());
-    EXPECT_FALSE(sender.forwardTsn(start + 1s, 1188));
+    EXPECT_TRUE(sender_.idle());
+    EXPECT_FALSE(sender_.forwardTsn(START + 1s, 1188));
 }
 
 TEST_F(SenderTest, AbandonsOnFastRetransmitAndReportsOrderedStreams)
 {
     const Sender::SendOptions unreliable{.max_retransmits = 0};
     for (auto i = 0; i < 5; ++i) {
-        ASSERT_TRUE(sender.send(4, 53, payload(100), unreliable, start));
+        ASSERT_TRUE(sender_.send(4, 53, payload(100), unreliable, START));
     }
-    transmit(start);
+    transmit(START);
     sack(999, {{.start = 3, .end = 3}});
     sack(999, {{.start = 3, .end = 4}});
     sack(999, {{.start = 3, .end = 5}});
-    EXPECT_FALSE(sender.fastRetransmitPending());
-    const auto forward = sender.forwardTsn(start, 1188);
+    EXPECT_FALSE(sender_.fastRetransmitPending());
+    const auto forward = sender_.forwardTsn(START, 1188);
     ASSERT_TRUE(forward);
     EXPECT_EQ(forward->new_cumulative_tsn, 1001U);
     EXPECT_EQ(forward->skipped, (std::vector<ForwardTsnChunk::SkippedStream>{{.stream = 4, .ssn = 1}}));
@@ -275,69 +275,69 @@ TEST_F(SenderTest, AbandonsOnFastRetransmitAndReportsOrderedStreams)
 
 TEST_F(SenderTest, DiscardsTheUnsentRestOfAnAbandonedMessage)
 {
-    Sender narrow{config, 1000, 1500};
-    ASSERT_TRUE(narrow.send(1, 53, payload(5000), {.unordered = true, .max_retransmits = 0}, start));
-    ASSERT_TRUE(narrow.send(1, 53, payload(10), {.unordered = true, .max_retransmits = 0}, start));
-    PacketBuilder first(buffer, {}, mtu);
-    ASSERT_TRUE(narrow.addData(first, start));
-    PacketBuilder second(buffer, {}, mtu);
-    ASSERT_TRUE(narrow.addData(second, start));
-    PacketBuilder third(buffer, {}, mtu);
-    EXPECT_FALSE(narrow.addData(third, start));
+    Sender narrow{CONFIG, 1000, 1500};
+    ASSERT_TRUE(narrow.send(1, 53, payload(5000), {.unordered = true, .max_retransmits = 0}, START));
+    ASSERT_TRUE(narrow.send(1, 53, payload(10), {.unordered = true, .max_retransmits = 0}, START));
+    PacketBuilder first(buffer_, {}, MTU);
+    ASSERT_TRUE(narrow.addData(first, START));
+    PacketBuilder second(buffer_, {}, MTU);
+    ASSERT_TRUE(narrow.addData(second, START));
+    PacketBuilder third(buffer_, {}, MTU);
+    EXPECT_FALSE(narrow.addData(third, START));
     EXPECT_EQ(narrow.outstandingChunks(), 2U);
 
-    EXPECT_TRUE(narrow.handleTimeout(start + 500ms));
+    EXPECT_TRUE(narrow.handleTimeout(START + 500ms));
     EXPECT_EQ(narrow.bufferedAmount(), 10U);
-    const auto forward = narrow.forwardTsn(start + 500ms, 1188);
+    const auto forward = narrow.forwardTsn(START + 500ms, 1188);
     ASSERT_TRUE(forward);
     EXPECT_EQ(forward->new_cumulative_tsn, 1001U);
 
-    PacketBuilder next(buffer, {}, mtu);
-    ASSERT_TRUE(narrow.addData(next, start + 500ms));
+    PacketBuilder next(buffer_, {}, MTU);
+    ASSERT_TRUE(narrow.addData(next, START + 500ms));
     const auto packet = Packet::parse(next.build());
     ASSERT_TRUE(packet);
     const auto data = DataChunk::parse(packet->chunks[0]);
     EXPECT_EQ(data->tsn, 1002U);
-    EXPECT_EQ(data->flags & DataChunk::BeginningFlag, DataChunk::BeginningFlag);
+    EXPECT_EQ(data->flags & DataChunk::BEGINNING_FLAG, DataChunk::BEGINNING_FLAG);
 }
 
 TEST_F(SenderTest, AbandonsEveryFragmentOfTheMessage)
 {
-    ASSERT_TRUE(sender.send(1, 53, payload(100), {.max_retransmits = 0}, start));
-    ASSERT_TRUE(sender.send(1, 53, payload(3000), {.max_retransmits = 0}, start));
-    ASSERT_TRUE(sender.send(1, 53, payload(100), {}, start));
-    transmit(start);
-    ASSERT_EQ(sender.outstandingChunks(), 5U);
+    ASSERT_TRUE(sender_.send(1, 53, payload(100), {.max_retransmits = 0}, START));
+    ASSERT_TRUE(sender_.send(1, 53, payload(3000), {.max_retransmits = 0}, START));
+    ASSERT_TRUE(sender_.send(1, 53, payload(100), {}, START));
+    transmit(START);
+    ASSERT_EQ(sender_.outstandingChunks(), 5U);
     sack(999, {{.start = 2, .end = 2}, {.start = 5, .end = 5}});
-    sender.handleTimeout(start + 500ms);
-    const auto forward = sender.forwardTsn(start + 500ms, 1188);
+    sender_.handleTimeout(START + 500ms);
+    const auto forward = sender_.forwardTsn(START + 500ms, 1188);
     ASSERT_TRUE(forward);
     EXPECT_EQ(forward->new_cumulative_tsn, 1003U);
     EXPECT_EQ(forward->skipped, (std::vector<ForwardTsnChunk::SkippedStream>{{.stream = 1, .ssn = 1}}));
-    EXPECT_TRUE(transmit(start + 500ms).empty());
+    EXPECT_TRUE(transmit(START + 500ms).empty());
 }
 
 TEST_F(SenderTest, RetransmitsLimitedTimesThenAbandons)
 {
-    ASSERT_TRUE(sender.send(0, 53, payload(100), {.max_retransmits = 1}, start));
-    transmit(start);
-    sender.handleTimeout(start + 500ms);
-    EXPECT_EQ(transmit(start + 500ms).size(), 1U);
-    sender.handleTimeout(start + 1500ms);
-    EXPECT_TRUE(transmit(start + 1500ms).empty());
-    EXPECT_TRUE(sender.forwardTsn(start + 1500ms, 1188));
+    ASSERT_TRUE(sender_.send(0, 53, payload(100), {.max_retransmits = 1}, START));
+    transmit(START);
+    sender_.handleTimeout(START + 500ms);
+    EXPECT_EQ(transmit(START + 500ms).size(), 1U);
+    sender_.handleTimeout(START + 1500ms);
+    EXPECT_TRUE(transmit(START + 1500ms).empty());
+    EXPECT_TRUE(sender_.forwardTsn(START + 1500ms, 1188));
 }
 
 TEST_F(SenderTest, ExpiresMessagesPastTheirLifetime)
 {
-    ASSERT_TRUE(sender.send(0, 53, payload(100), {.lifetime = 100ms}, start));
-    ASSERT_TRUE(sender.send(0, 53, payload(100), {.lifetime = 100ms}, start));
-    EXPECT_EQ(transmit(start).size(), 2U);
-    ASSERT_TRUE(sender.send(0, 53, payload(100), {.lifetime = 100ms}, start));
-    sender.handleTimeout(start + 500ms);
-    EXPECT_TRUE(transmit(start + 500ms).empty());
-    EXPECT_EQ(sender.bufferedAmount(), 0U);
-    const auto forward = sender.forwardTsn(start + 500ms, 1188);
+    ASSERT_TRUE(sender_.send(0, 53, payload(100), {.lifetime = 100ms}, START));
+    ASSERT_TRUE(sender_.send(0, 53, payload(100), {.lifetime = 100ms}, START));
+    EXPECT_EQ(transmit(START).size(), 2U);
+    ASSERT_TRUE(sender_.send(0, 53, payload(100), {.lifetime = 100ms}, START));
+    sender_.handleTimeout(START + 500ms);
+    EXPECT_TRUE(transmit(START + 500ms).empty());
+    EXPECT_EQ(sender_.bufferedAmount(), 0U);
+    const auto forward = sender_.forwardTsn(START + 500ms, 1188);
     ASSERT_TRUE(forward);
     EXPECT_EQ(forward->new_cumulative_tsn, 1001U);
 }
@@ -346,12 +346,12 @@ TEST_F(SenderTest, ForwardTsnSkipsAcknowledgedUnreliableMessages)
 {
     const Sender::SendOptions unreliable{.unordered = true, .max_retransmits = 0};
     for (auto i = 0; i < 7; ++i) {
-        ASSERT_TRUE(sender.send(1, 53, payload(100), unreliable, start));
+        ASSERT_TRUE(sender_.send(1, 53, payload(100), unreliable, START));
     }
-    transmit(start);
+    transmit(START);
     sack(999, {{.start = 2, .end = 2}, {.start = 4, .end = 4}, {.start = 7, .end = 7}});
-    sender.handleTimeout(start + 500ms);
-    const auto forward = sender.forwardTsn(start + 500ms, 1188);
+    sender_.handleTimeout(START + 500ms);
+    const auto forward = sender_.forwardTsn(START + 500ms, 1188);
     ASSERT_TRUE(forward);
     EXPECT_EQ(forward->new_cumulative_tsn, 1005U);
 }
@@ -359,97 +359,97 @@ TEST_F(SenderTest, ForwardTsnSkipsAcknowledgedUnreliableMessages)
 TEST_F(SenderTest, ForwardTsnStopsAtAcknowledgedReliableMessage)
 {
     const Sender::SendOptions unreliable{.unordered = true, .max_retransmits = 0};
-    ASSERT_TRUE(sender.send(1, 53, payload(100), unreliable, start));
-    ASSERT_TRUE(sender.send(0, 53, payload(100), {}, start));
-    ASSERT_TRUE(sender.send(1, 53, payload(100), unreliable, start));
-    transmit(start);
+    ASSERT_TRUE(sender_.send(1, 53, payload(100), unreliable, START));
+    ASSERT_TRUE(sender_.send(0, 53, payload(100), {}, START));
+    ASSERT_TRUE(sender_.send(1, 53, payload(100), unreliable, START));
+    transmit(START);
     sack(999, {{.start = 2, .end = 2}});
-    sender.handleTimeout(start + 500ms);
-    const auto forward = sender.forwardTsn(start + 500ms, 1188);
+    sender_.handleTimeout(START + 500ms);
+    const auto forward = sender_.forwardTsn(START + 500ms, 1188);
     ASSERT_TRUE(forward);
     EXPECT_EQ(forward->new_cumulative_tsn, 1000U);
 }
 
 TEST_F(SenderTest, RateLimitsRepeatedForwardTsn)
 {
-    ASSERT_TRUE(sender.send(0, 53, payload(100), {.unordered = true, .max_retransmits = 0}, start));
-    transmit(start);
-    sender.handleTimeout(start + 500ms);
-    EXPECT_TRUE(sender.forwardTsn(start + 500ms, 1188));
-    EXPECT_FALSE(sender.forwardTsn(start + 600ms, 1188));
-    EXPECT_TRUE(sender.forwardTsn(start + 700ms, 1188));
+    ASSERT_TRUE(sender_.send(0, 53, payload(100), {.unordered = true, .max_retransmits = 0}, START));
+    transmit(START);
+    sender_.handleTimeout(START + 500ms);
+    EXPECT_TRUE(sender_.forwardTsn(START + 500ms, 1188));
+    EXPECT_FALSE(sender_.forwardTsn(START + 600ms, 1188));
+    EXPECT_TRUE(sender_.forwardTsn(START + 700ms, 1188));
 }
 
 TEST_F(SenderTest, ProbesZeroWindowWithOneChunk)
 {
-    Sender closed{config, 1000, 0};
+    Sender closed{CONFIG, 1000, 0};
     for (auto i = 0; i < 3; ++i) {
-        ASSERT_TRUE(closed.send(0, 53, payload(100), {}, start));
+        ASSERT_TRUE(closed.send(0, 53, payload(100), {}, START));
     }
-    PacketBuilder probe(buffer, {}, mtu);
-    ASSERT_TRUE(closed.addData(probe, start));
+    PacketBuilder probe(buffer_, {}, MTU);
+    ASSERT_TRUE(closed.addData(probe, START));
     EXPECT_EQ(Packet::parse(probe.build())->chunks.size(), 1U);
-    PacketBuilder blocked(buffer, {}, mtu);
-    EXPECT_FALSE(closed.addData(blocked, start));
-    closed.handleSack({.cumulative_tsn_ack = 1000, .a_rwnd = 100000, .gap_blocks = {}, .duplicate_tsns = {}}, start);
-    PacketBuilder open(buffer, {}, mtu);
-    ASSERT_TRUE(closed.addData(open, start));
+    PacketBuilder blocked(buffer_, {}, MTU);
+    EXPECT_FALSE(closed.addData(blocked, START));
+    closed.handleSack({.cumulative_tsn_ack = 1000, .a_rwnd = 100000, .gap_blocks = {}, .duplicate_tsns = {}}, START);
+    PacketBuilder open(buffer_, {}, MTU);
+    ASSERT_TRUE(closed.addData(open, START));
     EXPECT_EQ(Packet::parse(open.build())->chunks.size(), 2U);
 }
 
 TEST_F(SenderTest, RespectsPeerWindowWhileDataIsInFlight)
 {
-    Sender narrow{config, 1000, 250};
+    Sender narrow{CONFIG, 1000, 250};
     for (auto i = 0; i < 4; ++i) {
-        ASSERT_TRUE(narrow.send(0, 53, payload(100), {}, start));
+        ASSERT_TRUE(narrow.send(0, 53, payload(100), {}, START));
     }
-    PacketBuilder builder(buffer, {}, mtu);
-    ASSERT_TRUE(narrow.addData(builder, start));
+    PacketBuilder builder(buffer_, {}, MTU);
+    ASSERT_TRUE(narrow.addData(builder, START));
     EXPECT_EQ(Packet::parse(builder.build())->chunks.size(), 2U);
 }
 
 TEST_F(SenderTest, ComputesRetransmissionTimeout)
 {
-    sender.observeRtt(100ms);
-    EXPECT_EQ(sender.srtt(), 100ms);
-    EXPECT_EQ(sender.rto(), 400ms);
-    sender.observeRtt(400ms);
-    EXPECT_EQ(sender.srtt(), 137500us);
-    EXPECT_EQ(sender.rto(), 137500us + 4 * 112500us);
-    sender.observeRtt(-1ms);
-    sender.observeRtt(61s);
-    EXPECT_EQ(sender.srtt(), 137500us);
+    sender_.observeRtt(100ms);
+    EXPECT_EQ(sender_.srtt(), 100ms);
+    EXPECT_EQ(sender_.rto(), 400ms);
+    sender_.observeRtt(400ms);
+    EXPECT_EQ(sender_.srtt(), 137500us);
+    EXPECT_EQ(sender_.rto(), 137500us + 4 * 112500us);
+    sender_.observeRtt(-1ms);
+    sender_.observeRtt(61s);
+    EXPECT_EQ(sender_.srtt(), 137500us);
 
-    Sender fresh{config, 1, 1 << 20};
+    Sender fresh{CONFIG, 1, 1 << 20};
     fresh.observeRtt(50s);
     EXPECT_EQ(fresh.rto(), 60s);
-    Sender fast{config, 1, 1 << 20};
+    Sender fast{CONFIG, 1, 1 << 20};
     fast.observeRtt(1ms);
     EXPECT_EQ(fast.rto(), 400ms);
 }
 
 TEST_F(SenderTest, MeasuresRttFromFirstTransmissionsOnly)
 {
-    ASSERT_TRUE(sender.send(0, 53, payload(100), {}, start));
-    transmit(start);
-    sack(1000, {}, 1 << 20, start + 50ms);
-    EXPECT_EQ(sender.srtt(), 50ms);
+    ASSERT_TRUE(sender_.send(0, 53, payload(100), {}, START));
+    transmit(START);
+    sack(1000, {}, 1 << 20, START + 50ms);
+    EXPECT_EQ(sender_.srtt(), 50ms);
 
-    ASSERT_TRUE(sender.send(0, 53, payload(100), {}, start));
-    transmit(start + 100ms);
-    sender.handleTimeout(start + 1s);
-    transmit(start + 1s);
-    sack(1001, {}, 1 << 20, start + 1100ms);
-    EXPECT_EQ(sender.srtt(), 50ms);
+    ASSERT_TRUE(sender_.send(0, 53, payload(100), {}, START));
+    transmit(START + 100ms);
+    sender_.handleTimeout(START + 1s);
+    transmit(START + 1s);
+    sack(1001, {}, 1 << 20, START + 1100ms);
+    EXPECT_EQ(sender_.srtt(), 50ms);
 }
 
 TEST_F(SenderTest, SharesThePathBetweenStreams)
 {
     for (auto i = 0; i < 3; ++i) {
-        ASSERT_TRUE(sender.send(1, 53, payload(10), {}, start));
-        ASSERT_TRUE(sender.send(2, 53, payload(10), {}, start));
+        ASSERT_TRUE(sender_.send(1, 53, payload(10), {}, START));
+        ASSERT_TRUE(sender_.send(2, 53, payload(10), {}, START));
     }
-    const auto sent = transmit(start);
+    const auto sent = transmit(START);
     ASSERT_EQ(sent.size(), 6U);
     EXPECT_EQ(sent[0].stream, 1);
     EXPECT_EQ(sent[1].stream, 2);
@@ -459,7 +459,7 @@ TEST_F(SenderTest, SharesThePathBetweenStreams)
 
 TEST_F(SenderTest, RefusesWhatTheBufferCannotHold)
 {
-    Sender small{{.mtu = mtu,
+    Sender small{{.mtu = MTU,
                   .max_buffered = 1000,
                   .rto_initial = 1s,
                   .rto_min = 1s,
@@ -467,18 +467,18 @@ TEST_F(SenderTest, RefusesWhatTheBufferCannotHold)
                   .partial_reliability = true},
                  1,
                  1 << 20};
-    EXPECT_TRUE(small.send(0, 53, payload(600), {}, start));
-    EXPECT_FALSE(small.send(0, 53, payload(600), {}, start));
-    EXPECT_TRUE(small.send(0, 53, payload(200), {}, start));
-    EXPECT_FALSE(small.send(0, 53, payload(10), {}, start));
-    EXPECT_FALSE(small.send(0, 53, ByteBuf{}, {}, start));
+    EXPECT_TRUE(small.send(0, 53, payload(600), {}, START));
+    EXPECT_FALSE(small.send(0, 53, payload(600), {}, START));
+    EXPECT_TRUE(small.send(0, 53, payload(200), {}, START));
+    EXPECT_FALSE(small.send(0, 53, payload(10), {}, START));
+    EXPECT_FALSE(small.send(0, 53, ByteBuf{}, {}, START));
     EXPECT_EQ(small.bufferedAmount(), 800U);
     EXPECT_EQ(small.bufferedAmount(0), 800U);
 }
 
 TEST_F(SenderTest, BoundsWhatAPeerThatNeverAdvancesCanMakeItHold)
 {
-    Sender held{{.mtu = mtu,
+    Sender held{{.mtu = MTU,
                  .max_buffered = 20000,
                  .rto_initial = 1s,
                  .rto_min = 1s,
@@ -487,12 +487,12 @@ TEST_F(SenderTest, BoundsWhatAPeerThatNeverAdvancesCanMakeItHold)
                 1000,
                 1 << 30};
     for (auto i = 0; i < 1000; ++i) {
-        held.send(0, 53, payload(100), {}, start);
+        held.send(0, 53, payload(100), {}, START);
     }
     std::size_t sent = 0;
     for (auto round = 0; round < 1000; ++round) {
-        PacketBuilder builder(buffer, {}, mtu);
-        if (!held.addData(builder, start)) {
+        PacketBuilder builder(buffer_, {}, MTU);
+        if (!held.addData(builder, START)) {
             if (sent == held.outstandingChunks()) {
                 break;
             }
@@ -500,57 +500,57 @@ TEST_F(SenderTest, BoundsWhatAPeerThatNeverAdvancesCanMakeItHold)
         sent = held.outstandingChunks();
         std::vector<SackChunk::GapBlock> gaps{{.start = 2, .end = static_cast<std::uint16_t>(sent)}};
         held.handleSack({.cumulative_tsn_ack = 999, .a_rwnd = 1 << 30, .gap_blocks = gaps, .duplicate_tsns = {}},
-                        start);
+                        START);
     }
     EXPECT_LE(held.outstandingChunks() * 100, 20000U + 1200);
 }
 
 TEST_F(SenderTest, ResetsStreamOnceItsQueueHasDrained)
 {
-    ASSERT_TRUE(sender.send(5, 53, payload(10), {}, start));
-    ASSERT_TRUE(sender.send(5, 53, payload(10), {}, start));
-    sender.prepareReset(5);
-    EXPECT_FALSE(sender.send(5, 53, payload(10), {}, start));
-    EXPECT_TRUE(sender.takeStreamsReadyToReset().empty());
-    transmit(start);
-    EXPECT_EQ(sender.takeStreamsReadyToReset(), std::vector<std::uint16_t>{5});
-    EXPECT_EQ(sender.lastAssignedTsn(), 1001U);
-    EXPECT_TRUE(sender.takeStreamsReadyToReset().empty());
+    ASSERT_TRUE(sender_.send(5, 53, payload(10), {}, START));
+    ASSERT_TRUE(sender_.send(5, 53, payload(10), {}, START));
+    sender_.prepareReset(5);
+    EXPECT_FALSE(sender_.send(5, 53, payload(10), {}, START));
+    EXPECT_TRUE(sender_.takeStreamsReadyToReset().empty());
+    transmit(START);
+    EXPECT_EQ(sender_.takeStreamsReadyToReset(), std::vector<std::uint16_t>{5});
+    EXPECT_EQ(sender_.lastAssignedTsn(), 1001U);
+    EXPECT_TRUE(sender_.takeStreamsReadyToReset().empty());
 
     const std::vector<std::uint16_t> streams{5};
-    sender.finishReset(streams, true);
-    ASSERT_TRUE(sender.send(5, 53, payload(10), {}, start));
-    const auto sent = transmit(start);
+    sender_.finishReset(streams, true);
+    ASSERT_TRUE(sender_.send(5, 53, payload(10), {}, START));
+    const auto sent = transmit(START);
     ASSERT_EQ(sent.size(), 1U);
     EXPECT_EQ(sent[0].ssn, 0);
 }
 
 TEST_F(SenderTest, ReopensStreamWhenResetIsDenied)
 {
-    ASSERT_TRUE(sender.send(5, 53, payload(10), {}, start));
-    transmit(start);
-    sender.prepareReset(5);
-    EXPECT_EQ(sender.takeStreamsReadyToReset(), std::vector<std::uint16_t>{5});
+    ASSERT_TRUE(sender_.send(5, 53, payload(10), {}, START));
+    transmit(START);
+    sender_.prepareReset(5);
+    EXPECT_EQ(sender_.takeStreamsReadyToReset(), std::vector<std::uint16_t>{5});
     const std::vector<std::uint16_t> streams{5};
-    sender.finishReset(streams, false);
-    ASSERT_TRUE(sender.send(5, 53, payload(10), {}, start));
-    const auto sent = transmit(start);
+    sender_.finishReset(streams, false);
+    ASSERT_TRUE(sender_.send(5, 53, payload(10), {}, START));
+    const auto sent = transmit(START);
     ASSERT_EQ(sent.size(), 1U);
     EXPECT_EQ(sent[0].ssn, 1);
 }
 
 TEST_F(SenderTest, FollowsTsnAcrossWrap)
 {
-    Sender wrapping{config, 0xFFFFFFFF, 1 << 20};
-    ASSERT_TRUE(wrapping.send(0, 53, payload(10), {}, start));
-    ASSERT_TRUE(wrapping.send(0, 53, payload(10), {}, start));
-    PacketBuilder builder(buffer, {}, mtu);
-    ASSERT_TRUE(wrapping.addData(builder, start));
+    Sender wrapping{CONFIG, 0xFFFFFFFF, 1 << 20};
+    ASSERT_TRUE(wrapping.send(0, 53, payload(10), {}, START));
+    ASSERT_TRUE(wrapping.send(0, 53, payload(10), {}, START));
+    PacketBuilder builder(buffer_, {}, MTU);
+    ASSERT_TRUE(wrapping.addData(builder, START));
     const auto packet = Packet::parse(builder.build());
     EXPECT_EQ(DataChunk::parse(packet->chunks[0])->tsn, 0xFFFFFFFFU);
     EXPECT_EQ(DataChunk::parse(packet->chunks[1])->tsn, 0U);
     EXPECT_EQ(wrapping.handleSack({.cumulative_tsn_ack = 0, .a_rwnd = 1 << 20, .gap_blocks = {}, .duplicate_tsns = {}},
-                                  start),
+                                  START),
               Sender::SackOutcome::Progressed);
     EXPECT_TRUE(wrapping.idle());
 }

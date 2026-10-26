@@ -125,9 +125,9 @@ struct Claims {
     };
 };
 
-constexpr std::string_view IdentityPrefix = "a=identity:";
-constexpr std::string_view FingerprintPrefix = "a=fingerprint:";
-constexpr glz::opts LenientRead{.error_on_unknown_keys = false, .error_on_missing_keys = true};
+constexpr std::string_view IDENTITY_PREFIX = "a=identity:";
+constexpr std::string_view FINGERPRINT_PREFIX = "a=fingerprint:";
+constexpr glz::opts LENIENT_READ{.error_on_unknown_keys = false, .error_on_missing_keys = true};
 
 struct Curve {
     std::string_view algorithm;
@@ -138,7 +138,7 @@ struct Curve {
     const EVP_MD *(*digest)();
 };
 
-constexpr std::array<Curve, 3> Curves{{
+constexpr std::array<Curve, 3> CURVES{{
     {.algorithm = "ES256",
      .jwk_name = "P-256",
      .group_name = "prime256v1",
@@ -165,8 +165,8 @@ const Curve *curveOf(EVP_PKEY *key)
         return nullptr;
     }
     const auto bits = EVP_PKEY_get_bits(key);
-    const auto *const curve = std::ranges::find(Curves, bits, &Curve::bits);
-    return curve == Curves.end() ? nullptr : curve;
+    const auto *const curve = std::ranges::find(CURVES, bits, &Curve::bits);
+    return curve == CURVES.end() ? nullptr : curve;
 }
 
 std::span<const std::byte> bytesOf(std::string_view text)
@@ -336,7 +336,7 @@ std::optional<JsonWebToken> JsonWebToken::decode(std::string_view token)
     const auto claims = base64UrlDecode(token.substr(first + 1, second - first - 1));
     const auto signature = base64UrlDecode(token.substr(second + 1));
     JwsHeader parsed;
-    if (!header || !claims || !signature || glz::read<LenientRead>(parsed, textOf(*header))) {
+    if (!header || !claims || !signature || glz::read<LENIENT_READ>(parsed, textOf(*header))) {
         return std::nullopt;
     }
     return JsonWebToken{.header = textOf(*header),
@@ -354,7 +354,7 @@ bool JsonWebToken::verify(EVP_PKEY *key) const
 PublicKey JsonWebToken::publicKey() const
 {
     CpkClaim claim;
-    if (glz::read<LenientRead>(claim, claims)) {
+    if (glz::read<LENIENT_READ>(claim, claims)) {
         return nullptr;
     }
     if (const auto *const spki = std::get_if<std::string>(&claim.cpk)) {
@@ -366,10 +366,10 @@ PublicKey JsonWebToken::publicKey() const
         return {d2i_PUBKEY(nullptr, &cursor, static_cast<std::int64_t>(der->size())), EVP_PKEY_free};
     }
     const auto &jwk = std::get<JsonWebKey>(claim.cpk);
-    const auto *const curve = std::ranges::find(Curves, jwk.crv, &Curve::jwk_name);
+    const auto *const curve = std::ranges::find(CURVES, jwk.crv, &Curve::jwk_name);
     const auto x = base64UrlDecode(jwk.x);
     const auto y = base64UrlDecode(jwk.y);
-    if (jwk.kty != "EC" || curve == Curves.end() || !x || !y || x->size() != curve->coordinate_size ||
+    if (jwk.kty != "EC" || curve == CURVES.end() || !x || !y || x->size() != curve->coordinate_size ||
         y->size() != curve->coordinate_size) {
         return nullptr;
     }
@@ -409,7 +409,7 @@ bool verifyDetachedJws(std::string_view jws, std::string_view payload, EVP_PKEY 
     const auto header = base64UrlDecode(jws.substr(0, first));
     const auto signature = base64UrlDecode(jws.substr(first + 2));
     JwsHeader parsed;
-    if (!header || !signature || glz::read<LenientRead>(parsed, textOf(*header))) {
+    if (!header || !signature || glz::read<LENIENT_READ>(parsed, textOf(*header))) {
         return false;
     }
     const auto signing_input = std::string(jws.substr(0, first)) + "." + base64UrlEncode(bytesOf(payload));
@@ -549,13 +549,13 @@ std::optional<IdentityAssertion> IdentityAssertion::extractFromSdp(std::string_v
 {
     const auto lines = linesOf(sdp);
     const auto line = std::ranges::find_if(
-        lines, [](std::string_view candidate) { return startsWithIgnoringCase(candidate, IdentityPrefix); });
+        lines, [](std::string_view candidate) { return startsWithIgnoringCase(candidate, IDENTITY_PREFIX); });
     if (line == lines.end()) {
         return std::nullopt;
     }
-    const auto decoded = base64Decode(line->substr(IdentityPrefix.size()));
+    const auto decoded = base64Decode(line->substr(IDENTITY_PREFIX.size()));
     Envelope envelope;
-    if (!decoded || glz::read<LenientRead>(envelope, textOf(*decoded))) {
+    if (!decoded || glz::read<LENIENT_READ>(envelope, textOf(*decoded))) {
         return std::nullopt;
     }
     auto fingerprints = fingerprintsOf(sdp);
@@ -574,7 +574,7 @@ std::string IdentityAssertion::injectIntoSdp(std::string_view sdp) const
 {
     const auto envelope =
         writeJson(Envelope{.assertion = assertion_, .idp = {.domain = idp_domain_, .protocol = idp_protocol_}});
-    const auto identity_line = std::string(IdentityPrefix) + base64Encode(bytesOf(envelope));
+    const auto identity_line = std::string(IDENTITY_PREFIX) + base64Encode(bytesOf(envelope));
     auto lines = linesOf(sdp);
     const auto media = std::ranges::find_if(lines, [](std::string_view line) { return line.starts_with("m="); });
     lines.insert(media, identity_line);
@@ -590,7 +590,7 @@ std::string IdentityAssertion::stripFromSdp(std::string_view sdp)
 {
     std::string result;
     for (const auto line : linesOf(sdp)) {
-        if (!startsWithIgnoringCase(line, IdentityPrefix)) {
+        if (!startsWithIgnoringCase(line, IDENTITY_PREFIX)) {
             result += line;
             result += "\r\n";
         }
@@ -602,10 +602,10 @@ std::string IdentityAssertion::fingerprintsOf(std::string_view sdp)
 {
     FingerprintList list;
     for (const auto line : linesOf(sdp)) {
-        if (!startsWithIgnoringCase(line, FingerprintPrefix)) {
+        if (!startsWithIgnoringCase(line, FINGERPRINT_PREFIX)) {
             continue;
         }
-        const auto value = line.substr(FingerprintPrefix.size());
+        const auto value = line.substr(FINGERPRINT_PREFIX.size());
         const auto space = value.find(' ');
         if (space == std::string_view::npos || space == 0 || space + 1 == value.size()) {
             continue;
@@ -621,7 +621,7 @@ std::string IdentityAssertion::fingerprintsOf(std::string_view sdp)
 std::optional<std::string> IdentityAssertion::getToken() const
 {
     Assertion parsed;
-    if (glz::read<LenientRead>(parsed, assertion_)) {
+    if (glz::read<LENIENT_READ>(parsed, assertion_)) {
         return std::nullopt;
     }
     return parsed.token;
@@ -630,7 +630,7 @@ std::optional<std::string> IdentityAssertion::getToken() const
 std::optional<std::string> IdentityAssertion::getSignedFingerprints() const
 {
     Assertion parsed;
-    if (glz::read<LenientRead>(parsed, assertion_)) {
+    if (glz::read<LENIENT_READ>(parsed, assertion_)) {
         return std::nullopt;
     }
     return parsed.fingerprints;

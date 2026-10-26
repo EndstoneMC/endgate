@@ -13,7 +13,7 @@
 namespace endgate::rtc::sctp {
 namespace {
 
-const std::vector<std::byte> captured_init_packet = bytes({
+const std::vector<std::byte> CAPTURED_INIT_PACKET = bytes({
     0x13, 0x88, 0x13, 0x88, 0x00, 0x00, 0x00, 0x00, 0xaa, 0x01, 0x9d, 0x33, 0x01, 0x00, 0x00, 0x5a, 0x0e, 0xdd,
     0xca, 0x08, 0x00, 0x02, 0x00, 0x00, 0x03, 0xe8, 0x03, 0xe8, 0x55, 0x08, 0x36, 0x37, 0x80, 0x00, 0x00, 0x04,
     0xc0, 0x00, 0x00, 0x04, 0x80, 0x08, 0x00, 0x09, 0xc0, 0x0f, 0xc1, 0x80, 0x82, 0x00, 0x00, 0x00, 0x80, 0x02,
@@ -22,7 +22,7 @@ const std::vector<std::byte> captured_init_packet = bytes({
     0x00, 0x06, 0x00, 0x01, 0x00, 0x00, 0x80, 0x03, 0x00, 0x06, 0x80, 0xc1, 0x00, 0x00,
 });
 
-const std::vector<std::byte> captured_cookie_ack_and_sack = bytes({
+const std::vector<std::byte> CAPTURED_COOKIE_ACK_AND_SACK = bytes({
     0x04, 0xd2, 0x10, 0xe1, 0x69, 0x7e, 0x3a, 0x4e, 0xc0, 0x6e, 0x8b, 0x36, 0x0b, 0x00, 0x00, 0x04,
     0x03, 0x00, 0x00, 0x10, 0xae, 0xa9, 0x52, 0x52, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 });
@@ -39,7 +39,7 @@ std::vector<std::byte> sealed(std::vector<std::byte> packet)
 
 TEST(Packet, ParsesCapturedInit)
 {
-    const auto packet = Packet::parse(captured_init_packet);
+    const auto packet = Packet::parse(CAPTURED_INIT_PACKET);
     ASSERT_TRUE(packet);
     EXPECT_EQ(packet->header.source_port, 5000);
     EXPECT_EQ(packet->header.destination_port, 5000);
@@ -51,7 +51,7 @@ TEST(Packet, ParsesCapturedInit)
 
 TEST(Packet, ParsesCapturedBundle)
 {
-    const auto packet = Packet::parse(captured_cookie_ack_and_sack);
+    const auto packet = Packet::parse(CAPTURED_COOKIE_ACK_AND_SACK);
     ASSERT_TRUE(packet);
     EXPECT_EQ(packet->header.source_port, 1234);
     EXPECT_EQ(packet->header.destination_port, 4321);
@@ -65,7 +65,7 @@ TEST(Packet, ParsesCapturedBundle)
 
 TEST(Packet, RejectsWrongChecksum)
 {
-    auto packet = captured_init_packet;
+    auto packet = CAPTURED_INIT_PACKET;
     packet[11] ^= std::byte{1};
     EXPECT_FALSE(Packet::parse(packet));
 
@@ -76,11 +76,11 @@ TEST(Packet, RejectsWrongChecksum)
 
 TEST(Packet, RejectsCorruptedPayloadByte)
 {
-    for (std::size_t i = 0; i < captured_cookie_ack_and_sack.size(); ++i) {
+    for (std::size_t i = 0; i < CAPTURED_COOKIE_ACK_AND_SACK.size(); ++i) {
         if (i >= 8 && i < 12) {
             continue;
         }
-        auto packet = captured_cookie_ack_and_sack;
+        auto packet = CAPTURED_COOKIE_ACK_AND_SACK;
         packet[i] ^= std::byte{0x40};
         EXPECT_FALSE(Packet::parse(packet)) << i;
     }
@@ -91,7 +91,7 @@ TEST(Packet, RejectsGarbage)
     EXPECT_FALSE(Packet::parse(
         bytes({0xff, 0xff, 0xff, 0xff, 0xff, 0x0a, 0x0a, 0x0a, 0x5c, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x00, 0x00, 0x00})));
     EXPECT_FALSE(Packet::parse({}));
-    EXPECT_FALSE(Packet::parse(std::span{captured_init_packet}.first(15)));
+    EXPECT_FALSE(Packet::parse(std::span{CAPTURED_INIT_PACKET}.first(15)));
 }
 
 TEST(Packet, RejectsHeaderWithoutChunks)
@@ -139,7 +139,7 @@ TEST(Packet, ExposesUnknownChunkTypes)
 
 TEST(PacketBuilder, ReproducesCapturedInitByteForByte)
 {
-    const auto parsed = Packet::parse(captured_init_packet);
+    const auto parsed = Packet::parse(CAPTURED_INIT_PACKET);
     ASSERT_TRUE(parsed);
     const auto init = InitChunk::parse(parsed->chunks[0]);
     ASSERT_TRUE(init);
@@ -148,7 +148,7 @@ TEST(PacketBuilder, ReproducesCapturedInitByteForByte)
     PacketBuilder builder(buffer, parsed->header, 1200);
     builder.addInit(ChunkType::Init, *init, parsed->chunks[0].value.subspan(16));
     const auto packet = builder.build();
-    EXPECT_EQ(std::vector<std::byte>(packet.begin(), packet.end()), captured_init_packet);
+    EXPECT_EQ(std::vector<std::byte>(packet.begin(), packet.end()), CAPTURED_INIT_PACKET);
 }
 
 TEST(PacketBuilder, ReproducesCapturedBundleByteForByte)
@@ -159,7 +159,7 @@ TEST(PacketBuilder, ReproducesCapturedBundleByteForByte)
     builder.addChunk(ChunkType::CookieAck, 0, {});
     builder.addSack({.cumulative_tsn_ack = 0xaea95252, .a_rwnd = 131072, .gap_blocks = {}, .duplicate_tsns = {}});
     const auto packet = builder.build();
-    EXPECT_EQ(std::vector<std::byte>(packet.begin(), packet.end()), captured_cookie_ack_and_sack);
+    EXPECT_EQ(std::vector<std::byte>(packet.begin(), packet.end()), CAPTURED_COOKIE_ACK_AND_SACK);
 }
 
 TEST(PacketBuilder, ReportsSpaceWithinMtu)

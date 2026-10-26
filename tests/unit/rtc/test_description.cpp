@@ -21,7 +21,7 @@ std::string crlf(std::string_view text)
     return out;
 }
 
-const std::string MojangGuideOffer = crlf(R"(v=0
+const std::string MOJANG_GUIDE_OFFER = crlf(R"(v=0
 o=- 123456789 2 IN IP4 127.0.0.1
 s=-
 t=0 0
@@ -43,7 +43,7 @@ a=candidate:2 1 udp 1694498815 203.0.113.50 54321 typ srflx raddr 192.168.1.100 
 a=end-of-candidates
 )");
 
-const std::string MojangGuideAnswer = crlf(R"(v=0
+const std::string MOJANG_GUIDE_ANSWER = crlf(R"(v=0
 o=- 987654321 2 IN IP4 127.0.0.1
 s=-
 t=0 0
@@ -65,7 +65,7 @@ a=candidate:1 1 udp 2130706431 10.0.0.50 23456 typ host
 a=end-of-candidates
 )");
 
-const std::string ConstructedLibwebrtcOffer = crlf(R"(v=0
+const std::string CONSTRUCTED_LIBWEBRTC_OFFER = crlf(R"(v=0
 o=- 4611731400430051336 2 IN IP4 127.0.0.1
 s=-
 t=0 0
@@ -87,7 +87,7 @@ a=sctp-port:5000
 a=max-message-size:262144
 )");
 
-const std::string CapturedClientOffer = crlf(R"(v=0
+const std::string CAPTURED_CLIENT_OFFER = crlf(R"(v=0
 o=- 8262678597354354447 2 IN IP4 127.0.0.1
 s=-
 t=0 0
@@ -109,13 +109,13 @@ a=sctp-port:5000
 a=max-message-size:262144
 )");
 
-const CertificateFingerprint MojangGuideAnswerFingerprint{
+const CertificateFingerprint MOJANG_GUIDE_ANSWER_FINGERPRINT{
     .algorithm = "sha-256",
     .value = "11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00"};
 
 TEST(DescriptionTest, ParsesTheMojangGuideOffer)
 {
-    const auto offer = Description::parse(MojangGuideOffer);
+    const auto offer = Description::parse(MOJANG_GUIDE_OFFER);
     ASSERT_TRUE(offer);
     EXPECT_EQ(offer->bundle, std::vector<std::string>{"0"});
     EXPECT_TRUE(offer->extmap_allow_mixed);
@@ -143,7 +143,7 @@ TEST(DescriptionTest, ParsesTheMojangGuideOffer)
 
 TEST(DescriptionTest, ParsesTheMojangGuideAnswer)
 {
-    const auto answer = Description::parse(MojangGuideAnswer);
+    const auto answer = Description::parse(MOJANG_GUIDE_ANSWER);
     ASSERT_TRUE(answer);
     EXPECT_EQ(answer->setup, DtlsSetup::Active);
     EXPECT_EQ(answer->identity, "eyJpZHAiOnsiZG9tYWluIjoicGFydG5lci5leGFtcGxlIiwicHJvdG9jb2wi");
@@ -152,7 +152,7 @@ TEST(DescriptionTest, ParsesTheMojangGuideAnswer)
 
 TEST(DescriptionTest, ParsesAConstructedLibwebrtcOffer)
 {
-    const auto offer = Description::parse(ConstructedLibwebrtcOffer);
+    const auto offer = Description::parse(CONSTRUCTED_LIBWEBRTC_OFFER);
     ASSERT_TRUE(offer);
     EXPECT_TRUE(offer->identity);
     EXPECT_EQ(offer->ice_ufrag, "7Edb");
@@ -165,7 +165,7 @@ TEST(DescriptionTest, ParsesAConstructedLibwebrtcOffer)
 
 TEST(DescriptionTest, ParsesAnOfferCapturedFromARealClient)
 {
-    const auto offer = Description::parse(CapturedClientOffer);
+    const auto offer = Description::parse(CAPTURED_CLIENT_OFFER);
     ASSERT_TRUE(offer);
     EXPECT_EQ(offer->bundle, std::vector<std::string>{"0"});
     EXPECT_EQ(offer->identity,
@@ -191,11 +191,11 @@ TEST(DescriptionTest, ParsesAnOfferCapturedFromARealClient)
 
 TEST(DescriptionTest, AnswersTheMojangGuideOfferAsTheGuideDoes)
 {
-    const auto offer = Description::parse(MojangGuideOffer);
+    const auto offer = Description::parse(MOJANG_GUIDE_OFFER);
     ASSERT_TRUE(offer);
     const std::vector<CandidateAddress> addresses{{.address = {asio::ip::make_address("10.0.0.50"), 23456}}};
     const auto answer = Description::answer(*offer, {.ufrag = "wxyz", .pwd = "zyxwvutsrqponmlkjihgfedcb"},
-                                            MojangGuideAnswerFingerprint, addresses);
+                                            MOJANG_GUIDE_ANSWER_FINGERPRINT, addresses);
 
     EXPECT_EQ(answer.generate(987654321), crlf(R"(v=0
 o=- 987654321 2 IN IP4 127.0.0.1
@@ -222,9 +222,9 @@ a=end-of-candidates
 
 TEST(DescriptionTest, DoesNotMirrorRenomination)
 {
-    const auto offer = Description::parse(ConstructedLibwebrtcOffer);
+    const auto offer = Description::parse(CONSTRUCTED_LIBWEBRTC_OFFER);
     ASSERT_TRUE(offer);
-    const auto answer = Description::answer(*offer, IceCredentials::generate(), MojangGuideAnswerFingerprint, {});
+    const auto answer = Description::answer(*offer, IceCredentials::generate(), MOJANG_GUIDE_ANSWER_FINGERPRINT, {});
     EXPECT_EQ(answer.ice_options, std::vector<std::string>{"trickle"});
 }
 
@@ -233,24 +233,24 @@ TEST(DescriptionTest, PicksTheSetupOppositeTheOffer)
     for (const auto [offered, answered] :
          {std::pair{"actpass", DtlsSetup::Active}, std::pair{"active", DtlsSetup::Passive},
           std::pair{"passive", DtlsSetup::Active}}) {
-        auto sdp = MojangGuideOffer;
+        auto sdp = MOJANG_GUIDE_OFFER;
         sdp.replace(sdp.find("actpass"), 7, offered);
         const auto offer = Description::parse(sdp);
         ASSERT_TRUE(offer);
-        EXPECT_EQ(Description::answer(*offer, IceCredentials::generate(), MojangGuideAnswerFingerprint, {}).setup,
+        EXPECT_EQ(Description::answer(*offer, IceCredentials::generate(), MOJANG_GUIDE_ANSWER_FINGERPRINT, {}).setup,
                   answered);
     }
 }
 
 TEST(DescriptionTest, RanksHostCandidatesInTheOrderGiven)
 {
-    const auto offer = Description::parse(MojangGuideOffer);
+    const auto offer = Description::parse(MOJANG_GUIDE_OFFER);
     ASSERT_TRUE(offer);
     const std::vector<CandidateAddress> addresses{{.address = {asio::ip::make_address("203.0.113.9"), 19132}},
                                                   {.address = {asio::ip::make_address("2001:db8::9"), 19132}},
                                                   {.address = {asio::ip::make_address("::ffff:10.1.2.3"), 19132}}};
     const auto answer =
-        Description::answer(*offer, IceCredentials::generate(), MojangGuideAnswerFingerprint, addresses);
+        Description::answer(*offer, IceCredentials::generate(), MOJANG_GUIDE_ANSWER_FINGERPRINT, addresses);
     ASSERT_EQ(answer.candidates.size(), 3U);
     EXPECT_EQ(answer.candidates[0].priority, 2130706431U);
     EXPECT_EQ(answer.candidates[1].priority, 2130706175U);
@@ -261,7 +261,7 @@ TEST(DescriptionTest, RanksHostCandidatesInTheOrderGiven)
 
 TEST(DescriptionTest, OffersAnAddressBehindNatAsServerReflexive)
 {
-    const auto offer = Description::parse(CapturedClientOffer);
+    const auto offer = Description::parse(CAPTURED_CLIENT_OFFER);
     ASSERT_TRUE(offer);
     const std::vector<CandidateAddress> addresses{
         {.address = {asio::ip::make_address("203.0.113.9"), 19134},
@@ -269,7 +269,7 @@ TEST(DescriptionTest, OffersAnAddressBehindNatAsServerReflexive)
         {.address = {asio::ip::make_address("10.0.0.5"), 19132}},
     };
     const auto answer =
-        Description::answer(*offer, IceCredentials::generate(), MojangGuideAnswerFingerprint, addresses);
+        Description::answer(*offer, IceCredentials::generate(), MOJANG_GUIDE_ANSWER_FINGERPRINT, addresses);
     ASSERT_EQ(answer.candidates.size(), 2U);
     EXPECT_EQ(answer.candidates[0].type, "srflx");
     EXPECT_EQ(answer.candidates[0].priority, 1694498815U);
@@ -287,11 +287,11 @@ TEST(DescriptionTest, OffersAnAddressBehindNatAsServerReflexive)
 
 TEST(DescriptionTest, ReadsBackWhatItWrites)
 {
-    const auto offer = Description::parse(ConstructedLibwebrtcOffer);
+    const auto offer = Description::parse(CONSTRUCTED_LIBWEBRTC_OFFER);
     ASSERT_TRUE(offer);
     const std::vector<CandidateAddress> addresses{{.address = {asio::ip::make_address("198.51.100.1"), 19132}}};
     const auto credentials = IceCredentials::generate();
-    auto answer = Description::answer(*offer, credentials, MojangGuideAnswerFingerprint, addresses);
+    auto answer = Description::answer(*offer, credentials, MOJANG_GUIDE_ANSWER_FINGERPRINT, addresses);
     answer.identity = "aWRlbnRpdHk=";
     const auto parsed = Description::parse(answer.generate(1));
     ASSERT_TRUE(parsed);
@@ -300,7 +300,7 @@ TEST(DescriptionTest, ReadsBackWhatItWrites)
     EXPECT_EQ(parsed->ice_ufrag, credentials.ufrag);
     EXPECT_EQ(parsed->ice_pwd, credentials.pwd);
     EXPECT_EQ(parsed->setup, DtlsSetup::Active);
-    EXPECT_EQ(parsed->fingerprints[0].value, MojangGuideAnswerFingerprint.value);
+    EXPECT_EQ(parsed->fingerprints[0].value, MOJANG_GUIDE_ANSWER_FINGERPRINT.value);
     EXPECT_EQ(parsed->candidates[0].toString(), answer.candidates[0].toString());
 }
 
@@ -330,7 +330,7 @@ a=mid:data
 TEST(DescriptionTest, RejectsWhatItCannotAnswer)
 {
     const auto replaced = [](std::string_view from, std::string_view to) {
-        auto sdp = MojangGuideOffer;
+        auto sdp = MOJANG_GUIDE_OFFER;
         sdp.replace(sdp.find(from), from.size(), to);
         return sdp;
     };
@@ -339,7 +339,7 @@ TEST(DescriptionTest, RejectsWhatItCannotAnswer)
     EXPECT_FALSE(Description::parse(replaced("UDP/DTLS/SCTP", "DTLS/SCTP")));
     EXPECT_FALSE(Description::parse(
         replaced("m=application 9 UDP/DTLS/SCTP webrtc-datachannel", "m=audio 9 UDP/TLS/RTP/SAVPF 111")));
-    EXPECT_FALSE(Description::parse(MojangGuideOffer + "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n"));
+    EXPECT_FALSE(Description::parse(MOJANG_GUIDE_OFFER + "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n"));
     EXPECT_FALSE(Description::parse(replaced("a=ice-ufrag:abcd", "a=ice-ufrag:abc")));
     EXPECT_FALSE(Description::parse(replaced("a=ice-ufrag:abcd", "a=ice-ufrag:ab;d")));
     EXPECT_FALSE(Description::parse(replaced("a=ice-pwd:abcdefghijklmnopqrstuvwx", "a=ice-pwd:short")));
@@ -350,12 +350,12 @@ TEST(DescriptionTest, RejectsWhatItCannotAnswer)
     EXPECT_FALSE(Description::parse(replaced("a=sctp-port:5000", "a=sctp-port:70000")));
     EXPECT_FALSE(Description::parse(replaced("a=max-message-size:262144", "a=max-message-size:-1")));
     EXPECT_FALSE(Description::parse(replaced("s=-", "garbage")));
-    EXPECT_FALSE(Description::parse(MojangGuideOffer + std::string(65536, 'a')));
+    EXPECT_FALSE(Description::parse(MOJANG_GUIDE_OFFER + std::string(65536, 'a')));
 }
 
 TEST(DescriptionTest, SkipsBrokenCandidatesAndBoundsTheRest)
 {
-    auto sdp = MojangGuideOffer;
+    auto sdp = MOJANG_GUIDE_OFFER;
     sdp += "a=candidate:broken\r\n";
     sdp += "a=candidate:1 0 udp 1 192.0.2.1 1 typ host\r\n";
     for (int i = 0; i < 40; ++i) {

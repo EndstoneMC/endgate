@@ -9,22 +9,22 @@ namespace {
 
 using namespace std::chrono_literals;
 
-constexpr std::size_t mtu = 1400 - UDP_HEADER_SIZE;
+constexpr std::size_t MTU = 1400 - UDP_HEADER_SIZE;
 
 TEST(Congestion, StartsWithOneMtuAndTheMaximumRto)
 {
-    CCRakNetSlidingWindow window{mtu};
-    EXPECT_EQ(window.getCwnd(), static_cast<double>(mtu));
+    CCRakNetSlidingWindow window{MTU};
+    EXPECT_EQ(window.getCwnd(), static_cast<double>(MTU));
     EXPECT_TRUE(window.isInSlowStart());
     EXPECT_EQ(window.getRtoForRetransmission(), 2s);
-    EXPECT_EQ(window.getTransmissionBandwidth(0, false), mtu);
-    EXPECT_EQ(window.getTransmissionBandwidth(mtu + 1, false), 0U);
+    EXPECT_EQ(window.getTransmissionBandwidth(0, false), MTU);
+    EXPECT_EQ(window.getTransmissionBandwidth(MTU + 1, false), 0U);
     EXPECT_EQ(window.getRetransmissionBandwidth(4321), 4321U);
 }
 
 TEST(Congestion, RtoFollowsTheSmoothedRoundTrip)
 {
-    CCRakNetSlidingWindow window{mtu};
+    CCRakNetSlidingWindow window{MTU};
     window.onAck(100ms, false, 0);
     EXPECT_EQ(window.getRtoForRetransmission(), 630ms);
     window.onAck(200ms, false, 1);
@@ -35,33 +35,33 @@ TEST(Congestion, RtoFollowsTheSmoothedRoundTrip)
 
 TEST(Congestion, GrowsOnlyWhileContinuouslySending)
 {
-    CCRakNetSlidingWindow window{mtu};
+    CCRakNetSlidingWindow window{MTU};
     window.onAck(1ms, false, 0);
-    EXPECT_EQ(window.getCwnd(), static_cast<double>(mtu));
+    EXPECT_EQ(window.getCwnd(), static_cast<double>(MTU));
     window.onAck(1ms, true, 1);
-    EXPECT_EQ(window.getCwnd(), 2.0 * mtu);
+    EXPECT_EQ(window.getCwnd(), 2.0 * MTU);
     window.onAck(1ms, true, 2);
-    EXPECT_EQ(window.getCwnd(), 3.0 * mtu);
+    EXPECT_EQ(window.getCwnd(), 3.0 * MTU);
 }
 
 TEST(Congestion, ResendBacksOffOncePerBlock)
 {
-    CCRakNetSlidingWindow window{mtu};
+    CCRakNetSlidingWindow window{MTU};
     for (std::uint32_t i = 0; i < 8; ++i) {
         window.onAck(1ms, true, i + 1);
     }
-    EXPECT_EQ(window.getCwnd(), 9.0 * mtu);
+    EXPECT_EQ(window.getCwnd(), 9.0 * MTU);
     static_cast<void>(window.getTransmissionBandwidth(0, true));
     window.onResend();
-    EXPECT_EQ(window.getCwnd(), static_cast<double>(mtu));
-    EXPECT_EQ(window.getSsThresh(), 4.5 * mtu);
+    EXPECT_EQ(window.getCwnd(), static_cast<double>(MTU));
+    EXPECT_EQ(window.getSsThresh(), 4.5 * MTU);
     window.onResend();
-    EXPECT_EQ(window.getSsThresh(), 4.5 * mtu);
+    EXPECT_EQ(window.getSsThresh(), 4.5 * MTU);
 }
 
 TEST(Congestion, SlowStartStopsAtTheThreshold)
 {
-    CCRakNetSlidingWindow window{mtu};
+    CCRakNetSlidingWindow window{MTU};
     for (std::uint32_t i = 0; i < 8; ++i) {
         window.onAck(1ms, true, i + 1);
     }
@@ -70,25 +70,25 @@ TEST(Congestion, SlowStartStopsAtTheThreshold)
     for (std::uint32_t i = 0; i < 4; ++i) {
         window.onAck(1ms, true, 100 + i);
     }
-    const auto threshold = 4.5 * mtu;
+    const auto threshold = 4.5 * MTU;
     EXPECT_FALSE(window.isInSlowStart());
-    EXPECT_DOUBLE_EQ(window.getCwnd(), threshold + static_cast<double>(mtu) * mtu / (5.0 * mtu));
+    EXPECT_DOUBLE_EQ(window.getCwnd(), threshold + static_cast<double>(MTU) * MTU / (5.0 * MTU));
 }
 
 TEST(Congestion, NakHalvesTheThresholdWhileContinuouslySending)
 {
-    CCRakNetSlidingWindow window{mtu};
+    CCRakNetSlidingWindow window{MTU};
     window.onNak();
     EXPECT_EQ(window.getSsThresh(), 0);
     static_cast<void>(window.getTransmissionBandwidth(0, true));
     window.onNak();
-    EXPECT_EQ(window.getSsThresh(), mtu / 2.0);
+    EXPECT_EQ(window.getSsThresh(), MTU / 2.0);
 }
 
 TEST(Congestion, AcksWaitForTheSynOnceTheRoundTripIsKnown)
 {
     const TimePoint start{};
-    CCRakNetSlidingWindow window{mtu};
+    CCRakNetSlidingWindow window{MTU};
     EXPECT_EQ(window.onGotPacket(0, start), 0U);
     EXPECT_TRUE(window.shouldSendAcks(start));
     window.onAck(5ms, false, 0);
@@ -103,7 +103,7 @@ TEST(Congestion, AcksWaitForTheSynOnceTheRoundTripIsKnown)
 TEST(Congestion, SkippedDatagramsAreCountedAndBounded)
 {
     const TimePoint now{};
-    CCRakNetSlidingWindow window{mtu};
+    CCRakNetSlidingWindow window{MTU};
     EXPECT_EQ(window.onGotPacket(0, now), 0U);
     EXPECT_EQ(window.onGotPacket(4, now), 3U);
     EXPECT_EQ(window.onGotPacket(2, now), 0U);
@@ -125,7 +125,7 @@ TEST(Congestion, SequenceComparisonsWrapAtTwentyFourBits)
 
 TEST(Congestion, DatagramNumbersWrap)
 {
-    CCRakNetSlidingWindow window{mtu};
+    CCRakNetSlidingWindow window{MTU};
     for (std::uint32_t i = 0; i < 0xFFFFFF; ++i) {
         static_cast<void>(window.getAndIncrementNextDatagramSequenceNumber());
     }

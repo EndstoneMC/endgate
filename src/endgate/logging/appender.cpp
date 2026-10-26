@@ -18,7 +18,7 @@ namespace endgate {
 
 namespace {
 
-std::atomic<Console *> reader{nullptr};
+std::atomic<Console *> Reader{nullptr};
 
 std::tm localtime(spdlog::log_clock::time_point tp)
 {
@@ -124,7 +124,7 @@ void TerminalConsoleAppender::setColorMode(spdlog::color_mode mode)
 
 void TerminalConsoleAppender::setReader(Console *console)
 {
-    reader.store(console, std::memory_order_release);
+    Reader.store(console, std::memory_order_release);
 }
 
 void TerminalConsoleAppender::sink_it_(const spdlog::details::log_msg &msg)
@@ -152,7 +152,7 @@ void TerminalConsoleAppender::sink_it_(const spdlog::details::log_msg &msg)
         out.assign(formatted.data(), formatted.size());
     }
 
-    if (auto *console = reader.load(std::memory_order_acquire)) {
+    if (auto *console = Reader.load(std::memory_order_acquire)) {
         console->printAbove(out);
         return;
     }
