@@ -52,7 +52,8 @@ public:
     static constexpr std::uint32_t MAXIMUM_HOLE_COUNT = 1000000;
     static constexpr std::uint32_t MAX_SPLIT_PACKET_COUNT = 2048;
     static constexpr std::size_t MAX_SPLIT_PACKET_CHANNELS = 256;
-    static constexpr std::size_t MAX_SPLIT_PACKET_BYTES = 2 * MAX_SPLIT_PACKET_COUNT * MAXIMUM_MTU_SIZE;
+    static constexpr std::size_t MAXIMUM_HELD_BYTES = 2 * MAX_SPLIT_PACKET_COUNT * MAXIMUM_MTU_SIZE;
+    static constexpr std::size_t HELD_PACKET_OVERHEAD = 384;
     static constexpr std::size_t MAXIMUM_ORDERED_PACKETS_PER_HEAP = 4096;
 
     ReliabilityLayer(Listener &listener, std::size_t mtu, TimePoint now);
@@ -60,6 +61,8 @@ public:
     void setTimeoutTime(std::chrono::milliseconds time) { timeout_time_ = time; }
     [[nodiscard]] std::chrono::milliseconds getTimeoutTime() const { return timeout_time_; }
     void setUnreliableTimeout(std::chrono::milliseconds timeout) { unreliable_timeout_ = timeout; }
+    void setMaximumHeldBytes(std::size_t bytes) { maximum_held_bytes_ = bytes; }
+    [[nodiscard]] std::size_t getHeldBytes() const { return held_bytes_; }
 
     /**
      * @see RakNet::ReliabilityLayer::HandleSocketReceiveFromConnectedPlayer
@@ -112,6 +115,7 @@ private:
 
     struct OrderedPacket {
         std::uint64_t weight;
+        std::size_t held_bytes;
         InternalPacket packet;
     };
 
@@ -148,9 +152,10 @@ private:
     void handleAcknowledgements(Reader &reader, TimePoint now);
     void handleNegativeAcknowledgements(Reader &reader, TimePoint now);
     void handleFrame(const FrameHeader &header, ByteBuf data, TimePoint now);
-    [[nodiscard]] std::optional<InternalPacket> insertIntoSplitPacketList(const FrameHeader &header, ByteBuf data,
-                                                                          TimePoint now);
-    void deliver(InternalPacket packet);
+    [[nodiscard]] bool hold(std::size_t bytes);
+    [[nodiscard]] std::optional<std::pair<InternalPacket, std::size_t>> insertIntoSplitPacketList(
+        const FrameHeader &header, ByteBuf data, TimePoint now);
+    void deliver(InternalPacket packet, std::size_t held_bytes);
     void removePacketFromResendList(std::uint32_t message_number);
 
     [[nodiscard]] std::size_t getMaxDatagramSizeExcludingMessageHeaderBytes() const;
@@ -185,7 +190,8 @@ private:
     std::array<std::uint32_t, NUMBER_OF_ORDERED_STREAMS> heap_index_offsets_{};
     std::array<std::vector<OrderedPacket>, NUMBER_OF_ORDERED_STREAMS> ordering_heaps_;
     std::unordered_map<std::uint16_t, SplitPacketChannel> split_packet_channels_;
-    std::size_t split_packet_bytes_{0};
+    std::size_t held_bytes_{0};
+    std::size_t maximum_held_bytes_{MAXIMUM_HELD_BYTES};
 
     std::array<std::uint32_t, NUMBER_OF_ORDERED_STREAMS> ordered_write_index_{};
     std::array<std::uint32_t, NUMBER_OF_ORDERED_STREAMS> sequenced_write_index_{};

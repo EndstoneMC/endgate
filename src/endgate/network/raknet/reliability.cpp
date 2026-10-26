@@ -131,7 +131,6 @@ void ReliabilityLayer::handleSocketReceiveFromConnectedPlayer(std::span<const st
     remote_system_needs_b_and_as_ = header->needs_b_and_as;
     acknowlegements_.insert(header->datagram_number);
 
-    const auto storage = ByteBuf::copyBuffer(datagram);
     for (bool first = true;; first = false) {
         if (reader.remaining() < Frame::MINIMUM_LENGTH) {
             if (first) {
@@ -146,8 +145,10 @@ void ReliabilityLayer::handleSocketReceiveFromConnectedPlayer(std::span<const st
             }
             return;
         }
-        const auto offset = static_cast<std::size_t>(frame->data.data() - datagram.data());
-        handleFrame(frame->header, storage.retainedSlice(offset, frame->data.size()), now);
+        handleFrame(frame->header, ByteBuf::copyBuffer(frame->data), now);
+        if (dead_connection_) {
+            return;
+        }
     }
 }
 
@@ -281,7 +282,7 @@ void ReliabilityLayer::handleFrame(const FrameHeader &header, ByteBuf data, Time
     if (header.split_packet_count > 0) {
         auto assembled = insertIntoSplitPacketList(header, std::move(data), now);
         if (assembled) {
-            deliver(*std::move(assembled));
+            deliver(std::move(assembled->first), assembled->second);
         }
         return;
     }
@@ -290,11 +291,12 @@ void ReliabilityLayer::handleFrame(const FrameHeader &header, ByteBuf data, Time
     static_cast<FrameHeader &>(packet) = header;
     packet.data = std::move(data);
     packet.creation_time = now;
-    deliver(std::move(packet));
+    const auto held_bytes = packet.data.length() + HELD_PACKET_OVERHEAD;
+    deliver(std::move(packet), held_bytes);
 }
 
-std::optional<InternalPacket> ReliabilityLayer::insertIntoSplitPacketList(const FrameHeader &header, ByteBuf data,
-                                                                          TimePoint now)
+std::optional<std::pair<InternalPacket, std::size_t>> ReliabilityLayer::insertIntoSplitPacketList(
+    const FrameHeader &header, ByteBuf data, TimePoint now)
 {
     if (header.split_packet_count > MAX_SPLIT_PACKET_COUNT) {
         notify("splitPacketCount exceeds MAX_SPLIT_PACKET_COUNT", true);
@@ -317,10 +319,6 @@ std::optional<InternalPacket> ReliabilityLayer::insertIntoSplitPacketList(const 
         notify("splitPacketCount differs within one splitPacketId", true);
         return std::nullopt;
     }
-    if (split_packet_bytes_ + data.length() > MAX_SPLIT_PACKET_BYTES) {
-        notify("split packets exceed MAX_SPLIT_PACKET_BYTES", true);
-        return std::nullopt;
-    }
     auto position = split.parts.end();
     if (!split.parts.empty() && header.split_packet_index <= split.parts.back().first) {
         position = std::ranges::lower_bound(split.parts, header.split_packet_index, {},
@@ -329,8 +327,11 @@ std::optional<InternalPacket> ReliabilityLayer::insertIntoSplitPacketList(const 
             return std::nullopt;
         }
     }
-    split.bytes += data.length();
-    split_packet_bytes_ += data.length();
+    const auto held = data.length() + HELD_PACKET_OVERHEAD;
+    if (!hold(held)) {
+        return std::nullopt;
+    }
+    split.bytes += held;
     split.parts.emplace(position, header.split_packet_index, std::move(data));
     if (split.parts.size() < split.split_packet_count) {
         return std::nullopt;
@@ -344,12 +345,13 @@ std::optional<InternalPacket> ReliabilityLayer::insertIntoSplitPacketList(const 
     for (auto &[index, part] : split.parts) {
         packet.data.appendToChain(std::move(part));
     }
-    split_packet_bytes_ -= split.bytes;
+    const auto held_bytes = split.bytes;
+    held_bytes_ -= held_bytes;
     split_packet_channels_.erase(channel);
-    return packet;
+    return std::pair{std::move(packet), held_bytes};
 }
 
-void ReliabilityLayer::deliver(InternalPacket packet)
+void ReliabilityLayer::deliver(InternalPacket packet, std::size_t held_bytes)
 {
     const auto reliability = packet.reliability;
     const bool sequenced = isSequenced(reliability);
@@ -378,6 +380,7 @@ void ReliabilityLayer::deliver(InternalPacket packet)
         while (!heap.empty() && heap.front().packet.ordering_index == ordered_read_index_[channel]) {
             std::ranges::pop_heap(heap, lighter);
             auto next = std::move(heap.back().packet);
+            held_bytes_ -= heap.back().held_bytes;
             heap.pop_back();
             if (next.reliability == PacketReliability::ReliableOrdered) {
                 ordered_read_index_[channel] = (ordered_read_index_[channel] + 1) & UINT24_MASK;
@@ -396,14 +399,28 @@ void ReliabilityLayer::deliver(InternalPacket packet)
         notify("ordering heap exceeds MAXIMUM_ORDERED_PACKETS_PER_HEAP", true);
         return;
     }
+    if (!hold(held_bytes)) {
+        return;
+    }
     if (heap.empty()) {
         heap_index_offsets_[channel] = ordered_read_index_[channel];
     }
     constexpr std::uint64_t ordered_slot = 1048576;
     const std::uint64_t ordered_hole_count = (packet.ordering_index - heap_index_offsets_[channel]) & UINT24_MASK;
     const auto weight = ordered_hole_count * ordered_slot + (sequenced ? packet.sequencing_index : ordered_slot - 1);
-    heap.push_back({.weight = weight, .packet = std::move(packet)});
+    heap.push_back({.weight = weight, .held_bytes = held_bytes, .packet = std::move(packet)});
     std::ranges::push_heap(heap, lighter);
+}
+
+bool ReliabilityLayer::hold(std::size_t bytes)
+{
+    if (held_bytes_ + bytes > maximum_held_bytes_) {
+        notify("held split and ordered packets exceed the maximum held bytes", true);
+        dead_connection_ = true;
+        return false;
+    }
+    held_bytes_ += bytes;
+    return true;
 }
 
 std::optional<ByteBuf> ReliabilityLayer::receive()
