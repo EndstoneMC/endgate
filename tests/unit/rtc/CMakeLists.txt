@@ -1,4 +1,5 @@
 add_executable(endgate_rtc_tests
+        test_certificate.cpp
         test_ice.cpp
         test_stun.cpp
 )
