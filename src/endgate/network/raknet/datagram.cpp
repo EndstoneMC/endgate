@@ -236,8 +236,9 @@ std::expected<std::vector<Range>, RangeListError> RangeList::deserialize(Reader 
     if (!count) {
         return std::unexpected(RangeListError::Truncated);
     }
-    if (*count > MAX_ACKNOWLEDGEMENT_RANGES_PER_DATAGRAM) {
-        return std::unexpected(RangeListError::TooManyRanges);
+    constexpr std::size_t smallest_range = 1 + 3;
+    if (*count > reader.remaining() / smallest_range) {
+        return std::unexpected(RangeListError::Truncated);
     }
     std::vector<Range> ranges;
     ranges.reserve(*count);
@@ -256,6 +257,9 @@ std::expected<std::vector<Range>, RangeListError> RangeList::deserialize(Reader 
             return std::unexpected(RangeListError::Truncated);
         }
         ranges.push_back({*min, *max});
+    }
+    if (ranges.size() > MAX_ACKNOWLEDGEMENT_RANGES_PER_DATAGRAM) {
+        return std::unexpected(RangeListError::TooManyRanges);
     }
     return ranges;
 }

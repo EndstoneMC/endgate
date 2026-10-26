@@ -272,8 +272,17 @@ TEST(Datagram, MalformedRangesAreRejected)
         EXPECT_EQ(RangeList::deserialize(reader).error_or(RangeListError::TooManyRanges), RangeListError::Truncated)
             << hex;
     }
-    const auto too_many = fromHex("0401");
-    Reader reader{too_many};
+    const auto truncated_count = fromHex("0401"
+                                         "01000000");
+    Reader truncated_reader{truncated_count};
+    EXPECT_EQ(RangeList::deserialize(truncated_reader).error(), RangeListError::Truncated);
+
+    std::string too_many = "0401";
+    for (std::uint32_t i = 0; i < 0x401; ++i) {
+        too_many += "01" + toHex(std::array{std::byte(i * 2 & 0xFF), std::byte(i * 2 >> 8), std::byte{0}});
+    }
+    const auto too_many_bytes = fromHex(too_many);
+    Reader reader{too_many_bytes};
     EXPECT_EQ(RangeList::deserialize(reader).error(), RangeListError::TooManyRanges);
 }
 
