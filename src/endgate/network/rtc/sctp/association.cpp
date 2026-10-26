@@ -863,6 +863,7 @@ void Association::establish(const StateCookie &cookie, Clock::time_point now)
                          {cookie.peer_supports_forward_tsn, cookie.peer_supports_reconfig}));
     state_ = State::Established;
     t1_.reset();
+    t2_.reset();
     cookie_echo_.clear();
     if (config_.heartbeat_interval > Clock::duration::zero()) {
         tcb_->heartbeat_at = now + config_.heartbeat_interval + tcb_->sender.rto();

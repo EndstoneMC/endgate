@@ -506,6 +506,42 @@ TEST(Association, RecognisesRestartedPeer)
     EXPECT_EQ(text(network.endpoint_b.messages[0].payload), "again");
 }
 
+TEST(Association, ForgetsItsShutdownWhenThePeerRestarts)
+{
+    Network network;
+    network.a->connect(network.now);
+    ASSERT_TRUE(network.runUntil([&] { return established(network); }, 1s));
+    network.filter = [](std::span<const std::byte>, bool to_b) {
+        return to_b;
+    };
+    network.b->shutdown(network.now);
+    network.run(10ms);
+    ASSERT_EQ(network.b->state(), State::ShutdownSent);
+
+    Endpoint restarted;
+    Association::Config config;
+    config.random = seeded(99);
+    Association a2{restarted, config};
+    a2.connect(network.now);
+    auto shutdowns = 0;
+    for (auto step = 0; step < 600; ++step) {
+        for (auto &packet : std::exchange(restarted.outbox, {})) {
+            network.b->handlePacket(packet, network.now);
+        }
+        for (auto &packet : std::exchange(network.endpoint_b.outbox, {})) {
+            shutdowns += hasChunk(packet, ChunkType::Shutdown) ? 1 : 0;
+            a2.handlePacket(packet, network.now);
+        }
+        network.now += 100ms;
+        network.b->handleTimeout(network.now);
+        a2.handleTimeout(network.now);
+    }
+    EXPECT_EQ(network.endpoint_b.restarted, 1U);
+    EXPECT_EQ(network.b->state(), State::Established);
+    EXPECT_FALSE(network.endpoint_b.closed);
+    EXPECT_EQ(shutdowns, 0);
+}
+
 TEST(Association, ListenerMayCallBackIntoTheAssociation)
 {
     Network network;
