@@ -174,6 +174,8 @@ private:
     std::uint16_t last_stream_{0};
     std::uint64_t next_message_{0};
     std::size_t buffered_{0};
+    std::size_t queued_{0};
+    std::size_t held_{0};
 
     std::size_t flight_{0};
     std::size_t flight_payload_{0};

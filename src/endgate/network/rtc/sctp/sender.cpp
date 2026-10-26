@@ -25,7 +25,8 @@ Sender::Sender(const Config &config, std::uint32_t initial_tsn, std::uint32_t pe
 bool Sender::send(std::uint16_t stream_id, std::uint32_t ppid, ByteBuf payload, const SendOptions &options,
                   Clock::time_point now)
 {
-    if (payload.empty() || buffered_ + payload.length() > config_.max_buffered) {
+    constexpr std::size_t message_overhead = 64;
+    if (payload.empty() || buffered_ + message_overhead * (queued_ + 1) + payload.length() > config_.max_buffered) {
         return false;
     }
     auto &stream = streams_[stream_id];
@@ -43,6 +44,7 @@ bool Sender::send(std::uint16_t stream_id, std::uint32_t ppid, ByteBuf payload, 
     });
     stream.buffered += length;
     buffered_ += length;
+    ++queued_;
     ready_.insert(stream_id);
     return true;
 }
@@ -96,6 +98,7 @@ Sender::SackOutcome Sender::handleSack(const SackChunk &sack, Clock::time_point 
             highest_newly_acked = cumulative_ack_;
         }
         leaveFlight(item);
+        held_ -= item.payload.length();
         outstanding_.pop_front();
     }
     for (const auto &[first, last] : acked) {
@@ -246,7 +249,9 @@ bool Sender::addData(PacketBuilder &builder, Clock::time_point now)
 
     constexpr std::size_t min_fragment = 64;
     const auto whole_packet = (config_.mtu & ~std::size_t{3}) - CommonHeader::size - DataChunk::header_size;
+    constexpr std::size_t max_outstanding = 65535;
     while (lost_ == 0 && flight_ < cwnd_ && !ready_.empty() && (peer_window_ > 0 || flight_ == 0) &&
+           outstanding_.size() < max_outstanding && held_ < config_.max_buffered &&
            builder.remaining() > DataChunk::header_size) {
         const auto after = ready_.upper_bound(last_stream_);
         const auto stream_id = current_.value_or(after != ready_.end() ? *after : *ready_.begin());
@@ -295,6 +300,7 @@ bool Sender::addData(PacketBuilder &builder, Clock::time_point now)
         });
         flight_ += chunkSize(fragment);
         flight_payload_ += fragment;
+        held_ += fragment;
         peer_window_ -= std::min(peer_window_, fragment);
         stream.buffered -= fragment;
         buffered_ -= fragment;
@@ -302,6 +308,7 @@ bool Sender::addData(PacketBuilder &builder, Clock::time_point now)
         current_ = stream_id;
         if (message.offset == message.payload.length()) {
             stream.queue.pop_front();
+            --queued_;
             current_.reset();
             last_stream_ = stream_id;
             if (stream.queue.empty()) {
@@ -492,6 +499,7 @@ void Sender::dropFront(std::uint16_t stream_id, OutgoingStream &stream)
     stream.buffered -= unsent;
     buffered_ -= unsent;
     stream.queue.pop_front();
+    --queued_;
     if (current_ == stream_id) {
         current_.reset();
         last_stream_ = stream_id;

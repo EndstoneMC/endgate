@@ -453,9 +453,40 @@ TEST_F(SenderTest, RefusesWhatTheBufferCannotHold)
                  1 << 20};
     EXPECT_TRUE(small.send(0, 53, payload(600), {}, start));
     EXPECT_FALSE(small.send(0, 53, payload(600), {}, start));
+    EXPECT_TRUE(small.send(0, 53, payload(200), {}, start));
+    EXPECT_FALSE(small.send(0, 53, payload(10), {}, start));
     EXPECT_FALSE(small.send(0, 53, ByteBuf{}, {}, start));
-    EXPECT_EQ(small.bufferedAmount(), 600U);
-    EXPECT_EQ(small.bufferedAmount(0), 600U);
+    EXPECT_EQ(small.bufferedAmount(), 800U);
+    EXPECT_EQ(small.bufferedAmount(0), 800U);
+}
+
+TEST_F(SenderTest, BoundsWhatAPeerThatNeverAdvancesCanMakeItHold)
+{
+    Sender held{{.mtu = mtu,
+                 .max_buffered = 20000,
+                 .rto_initial = 1s,
+                 .rto_min = 1s,
+                 .rto_max = 1s,
+                 .partial_reliability = true},
+                1000,
+                1 << 30};
+    for (auto i = 0; i < 1000; ++i) {
+        held.send(0, 53, payload(100), {}, start);
+    }
+    std::size_t sent = 0;
+    for (auto round = 0; round < 1000; ++round) {
+        PacketBuilder builder(buffer, {}, mtu);
+        if (!held.addData(builder, start)) {
+            if (sent == held.outstandingChunks()) {
+                break;
+            }
+        }
+        sent = held.outstandingChunks();
+        std::vector<SackChunk::GapBlock> gaps{{.start = 2, .end = static_cast<std::uint16_t>(sent)}};
+        held.handleSack({.cumulative_tsn_ack = 999, .a_rwnd = 1 << 30, .gap_blocks = gaps, .duplicate_tsns = {}},
+                        start);
+    }
+    EXPECT_LE(held.outstandingChunks() * 100, 20000U + 1200);
 }
 
 TEST_F(SenderTest, ResetsStreamOnceItsQueueHasDrained)
