@@ -708,6 +708,11 @@ void ReliabilityLayer::update(TimePoint now)
                     pushDatagram(now);
                     break;
                 }
+                if (now - packet.first_send_time >= timeout_time_) {
+                    dead_connection_ = true;
+                    datagram_packets_.clear();
+                    return;
+                }
                 resend_list_.splice(resend_list_.end(), resend_list_, resend_list_.begin());
                 pushPacket(packet);
                 ++packet.times_sent;
@@ -741,6 +746,7 @@ void ReliabilityLayer::update(TimePoint now)
                 if (isReliable(packet.reliability)) {
                     const auto number = send_reliable_message_number_index_;
                     packet.reliable_message_number = number;
+                    packet.first_send_time = now;
                     packet.next_action_time = now + congestion_manager_.getRtoForRetransmission();
                     unacknowledged_bytes_ += packet.header_length + packet.data.length();
                     resend_list_.push_back(std::move(packet));
