@@ -229,6 +229,8 @@ void Receiver::resetStreams(std::span<const std::uint16_t> streams)
 
 void Receiver::deferReset(std::uint32_t last_assigned_tsn, std::vector<std::uint16_t> streams)
 {
+    std::ranges::sort(streams);
+    streams.erase(std::ranges::unique(streams).begin(), streams.end());
     deferred_ =
         DeferredReset{.last_assigned_tsn = unwrap(last_assigned_tsn, cumulative_), .streams = std::move(streams)};
 }
@@ -403,7 +405,7 @@ void Receiver::skip(std::uint64_t new_cumulative, std::span<const ForwardTsnChun
 bool Receiver::affectedByReset(std::uint64_t tsn, std::uint16_t stream) const
 {
     return deferred_ && tsn > deferred_->last_assigned_tsn &&
-           (deferred_->streams.empty() || std::ranges::find(deferred_->streams, stream) != deferred_->streams.end());
+           (deferred_->streams.empty() || std::ranges::binary_search(deferred_->streams, stream));
 }
 
 }  // namespace endgate::rtc::sctp

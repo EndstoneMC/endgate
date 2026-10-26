@@ -290,6 +290,54 @@ TEST(StreamReset, FollowsARequestRetriedUnderANewSequenceNumber)
     EXPECT_EQ(answer(renumbered), ReconfigResult::SuccessPerformed);
 }
 
+TEST(StreamReset, ReportsOnlyStreamsThatExist)
+{
+    Association::Config small;
+    small.streams = 8;
+    Network network{small, small};
+    connect(network);
+    std::uint32_t tag = 0;
+    network.filter = [&](std::span<const std::byte> packet, bool to_b) {
+        if (to_b) {
+            tag = Packet::parse(packet)->header.verification_tag;
+        }
+        return true;
+    };
+    ASSERT_TRUE(network.a->send(0, 51, bufferOf("x"), {}, network.now));
+    network.run(1s);
+    const Streams real{3};
+    ASSERT_TRUE(network.a->resetStreams(real, network.now));
+    std::vector<std::byte> request;
+    network.filter = [&](std::span<const std::byte> packet, bool to_b) {
+        if (to_b && hasChunk(packet, ChunkType::ReConfig)) {
+            request.assign(packet.begin(), packet.end());
+            return false;
+        }
+        return true;
+    };
+    network.collect();
+    ASSERT_FALSE(request.empty());
+    const auto parsed = Packet::parse(request);
+    const auto original = OutgoingResetRequest::parse(Tlv::parseAll(parsed->chunks.back().value)->front());
+
+    std::vector<std::byte> fields;
+    ByteWriter writer(fields);
+    writer.write32(original->request_sequence);
+    writer.write32(original->response_sequence);
+    writer.write32(original->last_assigned_tsn);
+    for (const auto stream : {5, 3, 9000, 5, 3}) {
+        writer.write16(static_cast<std::uint16_t>(stream));
+    }
+    std::vector<std::byte> value;
+    ByteWriter(value).writeTlv(static_cast<std::uint16_t>(ParameterType::OutgoingSsnResetRequest), fields);
+    std::vector<std::byte> buffer;
+    PacketBuilder builder(buffer, {.source_port = 5000, .destination_port = 5000, .verification_tag = tag}, 1200);
+    builder.addChunk(ChunkType::ReConfig, 0, value);
+    network.b->handlePacket(builder.build(), network.now);
+    ASSERT_EQ(network.endpoint_b.incoming_resets.size(), 1U);
+    EXPECT_EQ(network.endpoint_b.incoming_resets[0], (Streams{3, 5}));
+}
+
 TEST(StreamReset, RefusesResetBeforeEstablishment)
 {
     Network network;

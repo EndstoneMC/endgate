@@ -781,17 +781,24 @@ void Association::handleReconfig(const Chunk &chunk, Clock::time_point now)
             if (!request) {
                 break;
             }
+            auto streams = request->streams;
+            std::erase_if(streams, [&](std::uint16_t stream) { return stream >= tcb_->inbound_streams; });
+            std::ranges::sort(streams);
+            streams.erase(std::ranges::unique(streams).begin(), streams.end());
             evaluate(request->request_sequence, [&] {
+                if (streams.empty() && !request->streams.empty()) {
+                    return ReconfigResult::SuccessNothingToDo;
+                }
                 if (tcb_->receiver.resetDeferred()) {
                     tcb_->deferred_request = request->request_sequence;
                     return ReconfigResult::InProgress;
                 }
                 if (tcb_->receiver.reached(request->last_assigned_tsn)) {
-                    tcb_->receiver.resetStreams(request->streams);
-                    events_.emplace_back(IncomingReset{.streams = request->streams});
+                    tcb_->receiver.resetStreams(streams);
+                    events_.emplace_back(IncomingReset{.streams = streams});
                     return ReconfigResult::SuccessPerformed;
                 }
-                tcb_->receiver.deferReset(request->last_assigned_tsn, request->streams);
+                tcb_->receiver.deferReset(request->last_assigned_tsn, streams);
                 tcb_->deferred_request = request->request_sequence;
                 return ReconfigResult::InProgress;
             });
