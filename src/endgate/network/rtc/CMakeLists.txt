@@ -1,5 +1,6 @@
 add_library(endgate_rtc STATIC
         certificate.cpp
+        description.cpp
         dtls.cpp
         ice.cpp
         stun.cpp
