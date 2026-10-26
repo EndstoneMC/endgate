@@ -306,9 +306,11 @@ std::optional<InternalPacket> ReliabilityLayer::insertIntoSplitPacketList(const 
             notify("split packet channels exceed MAX_SPLIT_PACKET_CHANNELS", true);
             return std::nullopt;
         }
-        channel = split_packet_channels_
-                      .emplace(header.split_packet_id, SplitPacketChannel{header.split_packet_count, 0, header, {}})
-                      .first;
+        channel =
+            split_packet_channels_
+                .emplace(header.split_packet_id,
+                         SplitPacketChannel{.split_packet_count = header.split_packet_count, .first_header = header})
+                .first;
     }
     auto &split = channel->second;
     if (header.split_packet_count != split.split_packet_count) {
@@ -400,7 +402,7 @@ void ReliabilityLayer::deliver(InternalPacket packet)
     constexpr std::uint64_t ordered_slot = 1048576;
     const std::uint64_t ordered_hole_count = (packet.ordering_index - heap_index_offsets_[channel]) & UINT24_MASK;
     const auto weight = ordered_hole_count * ordered_slot + (sequenced ? packet.sequencing_index : ordered_slot - 1);
-    heap.push_back({weight, std::move(packet)});
+    heap.push_back({.weight = weight, .packet = std::move(packet)});
     std::ranges::push_heap(heap, lighter);
 }
 
@@ -505,7 +507,8 @@ void ReliabilityLayer::splitPacket(InternalPacket packet)
 void ReliabilityLayer::pushOutgoing(InternalPacket packet)
 {
     const auto weight = getNextWeight(packet.priority);
-    outgoing_packet_buffer_[static_cast<std::size_t>(packet.priority)].push_back({weight, std::move(packet)});
+    outgoing_packet_buffer_[static_cast<std::size_t>(packet.priority)].push_back(
+        {.weight = weight, .packet = std::move(packet)});
 }
 
 std::deque<ReliabilityLayer::OutgoingPacket> *ReliabilityLayer::peekOutgoing()
@@ -608,7 +611,7 @@ void ReliabilityLayer::pushDatagram(TimePoint now)
 
     Writer writer{update_buffer_};
     header.encode(writer);
-    DatagramHistoryNode history{{}, now};
+    DatagramHistoryNode history{.time_sent = now};
     for (const auto *packet : datagram_packets_) {
         if (isReliable(packet->reliability)) {
             history.message_numbers.push_back(packet->reliable_message_number);
@@ -675,7 +678,7 @@ void ReliabilityLayer::update(TimePoint now)
     datagrams_this_update_ = 0;
     const auto transmission_bandwidth =
         congestion_manager_.getTransmissionBandwidth(unacknowledged_bytes_, datagram_header_.is_continuous_send);
-    const auto retransmission_bandwidth = congestion_manager_.getRetransmissionBandwidth(unacknowledged_bytes_);
+    const auto retransmission_bandwidth = CCRakNetSlidingWindow::getRetransmissionBandwidth(unacknowledged_bytes_);
 
     all_datagram_sizes_so_far_ = 0;
     if (retransmission_bandwidth > 0 || transmission_bandwidth > 0) {
@@ -731,8 +734,9 @@ void ReliabilityLayer::update(TimePoint now)
                 else {
                     if (packet.reliability == PacketReliability::UnreliableWithAckReceipt) {
                         unreliable_with_ack_receipt_history_.push_back(
-                            {congestion_manager_.getNextDatagramSequenceNumber(), packet.send_receipt_serial,
-                             now + congestion_manager_.getRtoForRetransmission()});
+                            {.datagram_number = congestion_manager_.getNextDatagramSequenceNumber(),
+                             .send_receipt_serial = packet.send_receipt_serial,
+                             .next_action_time = now + congestion_manager_.getRtoForRetransmission()});
                     }
                     unreliable_packets_this_update_.push_back(std::move(packet));
                     pushPacket(unreliable_packets_this_update_.back());

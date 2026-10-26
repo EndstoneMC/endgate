@@ -29,8 +29,8 @@ struct InternalPacket : FrameHeader {
     ByteBuf data;
     std::size_t header_length{0};
     std::uint8_t times_sent{0};
-    TimePoint creation_time{};
-    TimePoint next_action_time{};
+    TimePoint creation_time;
+    TimePoint next_action_time;
 };
 
 /**
