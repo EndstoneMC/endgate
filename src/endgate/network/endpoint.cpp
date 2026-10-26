@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <optional>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -31,11 +32,14 @@ std::string toString(const raknet::SystemAddress &address)
 
 void setDontFragment(asio::ip::udp::socket &socket, bool dont_fragment)
 {
-    const bool v4 = socket.local_endpoint().protocol() == asio::ip::udp::v4();
-    const int value =
-        dont_fragment ? (v4 ? IP_PMTUDISC_DO : IPV6_PMTUDISC_DO) : (v4 ? IP_PMTUDISC_DONT : IPV6_PMTUDISC_DONT);
-    ::setsockopt(socket.native_handle(), v4 ? IPPROTO_IP : IPPROTO_IPV6, v4 ? IP_MTU_DISCOVER : IPV6_MTU_DISCOVER,
-                 &value, sizeof(value));
+    asio::error_code ec;
+    if (socket.local_endpoint(ec).protocol() == asio::ip::udp::v4()) {
+        const int value = dont_fragment ? IP_PMTUDISC_DO : IP_PMTUDISC_DONT;
+        static_cast<void>(::setsockopt(socket.native_handle(), IPPROTO_IP, IP_MTU_DISCOVER, &value, sizeof(value)));
+        return;
+    }
+    const int value = dont_fragment ? IPV6_PMTUDISC_DO : IPV6_PMTUDISC_DONT;
+    static_cast<void>(::setsockopt(socket.native_handle(), IPPROTO_IPV6, IPV6_MTU_DISCOVER, &value, sizeof(value)));
 }
 
 }  // namespace
@@ -45,9 +49,17 @@ void setDontFragment(asio::ip::udp::socket &socket, bool dont_fragment)
  */
 class Endpoint::Session : public raknet::Connection::Listener, public std::enable_shared_from_this<Session> {
 public:
-    Session(Endpoint &endpoint, raknet::SystemAddress address, std::optional<asio::ip::udp::socket> socket)
-        : endpoint_(endpoint), address_(std::move(address)), key_(toString(address_)), socket_(std::move(socket)),
-          timer_(endpoint.strand_)
+    Session(Endpoint &endpoint, const raknet::SystemAddress &address, const raknet::OpenConnectionRequest2 &request,
+            std::uint16_t system_index, raknet::TimePoint now)
+        : endpoint_(endpoint), address_(address), key_(toString(address)), timer_(endpoint.strand_),
+          connection_(*this, endpoint.getConnectionConfiguration(), address, request, system_index, now)
+    {
+    }
+
+    Session(Endpoint &endpoint, const raknet::SystemAddress &address, asio::ip::udp::socket socket,
+            raknet::TimePoint now)
+        : endpoint_(endpoint), address_(address), key_(toString(address)), socket_(std::move(socket)),
+          timer_(endpoint.strand_), connection_(*this, endpoint.getConnectionConfiguration(), address, now)
     {
     }
 
@@ -99,7 +111,7 @@ public:
 
     void arm()
     {
-        const auto next = connection->nextTimeout();
+        const auto next = connection_.nextTimeout();
         if (!next) {
             if (armed_) {
                 timer_.cancel();
@@ -114,11 +126,11 @@ public:
         timer_.expires_at(*next);
         timer_.async_wait([weak = weak_from_this()](const asio::error_code &ec) {
             const auto session = weak.lock();
-            if (ec || !session || !session->connection) {
+            if (ec || !session) {
                 return;
             }
             session->armed_.reset();
-            session->connection->handleTimeout(raknet::Clock::now());
+            session->connection_.handleTimeout(raknet::Clock::now());
             session->arm();
         });
     }
@@ -129,17 +141,18 @@ public:
         armed_.reset();
         if (socket_) {
             asio::error_code ignored;
-            socket_->close(ignored);
+            std::ignore = socket_->close(ignored);
         }
     }
 
+    [[nodiscard]] raknet::Connection &getConnection() { return connection_; }
+    [[nodiscard]] const raknet::Connection &getConnection() const { return connection_; }
     [[nodiscard]] const raknet::SystemAddress &getAddress() const { return address_; }
     [[nodiscard]] const std::string &getKey() const { return key_; }
     [[nodiscard]] bool isActive() const { return active_; }
     [[nodiscard]] bool isBackend() const { return socket_.has_value(); }
-    [[nodiscard]] asio::ip::udp::socket &getSocket() { return *socket_; }
+    [[nodiscard]] asio::ip::udp::socket *getSocket() { return socket_ ? &*socket_ : nullptr; }
 
-    std::optional<raknet::Connection> connection;
     std::weak_ptr<Session> counterpart;
 
 private:
@@ -150,6 +163,7 @@ private:
     asio::steady_timer timer_;
     std::optional<raknet::TimePoint> armed_;
     bool active_{false};
+    raknet::Connection connection_;
 };
 
 Endpoint::Endpoint(ProxyServer &server, asio::io_context &io_context, asio::ip::udp::socket socket, std::uint64_t guid,
@@ -189,19 +203,23 @@ asio::awaitable<void> Endpoint::receive()
     }
 }
 
-asio::awaitable<void> Endpoint::receive(std::shared_ptr<Session> backend)
+asio::awaitable<void> Endpoint::receive(std::shared_ptr<Session> backend) const
 {
+    auto *socket = backend->getSocket();
+    if (socket == nullptr) {
+        co_return;
+    }
     std::array<std::byte, raknet::MAXIMUM_MTU_SIZE> buffer{};
     for (;;) {
         const auto [ec, size] =
-            co_await backend->getSocket().async_receive(asio::buffer(buffer), asio::as_tuple(asio::use_awaitable));
-        if (ec == asio::error::operation_aborted || !backend->getSocket().is_open() || closed_) {
+            co_await socket->async_receive(asio::buffer(buffer), asio::as_tuple(asio::use_awaitable));
+        if (ec == asio::error::operation_aborted || !socket->is_open() || closed_) {
             co_return;
         }
-        if (ec || size == 0 || backend->connection->isClosed()) {
+        if (ec || size == 0 || backend->getConnection().isClosed()) {
             continue;
         }
-        backend->connection->handleDatagram(std::span{buffer}.first(size), raknet::Clock::now());
+        backend->getConnection().handleDatagram(std::span{buffer}.first(size), raknet::Clock::now());
         backend->arm();
     }
 }
@@ -226,8 +244,8 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const raknet:
 
     if (const auto found = players_.find(sender); found != players_.end()) {
         const auto session = found->second;
-        if (!session->connection->isClosed()) {
-            session->connection->handleDatagram(datagram, now);
+        if (!session->getConnection().isClosed()) {
+            session->getConnection().handleDatagram(datagram, now);
             session->arm();
             return;
         }
@@ -251,10 +269,9 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const raknet:
         return;
     }
 
-    const auto session = std::make_shared<Session>(*this, sender, std::nullopt);
-    session->connection.emplace(*session, getConnectionConfiguration(), sender, *request, getFreeSystemIndex(), now);
+    const auto session = std::make_shared<Session>(*this, sender, *request, getFreeSystemIndex(), now);
     players_.emplace(sender, session);
-    session->connection->handleDatagram(datagram, now);
+    session->getConnection().handleDatagram(datagram, now);
     session->arm();
 }
 
@@ -262,8 +279,8 @@ bool Endpoint::allowIncomingConnections() const
 {
     const auto max_players = static_cast<std::size_t>(std::max(0, server_.getConfiguration().getShowMaxPlayers()));
     const auto connected =
-        std::ranges::count_if(players_, [](const auto &entry) { return entry.second->connection->isConnected(); });
-    return static_cast<std::size_t>(connected) < max_players;
+        std::ranges::count_if(players_, [](const auto &entry) { return entry.second->getConnection().isConnected(); });
+    return std::cmp_less(connected, max_players);
 }
 
 bool Endpoint::isGuidInUse(std::uint64_t guid) const
@@ -272,7 +289,7 @@ bool Endpoint::isGuidInUse(std::uint64_t guid) const
         return false;
     }
     const auto uses = [guid](const std::shared_ptr<Session> &session) {
-        return !session->connection->isClosed() && session->connection->getGuid() == guid;
+        return !session->getConnection().isClosed() && session->getConnection().getGuid() == guid;
     };
     return std::ranges::any_of(players_, [&uses](const auto &entry) { return uses(entry.second); }) ||
            std::ranges::any_of(backends_, uses);
@@ -282,7 +299,7 @@ std::uint16_t Endpoint::getFreeSystemIndex() const
 {
     std::vector<bool> used(players_.size() + 1);
     for (const auto &entry : players_) {
-        if (const auto index = entry.second->connection->getSystemIndex(); index < used.size()) {
+        if (const auto index = entry.second->getConnection().getSystemIndex(); index < used.size()) {
             used[index] = true;
         }
     }
@@ -342,14 +359,13 @@ void Endpoint::connectBackend(const std::shared_ptr<Session> &player)
         return;
     }
 
-    const auto backend = std::make_shared<Session>(*this, address, std::move(socket));
-    backend->connection.emplace(*backend, getConnectionConfiguration(), address, raknet::Clock::now());
+    const auto backend = std::make_shared<Session>(*this, address, std::move(socket), raknet::Clock::now());
     backend->counterpart = player;
     player->counterpart = backend;
     backends_.insert(backend);
     logger_.info("Opening backend {} for {}", entry->second, player->getKey());
     asio::co_spawn(strand_, receive(backend), asio::detached);
-    backend->connection->handleTimeout(raknet::Clock::now());
+    backend->getConnection().handleTimeout(raknet::Clock::now());
     backend->arm();
 }
 
@@ -361,8 +377,8 @@ void Endpoint::channelRead(Session &session, ByteBuf message)
         return;
     }
     logger_.debug("Forwarding {} bytes {} -> {}", message.length(), session.getKey(), counterpart->getKey());
-    counterpart->connection->send(std::move(message), raknet::PacketPriority::High,
-                                  raknet::PacketReliability::ReliableOrdered, 0, raknet::Clock::now());
+    counterpart->getConnection().send(std::move(message), raknet::PacketPriority::High,
+                                      raknet::PacketReliability::ReliableOrdered, 0, raknet::Clock::now());
     counterpart->arm();
 }
 
@@ -375,7 +391,7 @@ void Endpoint::channelInactive(Session &session, raknet::DisconnectReason reason
     if (const auto counterpart = session.counterpart.lock()) {
         session.counterpart.reset();
         counterpart->counterpart.reset();
-        counterpart->connection->close(true, raknet::Clock::now());
+        counterpart->getConnection().close(true, raknet::Clock::now());
         counterpart->arm();
     }
 
@@ -400,7 +416,7 @@ void Endpoint::close()
 {
     closed_ = true;
     asio::error_code ignored;
-    socket_.close(ignored);
+    std::ignore = socket_.close(ignored);
     for (const auto &entry : players_) {
         entry.second->shutdown();
     }

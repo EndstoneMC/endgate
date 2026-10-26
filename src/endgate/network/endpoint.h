@@ -51,7 +51,7 @@ private:
     class Session;
 
     asio::awaitable<void> receive();
-    asio::awaitable<void> receive(std::shared_ptr<Session> backend);
+    asio::awaitable<void> receive(std::shared_ptr<Session> backend) const;
 
     void handleDatagram(std::span<const std::byte> datagram, const raknet::SystemAddress &sender);
     void sendTo(const raknet::SystemAddress &address, std::span<const std::byte> datagram) override;
