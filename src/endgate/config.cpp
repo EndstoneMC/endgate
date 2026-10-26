@@ -25,34 +25,25 @@ struct Advanced {
     };
 };
 
-struct NetherNet {
-    std::vector<std::string> public_addresses;
-    std::string tls_certificate;
-    std::string tls_certificate_key;
-
-    struct glaze {
-        using T = NetherNet;
-        static constexpr auto value = glz::object("public-addresses", &T::public_addresses, "tls-certificate",
-                                                  &T::tls_certificate, "tls-certificate-key", &T::tls_certificate_key);
-    };
-};
-
 struct Document {
     std::string config_version;
     std::string bind;
+    std::vector<std::string> public_addresses;
+    std::string tls_certificate;
+    std::string tls_certificate_key;
     std::string motd;
     int show_max_players{};
     bool online_mode{};
     std::map<std::string, std::variant<std::string, std::vector<std::string>>> servers;
-    NetherNet nethernet;
     Advanced advanced;
 
     struct glaze {
         using T = Document;
         static constexpr auto value =
-            glz::object("config-version", &T::config_version, "bind", &T::bind, "motd", &T::motd, "show-max-players",
-                        &T::show_max_players, "online-mode", &T::online_mode, "servers", &T::servers, "nethernet",
-                        &T::nethernet, "advanced", &T::advanced);
+            glz::object("config-version", &T::config_version, "bind", &T::bind, "public-addresses",
+                        &T::public_addresses, "tls-certificate", &T::tls_certificate, "tls-certificate-key",
+                        &T::tls_certificate_key, "motd", &T::motd, "show-max-players", &T::show_max_players,
+                        "online-mode", &T::online_mode, "servers", &T::servers, "advanced", &T::advanced);
     };
 };
 }  // namespace
@@ -104,9 +95,9 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
         }
     }
     config.compression_level_ = document.advanced.compression_level;
-    config.nethernet_public_addresses_ = document.nethernet.public_addresses;
-    config.nethernet_tls_certificate_ = document.nethernet.tls_certificate;
-    config.nethernet_tls_certificate_key_ = document.nethernet.tls_certificate_key;
+    config.public_addresses_ = document.public_addresses;
+    config.tls_certificate_ = document.tls_certificate;
+    config.tls_certificate_key_ = document.tls_certificate_key;
     return config;
 }
 
@@ -123,16 +114,16 @@ bool ProxyConfig::validate() const
         logger.warn("ALL packets going through the proxy will be uncompressed. This will increase bandwidth usage.");
     }
 
-    for (const auto &address : nethernet_public_addresses_) {
+    for (const auto &address : public_addresses_) {
         asio::error_code ec;
         asio::ip::make_address(address, ec);
         if (ec) {
-            logger.error("Invalid NetherNet public address {}", address);
+            logger.error("Invalid public address {}", address);
             valid = false;
         }
     }
-    if (nethernet_tls_certificate_.empty() != nethernet_tls_certificate_key_.empty()) {
-        logger.error("NetherNet over HTTPS needs both tls-certificate and tls-certificate-key");
+    if (tls_certificate_.empty() != tls_certificate_key_.empty()) {
+        logger.error("HTTPS needs both tls-certificate and tls-certificate-key");
         valid = false;
     }
     return valid;
@@ -173,19 +164,19 @@ int ProxyConfig::getCompressionLevel() const
     return compression_level_;
 }
 
-const std::vector<std::string> &ProxyConfig::getNetherNetPublicAddresses() const
+const std::vector<std::string> &ProxyConfig::getPublicAddresses() const
 {
-    return nethernet_public_addresses_;
+    return public_addresses_;
 }
 
-const std::filesystem::path &ProxyConfig::getNetherNetTlsCertificate() const
+const std::filesystem::path &ProxyConfig::getTlsCertificate() const
 {
-    return nethernet_tls_certificate_;
+    return tls_certificate_;
 }
 
-const std::filesystem::path &ProxyConfig::getNetherNetTlsCertificateKey() const
+const std::filesystem::path &ProxyConfig::getTlsCertificateKey() const
 {
-    return nethernet_tls_certificate_key_;
+    return tls_certificate_key_;
 }
 
 }  // namespace endgate
