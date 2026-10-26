@@ -194,7 +194,7 @@ private:
     std::optional<Clock::time_point> t3_;
 
     std::uint64_t last_forward_tsn_{0};
-    Clock::time_point forward_tsn_retry_at_{};
+    Clock::time_point forward_tsn_retry_at_;
 };
 
 }  // namespace endgate::rtc::sctp

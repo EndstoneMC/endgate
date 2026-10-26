@@ -16,9 +16,8 @@ std::size_t chunkSize(std::size_t payload)
 }  // namespace
 
 Sender::Sender(const Config &config, std::uint32_t initial_tsn, std::uint32_t peer_window)
-    : config_(config), cumulative_ack_((std::uint64_t{1} << 32U) + static_cast<std::uint32_t>(initial_tsn - 1)),
-      peer_window_(peer_window), cwnd_(10 * config.mtu), ssthresh_(peer_window), srtt_(config.rto_initial),
-      rto_(config.rto_initial)
+    : config_(config), cumulative_ack_((std::uint64_t{1} << 32U) + (initial_tsn - 1)), peer_window_(peer_window),
+      cwnd_(10 * config.mtu), ssthresh_(peer_window), srtt_(config.rto_initial), rto_(config.rto_initial)
 {
 }
 
@@ -274,10 +273,10 @@ bool Sender::addData(PacketBuilder &builder, Clock::time_point now)
         if (message.offset == 0) {
             message.ssn = message.unordered ? 0 : stream.next_ssn++;
         }
-        const auto flags = static_cast<std::uint8_t>((message.offset == 0 ? DataChunk::BeginningFlag : 0) |
-                                                     (fragment == remaining ? DataChunk::EndFlag : 0) |
-                                                     (message.unordered ? DataChunk::UnorderedFlag : 0) |
-                                                     (cwnd_ < 10 * config_.mtu ? DataChunk::ImmediateFlag : 0));
+        const auto flags = static_cast<std::uint8_t>((message.offset == 0 ? DataChunk::BeginningFlag : 0U) |
+                                                     (fragment == remaining ? DataChunk::EndFlag : 0U) |
+                                                     (message.unordered ? DataChunk::UnorderedFlag : 0U) |
+                                                     (cwnd_ < 10 * config_.mtu ? DataChunk::ImmediateFlag : 0U));
         auto payload = message.payload.retainedSlice(message.offset, fragment);
         builder.addData({.tsn = static_cast<std::uint32_t>(nextTsn()),
                          .stream = stream_id,

@@ -107,7 +107,7 @@ void Association::handleTimeout(Clock::time_point now)
             sendCookieEcho();
         }
     }
-    if (t2_ && now >= t2_->at) {
+    if (t2_ && tcb_ && now >= t2_->at) {
         if (++t2_->count > config_.max_retransmissions) {
             sendStandalone(tcb_->peer_tag, ChunkType::Abort, 0, cause(CauseCode::UserInitiatedAbort));
             close(CloseReason::Timeout);
@@ -136,18 +136,19 @@ void Association::handleTimeout(Clock::time_point now)
         countError();
     }
     if (tcb_ && tcb_->heartbeat_at && now >= *tcb_->heartbeat_at) {
-        if (!tcb_->heartbeat_timeout && state_ == State::Established) {
-            tcb_->heartbeat_nonce = random<std::uint64_t>();
+        auto &tcb = *tcb_;
+        if (!tcb.heartbeat_timeout && state_ == State::Established) {
+            tcb.heartbeat_nonce = random<std::uint64_t>();
             std::vector<std::byte> info;
             ByteWriter info_writer(info);
             info_writer.write64(static_cast<std::uint64_t>(now.time_since_epoch().count()));
-            info_writer.write64(tcb_->heartbeat_nonce);
+            info_writer.write64(tcb.heartbeat_nonce);
             std::vector<std::byte> value;
             ByteWriter(value).writeTlv(static_cast<std::uint16_t>(ParameterType::HeartbeatInfo), info);
             queue(ChunkType::Heartbeat, 0, std::move(value));
-            tcb_->heartbeat_timeout = now + tcb_->sender.rto();
+            tcb.heartbeat_timeout = now + tcb.sender.rto();
         }
-        tcb_->heartbeat_at = now + config_.heartbeat_interval + tcb_->sender.rto();
+        tcb.heartbeat_at = now + config_.heartbeat_interval + tcb.sender.rto();
     }
     if (tcb_ && tcb_->request && tcb_->reconfig_at && now >= *tcb_->reconfig_at) {
         if (!std::exchange(tcb_->request->in_progress, false)) {
@@ -218,7 +219,7 @@ void Association::shutdown(Clock::time_point now)
     if (state_ == State::Closed || state_ == State::CookieWait) {
         close(CloseReason::Shutdown);
     }
-    else if (state_ == State::CookieEchoed) {
+    else if (state_ == State::CookieEchoed && tcb_) {
         sendStandalone(tcb_->peer_tag, ChunkType::Abort, 0, cause(CauseCode::UserInitiatedAbort));
         close(CloseReason::Shutdown);
     }
@@ -230,7 +231,7 @@ void Association::shutdown(Clock::time_point now)
     deliver();
 }
 
-void Association::abort(Clock::time_point)
+void Association::abort([[maybe_unused]] Clock::time_point now)
 {
     if (terminated_) {
         return;
@@ -244,7 +245,11 @@ void Association::abort(Clock::time_point)
 
 Association::InitParameters Association::readParameters(std::span<const Tlv> parameters)
 {
-    InitParameters result{.state_cookie = std::nullopt, .capabilities = {false, false}, .unrecognized = {}};
+    InitParameters result{
+        .state_cookie = std::nullopt,
+        .capabilities = {.partial_reliability = false, .reconfig = false},
+        .unrecognized = {},
+    };
     for (const auto &parameter : parameters) {
         switch (static_cast<ParameterType>(parameter.type)) {
         case ParameterType::StateCookie:
@@ -279,7 +284,7 @@ Association::InitParameters Association::readParameters(std::span<const Tlv> par
     return result;
 }
 
-void Association::writeCapabilities(ByteWriter &writer) const
+void Association::writeCapabilities(ByteWriter &writer)
 {
     constexpr std::array extensions{std::byte{static_cast<std::uint8_t>(ChunkType::ReConfig)},
                                     std::byte{static_cast<std::uint8_t>(ChunkType::ForwardTsn)}};
@@ -296,7 +301,10 @@ bool Association::verify(const Packet &packet) const
     if (has_init) {
         return packet.chunks.size() == 1 && tag == 0;
     }
-    const auto local = tcb_ ? tcb_->local_tag : (state_ == State::CookieWait ? init_tag_ : 0);
+    auto local = state_ == State::CookieWait ? init_tag_ : 0;
+    if (tcb_) {
+        local = tcb_->local_tag;
+    }
     switch (static_cast<ChunkType>(first.type)) {
     case ChunkType::Abort:
     case ChunkType::ShutdownComplete:
@@ -459,7 +467,7 @@ void Association::handleInit(const Chunk &chunk, Clock::time_point now)
         local_tag = init_tag_;
         local_tsn = init_tsn_;
     }
-    else if (state_ == State::CookieEchoed) {
+    else if (state_ == State::CookieEchoed && tcb_) {
         local_tag = tcb_->local_tag;
         local_tsn = tcb_->local_initial_tsn;
         tie_tag = tcb_->tie_tag;
@@ -496,7 +504,10 @@ void Association::handleInit(const Chunk &chunk, Clock::time_point now)
         writer.writeTlv(static_cast<std::uint16_t>(ParameterType::UnrecognizedParameter), unrecognized);
     }
 
-    PacketBuilder builder(buffer_, {config_.local_port, config_.remote_port, init->initiate_tag},
+    PacketBuilder builder(buffer_,
+                          {.source_port = config_.local_port,
+                           .destination_port = config_.remote_port,
+                           .verification_tag = init->initiate_tag},
                           std::numeric_limits<std::uint16_t>::max());
     builder.addInit(ChunkType::InitAck,
                     {.initiate_tag = local_tag,
@@ -576,7 +587,11 @@ bool Association::handleCookieEcho(const Packet &packet, const Chunk &chunk, Clo
     }
     if (!local_matches && !peer_matches && cookie.tie_tag != 0 && cookie.tie_tag == tcb_->tie_tag) {
         if (state_ == State::ShutdownAckSent) {
-            PacketBuilder builder(buffer_, {config_.local_port, config_.remote_port, cookie.peer_tag}, config_.mtu);
+            PacketBuilder builder(buffer_,
+                                  {.source_port = config_.local_port,
+                                   .destination_port = config_.remote_port,
+                                   .verification_tag = cookie.peer_tag},
+                                  config_.mtu);
             builder.addChunk(ChunkType::ShutdownAck, 0, {});
             builder.addChunk(ChunkType::Error, 0, cause(CauseCode::CookieReceivedWhileShuttingDown));
             listener_.sendPacket(builder.build());
@@ -711,7 +726,7 @@ void Association::handleShutdown(Clock::time_point now)
 
 void Association::handleShutdownAck(const Packet &packet)
 {
-    if (state_ == State::ShutdownSent || state_ == State::ShutdownAckSent) {
+    if (tcb_ && (state_ == State::ShutdownSent || state_ == State::ShutdownAckSent)) {
         sendStandalone(tcb_->peer_tag, ChunkType::ShutdownComplete, 0, {});
         close(CloseReason::Shutdown);
     }
@@ -850,7 +865,7 @@ void Association::handleReconfig(const Chunk &chunk, Clock::time_point now)
     }
 }
 
-bool Association::handleUnknown(const Chunk &chunk, std::vector<std::byte> &unrecognized)
+bool Association::handleUnknown(const Chunk &chunk, std::vector<std::byte> &unrecognized) const
 {
     const auto action = chunk.type >> 6U;
     if ((action == 1 || action == 3) && CommonHeader::Size + 2 * Chunk::HeaderSize + padded(unrecognized.size()) +
@@ -870,9 +885,10 @@ bool Association::handleUnknown(const Chunk &chunk, std::vector<std::byte> &unre
 void Association::establish(const StateCookie &cookie, Clock::time_point now)
 {
     tcb_.reset();
-    tcb_.emplace(makeTcb(cookie.local_tag, cookie.local_initial_tsn, cookie.peer_tag, cookie.peer_initial_tsn,
-                         cookie.peer_a_rwnd, cookie.peer_outbound_streams, cookie.peer_inbound_streams,
-                         {cookie.peer_supports_forward_tsn, cookie.peer_supports_reconfig}));
+    tcb_.emplace(
+        makeTcb(cookie.local_tag, cookie.local_initial_tsn, cookie.peer_tag, cookie.peer_initial_tsn,
+                cookie.peer_a_rwnd, cookie.peer_outbound_streams, cookie.peer_inbound_streams,
+                {.partial_reliability = cookie.peer_supports_forward_tsn, .reconfig = cookie.peer_supports_reconfig}));
     state_ = State::Established;
     t1_.reset();
     t2_.reset();
@@ -888,7 +904,7 @@ void Association::becomeEstablished(Clock::time_point now)
     state_ = State::Established;
     t1_.reset();
     cookie_echo_.clear();
-    if (config_.heartbeat_interval > Clock::duration::zero()) {
+    if (tcb_ && config_.heartbeat_interval > Clock::duration::zero()) {
         tcb_->heartbeat_at = now + config_.heartbeat_interval + tcb_->sender.rto();
     }
     events_.emplace_back(Established{});
@@ -936,7 +952,9 @@ void Association::sendInit()
     std::vector<std::byte> parameters;
     ByteWriter writer(parameters);
     writeCapabilities(writer);
-    PacketBuilder builder(buffer_, {config_.local_port, config_.remote_port, 0}, config_.mtu);
+    PacketBuilder builder(
+        buffer_, {.source_port = config_.local_port, .destination_port = config_.remote_port, .verification_tag = 0},
+        config_.mtu);
     builder.addInit(ChunkType::Init,
                     {.initiate_tag = init_tag_,
                      .a_rwnd = static_cast<std::uint32_t>(config_.receive_window),
@@ -950,13 +968,19 @@ void Association::sendInit()
 
 void Association::sendCookieEcho()
 {
+    if (!tcb_) {
+        return;
+    }
     sendStandalone(tcb_->peer_tag, ChunkType::CookieEcho, 0, cookie_echo_);
 }
 
 void Association::sendStandalone(std::uint32_t verification_tag, ChunkType type, std::uint8_t flags,
                                  std::span<const std::byte> value)
 {
-    PacketBuilder builder(buffer_, {config_.local_port, config_.remote_port, verification_tag},
+    PacketBuilder builder(buffer_,
+                          {.source_port = config_.local_port,
+                           .destination_port = config_.remote_port,
+                           .verification_tag = verification_tag},
                           std::numeric_limits<std::uint16_t>::max());
     builder.addChunk(type, flags, value);
     listener_.sendPacket(builder.build());
@@ -969,6 +993,9 @@ void Association::queue(ChunkType type, std::uint8_t flags, std::vector<std::byt
 
 void Association::queueResetRequest()
 {
+    if (!tcb_ || !tcb_->request) {
+        return;
+    }
     std::vector<std::byte> request;
     ByteWriter request_writer(request);
     request_writer.write32(tcb_->request->sequence);
@@ -993,24 +1020,29 @@ void Association::transmit(Clock::time_point now)
     }
     const auto sends_data =
         state_ == State::Established || state_ == State::ShutdownPending || state_ == State::ShutdownReceived;
-    auto &sender = tcb_->sender;
-    auto &receiver = tcb_->receiver;
+    auto &tcb = *tcb_;
+    auto &sender = tcb.sender;
+    auto &receiver = tcb.receiver;
     for (unsigned packet = 0;; ++packet) {
-        if (tcb_->reconfig && !tcb_->request) {
+        if (tcb.reconfig && !tcb.request) {
             auto streams = sender.takeStreamsReadyToReset();
             if (!streams.empty()) {
-                tcb_->request = ResetRequest{
-                    .sequence = tcb_->next_request_sequence++,
+                tcb.request = ResetRequest{
+                    .sequence = tcb.next_request_sequence++,
                     .last_assigned_tsn = sender.lastAssignedTsn(),
                     .streams = std::move(streams),
                 };
-                tcb_->reconfig_backoff = sender.rto();
-                tcb_->reconfig_at = now + tcb_->reconfig_backoff;
+                tcb.reconfig_backoff = sender.rto();
+                tcb.reconfig_at = now + tcb.reconfig_backoff;
                 queueResetRequest();
             }
         }
 
-        PacketBuilder builder(buffer_, {config_.local_port, config_.remote_port, tcb_->peer_tag}, config_.mtu);
+        PacketBuilder builder(buffer_,
+                              {.source_port = config_.local_port,
+                               .destination_port = config_.remote_port,
+                               .verification_tag = tcb.peer_tag},
+                              config_.mtu);
         while (!control_.empty() &&
                (builder.empty() || Chunk::HeaderSize + padded(control_.front().value.size()) <= builder.remaining())) {
             const auto &front = control_.front();
@@ -1036,8 +1068,8 @@ void Association::transmit(Clock::time_point now)
             break;
         }
         listener_.sendPacket(builder.build());
-        if (data && tcb_->heartbeat_at) {
-            tcb_->heartbeat_at = now + config_.heartbeat_interval + sender.rto();
+        if (data && tcb.heartbeat_at) {
+            tcb.heartbeat_at = now + config_.heartbeat_interval + sender.rto();
         }
         if (!data && control_.empty() && !receiver.sackRequired()) {
             break;
@@ -1060,6 +1092,9 @@ void Association::maybeFinishShutdown(Clock::time_point now)
 
 void Association::sendShutdown(Clock::time_point now)
 {
+    if (!tcb_) {
+        return;
+    }
     std::vector<std::byte> value;
     ByteWriter(value).write32(tcb_->receiver.cumulativeTsn());
     queue(ChunkType::Shutdown, 0, std::move(value));
@@ -1069,6 +1104,9 @@ void Association::sendShutdown(Clock::time_point now)
 
 void Association::sendShutdownAck(Clock::time_point now)
 {
+    if (!tcb_) {
+        return;
+    }
     queue(ChunkType::ShutdownAck, 0, {});
     state_ = State::ShutdownAckSent;
     t2_ = Retry{.at = now + tcb_->sender.rto(), .backoff = tcb_->sender.rto(), .count = t2_ ? t2_->count : 0};
@@ -1076,7 +1114,7 @@ void Association::sendShutdownAck(Clock::time_point now)
 
 void Association::countError()
 {
-    if (++tcb_->errors > config_.max_retransmissions) {
+    if (tcb_ && ++tcb_->errors > config_.max_retransmissions) {
         sendStandalone(tcb_->peer_tag, ChunkType::Abort, 0, cause(CauseCode::UserInitiatedAbort));
         close(CloseReason::Timeout);
     }
@@ -1115,7 +1153,7 @@ void Association::deliver()
         auto event = std::move(events_.front());
         events_.pop_front();
         std::visit(
-            [&](auto &&value) {
+            [&](auto &value) {
                 using T = std::decay_t<decltype(value)>;
                 if constexpr (std::is_same_v<T, Established>) {
                     listener_.onEstablished();

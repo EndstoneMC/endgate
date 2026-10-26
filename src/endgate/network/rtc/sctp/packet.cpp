@@ -10,8 +10,8 @@ namespace {
 
 std::uint16_t load16(std::span<const std::byte> data, std::size_t offset)
 {
-    return static_cast<std::uint16_t>(std::to_integer<std::uint16_t>(data[offset]) << 8U |
-                                      std::to_integer<std::uint16_t>(data[offset + 1]));
+    return static_cast<std::uint16_t>(std::to_integer<unsigned>(data[offset]) << 8U |
+                                      std::to_integer<unsigned>(data[offset + 1]));
 }
 
 std::uint32_t load32(std::span<const std::byte> data, std::size_t offset)

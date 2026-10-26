@@ -24,7 +24,7 @@ std::size_t charge(const ForwardTsnChunk &chunk)
 }  // namespace
 
 Receiver::Receiver(const Config &config, std::uint32_t peer_initial_tsn)
-    : config_(config), cumulative_((std::uint64_t{1} << 32U) + static_cast<std::uint32_t>(peer_initial_tsn - 1))
+    : config_(config), cumulative_((std::uint64_t{1} << 32U) + (peer_initial_tsn - 1))
 {
 }
 

@@ -201,10 +201,10 @@ private:
     };
 
     static InitParameters readParameters(std::span<const Tlv> parameters);
-    void writeCapabilities(ByteWriter &writer) const;
+    static void writeCapabilities(ByteWriter &writer);
 
     void dispatch(const Packet &packet, Clock::time_point now);
-    bool verify(const Packet &packet) const;
+    [[nodiscard]] bool verify(const Packet &packet) const;
     void handleInit(const Chunk &chunk, Clock::time_point now);
     void handleInitAck(const Chunk &chunk, Clock::time_point now);
     bool handleCookieEcho(const Packet &packet, const Chunk &chunk, Clock::time_point now);
@@ -216,7 +216,7 @@ private:
     void handleShutdownAck(const Packet &packet);
     void handleForwardTsn(const Chunk &chunk, std::vector<Message> &delivered);
     void handleReconfig(const Chunk &chunk, Clock::time_point now);
-    bool handleUnknown(const Chunk &chunk, std::vector<std::byte> &unrecognized);
+    bool handleUnknown(const Chunk &chunk, std::vector<std::byte> &unrecognized) const;
 
     void establish(const StateCookie &cookie, Clock::time_point now);
     void becomeEstablished(Clock::time_point now);

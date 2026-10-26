@@ -121,7 +121,7 @@ private:
     std::map<std::uint16_t, Channel> channels_;
     std::optional<std::uint16_t> notifying_;
     bool finish_after_notify_{false};
-    Clock::time_point now_{};
+    Clock::time_point now_;
     sctp::Association association_;
 };
 

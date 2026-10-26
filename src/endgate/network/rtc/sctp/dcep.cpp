@@ -22,8 +22,8 @@ std::optional<DataChannelOpen> DataChannelOpen::parse(std::span<const std::byte>
         return std::nullopt;
     }
     const auto load16 = [&](std::size_t offset) {
-        return static_cast<std::uint16_t>(std::to_integer<std::uint16_t>(message[offset]) << 8U |
-                                          std::to_integer<std::uint16_t>(message[offset + 1]));
+        return static_cast<std::uint16_t>(std::to_integer<unsigned>(message[offset]) << 8U |
+                                          std::to_integer<unsigned>(message[offset + 1]));
     };
     const std::size_t label_length = load16(8);
     const std::size_t protocol_length = load16(10);
@@ -73,7 +73,7 @@ std::optional<Reliability> DataChannelOpen::reliability() const
     Reliability result{.unordered = (channel_type & UnorderedBit) != 0,
                        .max_retransmits = std::nullopt,
                        .max_packet_life_time = std::nullopt};
-    switch (channel_type & ~UnorderedBit) {
+    switch (channel_type & ~unsigned{UnorderedBit}) {
     case Reliable:
         return result;
     case PartialReliableRexmit:
