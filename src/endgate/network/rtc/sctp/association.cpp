@@ -325,6 +325,8 @@ void Association::dispatch(const Packet &packet, Clock::time_point now)
     std::vector<std::byte> unrecognized;
     auto data_seen = false;
     const auto cookie_first = packet.chunks.front().type == static_cast<std::uint8_t>(ChunkType::CookieEcho);
+    const auto last_sack =
+        std::ranges::find_last(packet.chunks, static_cast<std::uint8_t>(ChunkType::Sack), &Chunk::type);
 
     for (std::size_t index = 0; index < packet.chunks.size() && !terminated_; ++index) {
         const auto &chunk = packet.chunks[index];
@@ -344,7 +346,9 @@ void Association::dispatch(const Packet &packet, Clock::time_point now)
             handleInitAck(chunk, now);
             break;
         case ChunkType::Sack:
-            handleSack(chunk, now);
+            if (&chunk == &*last_sack.begin()) {
+                handleSack(chunk, now);
+            }
             break;
         case ChunkType::Heartbeat:
             if (tcb_) {

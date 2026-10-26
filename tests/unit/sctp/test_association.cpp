@@ -506,6 +506,41 @@ TEST(Association, RecognisesRestartedPeer)
     EXPECT_EQ(text(network.endpoint_b.messages[0].payload), "again");
 }
 
+TEST(Association, HonoursOnlyTheLastSackInAPacket)
+{
+    Network network;
+    network.a->connect(network.now);
+    ASSERT_TRUE(network.runUntil([&] { return established(network); }, 1s));
+    network.run(1s);
+    std::vector<std::uint32_t> tsns;
+    std::uint32_t tag = 0;
+    network.filter = [&](std::span<const std::byte> packet, bool to_b) {
+        const auto parsed = Packet::parse(packet);
+        if (!to_b) {
+            tag = parsed->header.verification_tag;
+            return false;
+        }
+        for (const auto &chunk : parsed->chunks) {
+            if (const auto data = chunk.type == 0 ? DataChunk::parse(chunk) : std::nullopt) {
+                tsns.push_back(data->tsn);
+            }
+        }
+        return true;
+    };
+    ASSERT_TRUE(network.a->send(0, 51, bufferOf("one"), {}, network.now));
+    ASSERT_TRUE(network.a->send(0, 51, bufferOf("two"), {}, network.now));
+    network.run(100ms);
+    ASSERT_EQ(tsns.size(), 2U);
+    ASSERT_NE(tag, 0U);
+
+    std::vector<std::byte> buffer;
+    PacketBuilder builder(buffer, {.source_port = 5000, .destination_port = 5000, .verification_tag = tag}, 1200);
+    builder.addSack({.cumulative_tsn_ack = tsns[1], .a_rwnd = 100000, .gap_blocks = {}, .duplicate_tsns = {}});
+    builder.addSack({.cumulative_tsn_ack = tsns[0], .a_rwnd = 100000, .gap_blocks = {}, .duplicate_tsns = {}});
+    network.a->handlePacket(builder.build(), network.now);
+    EXPECT_EQ(network.a->sender()->outstandingChunks(), 1U);
+}
+
 TEST(Association, ForgetsItsShutdownWhenThePeerRestarts)
 {
     Network network;
