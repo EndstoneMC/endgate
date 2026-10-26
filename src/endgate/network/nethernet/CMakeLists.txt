@@ -2,6 +2,7 @@ add_library(endgate_nethernet STATIC
         candidates.cpp
         framing.cpp
         identity.cpp
+        manager.cpp
         session.cpp
         signaling.cpp
 )
