@@ -202,13 +202,12 @@ private:
     static InitParameters readParameters(std::span<const Tlv> parameters);
     void writeCapabilities(ByteWriter &writer) const;
 
-    void dispatch(const Packet &packet, std::span<const std::byte> data, Clock::time_point now);
+    void dispatch(const Packet &packet, Clock::time_point now);
     bool verify(const Packet &packet) const;
     void handleInit(const Chunk &chunk, Clock::time_point now);
     void handleInitAck(const Chunk &chunk, Clock::time_point now);
     bool handleCookieEcho(const Packet &packet, const Chunk &chunk, Clock::time_point now);
-    void handleData(const Chunk &chunk, std::span<const std::byte> data, std::optional<ByteBuf> &copy,
-                    std::vector<Message> &delivered);
+    void handleData(const Chunk &chunk, std::vector<Message> &delivered);
     void handleSack(const Chunk &chunk, Clock::time_point now);
     void handleHeartbeatAck(const Chunk &chunk, Clock::time_point now);
     void handleError(const Chunk &chunk);

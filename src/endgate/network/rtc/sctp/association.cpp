@@ -75,7 +75,7 @@ void Association::handlePacket(std::span<const std::byte> data, Clock::time_poin
         ++dropped_packets_;
         return;
     }
-    dispatch(*packet, data, now);
+    dispatch(*packet, now);
     if (tcb_) {
         tcb_->receiver.endPacket(now, std::min(config_.delayed_ack_timeout, tcb_->sender.rto() / 2));
         if (const auto failure = tcb_->receiver.failure()) {
@@ -319,9 +319,8 @@ bool Association::verify(const Packet &packet) const
     return local != 0 && tag == local;
 }
 
-void Association::dispatch(const Packet &packet, std::span<const std::byte> data, Clock::time_point now)
+void Association::dispatch(const Packet &packet, Clock::time_point now)
 {
-    std::optional<ByteBuf> copy;
     std::vector<Message> delivered;
     std::vector<std::byte> unrecognized;
     auto data_seen = false;
@@ -336,7 +335,7 @@ void Association::dispatch(const Packet &packet, std::span<const std::byte> data
         switch (static_cast<ChunkType>(chunk.type)) {
         case ChunkType::Data:
             data_seen = true;
-            handleData(chunk, data, copy, delivered);
+            handleData(chunk, delivered);
             break;
         case ChunkType::Init:
             handleInit(chunk, now);
@@ -604,8 +603,7 @@ bool Association::handleCookieEcho(const Packet &packet, const Chunk &chunk, Clo
     return true;
 }
 
-void Association::handleData(const Chunk &chunk, std::span<const std::byte> data, std::optional<ByteBuf> &copy,
-                             std::vector<Message> &delivered)
+void Association::handleData(const Chunk &chunk, std::vector<Message> &delivered)
 {
     if (!tcb_) {
         return;
@@ -630,11 +628,7 @@ void Association::handleData(const Chunk &chunk, std::span<const std::byte> data
         queue(ChunkType::Error, 0, cause(CauseCode::InvalidStreamIdentifier, stream));
         return;
     }
-    if (!copy) {
-        copy = ByteBuf::copyBuffer(data);
-    }
-    const auto offset = static_cast<std::size_t>(header->payload.data() - data.data());
-    tcb_->receiver.receive(*header, copy->retainedSlice(offset, header->payload.size()), delivered);
+    tcb_->receiver.receive(*header, ByteBuf::copyBuffer(header->payload), delivered);
 }
 
 void Association::handleSack(const Chunk &chunk, Clock::time_point now)
