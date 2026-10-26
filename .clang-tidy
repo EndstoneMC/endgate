@@ -23,8 +23,9 @@ Checks: >
   -readability-function-cognitive-complexity,
   -readability-magic-numbers,
   -readability-math-missing-parentheses,
-  -readability-named-parameter
-  -readability-simplify-boolean-expr
+  -readability-named-parameter,
+  -readability-simplify-boolean-expr,
+  -portability-avoid-pragma-once
 
 WarningsAsErrors: "*"
 HeaderFilterRegex: "src/.*"
@@ -37,6 +38,7 @@ CheckOptions:
   readability-identifier-naming.AbstractClassCase: CamelCase
   readability-identifier-naming.ClassCase: CamelCase
   readability-identifier-naming.ClassConstantCase: UPPER_CASE
+  readability-identifier-naming.ClassConstantIgnoredRegexp: '^value$'
   readability-identifier-naming.GlobalConstantCase: UPPER_CASE
   readability-identifier-naming.ClassMemberCase: lower_case
   readability-identifier-naming.ClassMethodCase: camelBack
@@ -73,6 +75,7 @@ CheckOptions:
   readability-identifier-naming.StaticConstantCase: lower_case
   readability-identifier-naming.StaticVariableCase: lower_case
   readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.StructIgnoredRegexp: '^glaze$'
   readability-identifier-naming.TemplateParameterCase: CamelCase
   readability-identifier-naming.TemplateTemplateParameterCase: CamelCase
   readability-identifier-naming.TypeAliasCase: CamelCase
