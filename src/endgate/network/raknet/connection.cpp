@@ -222,6 +222,9 @@ void Connection::handleMessage(ByteBuf message, TimePoint now)
             parseConnectionRequestPacket(bytes, now);
             return;
         }
+        if (reliability_layer_->isOutgoingDataWaiting()) {
+            return;
+        }
         const auto request = ConnectionRequest::decode(bytes);
         onConnectionRequest(request ? request->send_ping_time : 0, now);
         return;
