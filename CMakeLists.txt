@@ -21,21 +21,6 @@ find_package(GTest REQUIRED)
 
 enable_testing()
 
-add_library(endgate_legacy_raknet STATIC
-        src/endgate/network/legacy/raknet/RakPeer.cpp
-        src/endgate/network/legacy/raknet/ReliabilityLayer.cpp
-        src/endgate/network/legacy/raknet/CCRakNetSlidingWindow.cpp
-        src/endgate/network/legacy/raknet/BitStream.cpp
-        src/endgate/network/legacy/raknet/GetTime.cpp
-        src/endgate/network/legacy/raknet/RakMemoryOverride.cpp
-        src/endgate/network/legacy/raknet/RakNetTypes.cpp
-)
-
-target_include_directories(endgate_legacy_raknet PUBLIC src/endgate/network/legacy/raknet PRIVATE src)
-target_compile_definitions(endgate_legacy_raknet PRIVATE _RAKNET_LIB)
-target_link_libraries(endgate_legacy_raknet PRIVATE asio::asio spdlog::spdlog)
-target_compile_options(endgate_legacy_raknet PRIVATE -w)
-
 add_subdirectory(src/endgate/network/raknet)
 add_subdirectory(src/endgate/network/rtc)
 add_subdirectory(src/endgate/network/rtc/sctp)
@@ -66,7 +51,7 @@ target_include_directories(endgate PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}/gener
 target_compile_definitions(endgate PRIVATE ENDGATE_VERSION="${PROJECT_VERSION}")
 
 target_link_libraries(endgate PRIVATE
-        endgate_legacy_raknet
+        endgate_raknet
         asio::asio
         glaze::glaze
         replxx::replxx

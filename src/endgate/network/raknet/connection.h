@@ -102,6 +102,7 @@ public:
 
     [[nodiscard]] const SystemAddress &getSystemAddress() const { return system_address_; }
     [[nodiscard]] std::uint64_t getGuid() const { return guid_; }
+    [[nodiscard]] std::uint16_t getSystemIndex() const { return system_index_; }
     [[nodiscard]] ConnectMode getConnectMode() const { return connect_mode_; }
     [[nodiscard]] bool isConnected() const { return connect_mode_ == ConnectMode::Connected; }
     [[nodiscard]] bool isClosed() const { return connect_mode_ == ConnectMode::Closed; }

@@ -1,35 +1,19 @@
 #pragma once
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
-#include <string>
-
-#include "endgate/network/buffer.h"
-#include "endgate/network/legacy/raknet/RakNetTypes.h"
+#include <vector>
 
 namespace endgate {
 
 class ProxyServer;
 
 /**
- * The bytes RakNet stamps on every message it exchanges before a connection exists, chosen so that a
- * connected datagram cannot produce them by chance. Upstream keeps them file static in RakPeer.cpp,
- * which the port does not carry.
+ * Builds what a listener announces to an unconnected ping. The RakNet engine answers the ping itself,
+ * with these bytes.
  *
- * @see OFFLINE_MESSAGE_DATA_ID
- */
-inline constexpr std::array<std::byte, 16> OFFLINE_MESSAGE_DATA_ID{
-    std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xFE}, std::byte{0xFE},
-    std::byte{0xFE}, std::byte{0xFE}, std::byte{0xFD}, std::byte{0xFD}, std::byte{0xFD}, std::byte{0xFD},
-    std::byte{0x12}, std::byte{0x34}, std::byte{0x56}, std::byte{0x78}};
-
-/**
- * Answers the RakNet messages that arrive before a connection exists. Only the unconnected ping is
- * answered; the rest of the handshake belongs to a session.
- *
- * @see RakNet::ProcessOfflineNetworkPacket
+ * @see RakNetServerLocator
  */
 class OfflineMessageHandler {
 public:
@@ -40,12 +24,13 @@ public:
      */
     void setPingResponder(std::uint16_t port);
 
-    [[nodiscard]] ByteBuf handle(std::span<const std::byte> datagram) const;
+    [[nodiscard]] std::uint64_t getGuid() const { return guid_; }
+    [[nodiscard]] std::span<const std::byte> getOfflinePingResponse() const { return offline_ping_response_; }
 
 private:
     ProxyServer &server_;
-    RakNet::RakNetGUID guid_;
-    std::string offline_ping_response_;
+    std::uint64_t guid_;
+    std::vector<std::byte> offline_ping_response_;
 };
 
 }  // namespace endgate
