@@ -51,6 +51,15 @@ private:
 };
 
 /**
+ * One GET /v1/join, with what the client says about itself in the query string.
+ */
+struct PingRequest {
+    std::optional<int> protocol;
+    std::string version;
+    std::string network_id;
+};
+
+/**
  * One POST /v1/join/{networkId}, with the address the client reached the proxy at, taken from its Host
  * header.
  */
@@ -67,7 +76,7 @@ struct JoinRequest {
 class JoinHandler {
 public:
     virtual ~JoinHandler() = default;
-    [[nodiscard]] virtual ServerPing getServerPing() = 0;
+    [[nodiscard]] virtual ServerPing getServerPing(const PingRequest &request) = 0;
     virtual void onJoin(JoinRequest request, JoinResponse response) = 0;
 };
 
@@ -105,6 +114,7 @@ private:
     struct Request {
         std::string method;
         std::string path;
+        std::string query;
         std::string host;
         std::optional<std::uint16_t> port;
         std::string body;

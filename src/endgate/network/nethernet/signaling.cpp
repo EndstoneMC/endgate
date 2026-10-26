@@ -5,6 +5,7 @@
 #include <cctype>
 #include <charconv>
 #include <format>
+#include <ranges>
 #include <string_view>
 #include <tuple>
 #include <utility>
@@ -227,7 +228,10 @@ asio::awaitable<void> HttpSignalingServer::exchange(Stream &stream, std::chrono:
             co_return;
         }
         const auto method = request_line.substr(0, method_end);
-        const auto path = request_line.substr(method_end + 1, path_end - method_end - 1);
+        const auto target = request_line.substr(method_end + 1, path_end - method_end - 1);
+        const auto query_start = target.find('?');
+        const auto path = target.substr(0, query_start);
+        const auto query = query_start == std::string_view::npos ? std::string_view{} : target.substr(query_start + 1);
         if (method.empty() || method.size() > 16 ||
             !std::ranges::all_of(method, [](char c) { return c >= 'A' && c <= 'Z'; }) || !path.starts_with('/')) {
             co_return;
@@ -312,6 +316,7 @@ asio::awaitable<void> HttpSignalingServer::exchange(Stream &stream, std::chrono:
         }
         request = Request{.method = std::string(method),
                           .path = std::string(path),
+                          .query = std::string(query),
                           .host = std::string(host_name),
                           .port = host_port,
                           .body = buffer.substr(header_end + 4, body_length)};
@@ -335,7 +340,27 @@ asio::awaitable<HttpSignalingServer::Response> HttpSignalingServer::respond(Requ
     };
 
     if (request.method == "GET" && request.path == "/v1/join") {
-        const auto ping = handler_.getServerPing();
+        PingRequest ping_request;
+        for (const auto parameter : std::views::split(std::string_view{request.query}, '&')) {
+            const std::string_view pair{parameter.begin(), parameter.end()};
+            const auto equals = pair.find('=');
+            const auto name = pair.substr(0, equals);
+            const auto value = equals == std::string_view::npos ? std::string_view{} : pair.substr(equals + 1);
+            if (name == "protocol") {
+                int protocol = 0;
+                const auto [end, parse_error] = std::from_chars(value.data(), value.data() + value.size(), protocol);
+                if (parse_error == std::errc{} && end == value.data() + value.size()) {
+                    ping_request.protocol = protocol;
+                }
+            }
+            else if (name == "version") {
+                ping_request.version = value;
+            }
+            else if (name == "id") {
+                ping_request.network_id = value;
+            }
+        }
+        const auto ping = handler_.getServerPing(ping_request);
         std::string body;
         if (glz::write_json(Ping{.name = ping.getDescription(),
                                  .protocol = ping.getVersion().getProtocol(),

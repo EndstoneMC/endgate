@@ -36,8 +36,10 @@ constexpr std::string_view Offer = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n";
 
 class RecordingHandler : public JoinHandler {
 public:
-    ServerPing getServerPing() override
+    ServerPing getServerPing(const PingRequest &request) override
     {
+        const std::scoped_lock lock(mutex);
+        pings.push_back(request);
         return {ServerPing::Version{924, "1.26.50"}, ServerPing::Players{3, 20}, "Endgate", "Bedrock level",
                 GameType::Survival};
     }
@@ -51,6 +53,7 @@ public:
 
     std::mutex mutex;
     std::vector<JoinRequest> joins;
+    std::vector<PingRequest> pings;
     std::function<void(const JoinResponse &)> behaviour = [](const JoinResponse &response) {
         response.answer("v=0\r\nanswer\r\n");
     };
@@ -173,6 +176,29 @@ TEST_F(HttpSignalingServerTest, AnswersThePingWithServerInfo)
         << response;
 }
 
+TEST_F(HttpSignalingServerTest, AnswersTheClientsPingWithItsQueryString)
+{
+    const auto response = roundTrip(
+        "GET /v1/join?version=1.26.70.21&protocol=2238&platform=8&id=9246930627696782564 HTTP/1.1\r\n"
+        "Connection: Keep-Alive\r\nUser-Agent: libhttpclient/1.0.0.0\r\nHost: test.endstone.dev:19134\r\n\r\n");
+    EXPECT_TRUE(response.starts_with("HTTP/1.1 200 OK\r\n")) << response;
+    EXPECT_NE(response.find("Content-Type: application/json\r\n"), std::string::npos);
+    const std::scoped_lock lock(handler_.mutex);
+    ASSERT_EQ(handler_.pings.size(), 1U);
+    EXPECT_EQ(handler_.pings[0].protocol, 2238);
+    EXPECT_EQ(handler_.pings[0].version, "1.26.70.21");
+    EXPECT_EQ(handler_.pings[0].network_id, "9246930627696782564");
+}
+
+TEST_F(HttpSignalingServerTest, IgnoresAProtocolItCannotRead)
+{
+    EXPECT_TRUE(roundTrip("GET /v1/join?protocol=new&protocol HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                    .starts_with("HTTP/1.1 200 OK\r\n"));
+    const std::scoped_lock lock(handler_.mutex);
+    ASSERT_EQ(handler_.pings.size(), 1U);
+    EXPECT_FALSE(handler_.pings[0].protocol);
+}
+
 TEST_F(HttpSignalingServerTest, TradesAnOfferForAnAnswer)
 {
     const auto response = roundTrip(post("/v1/join/9876543210123456789", Offer));
@@ -237,7 +263,7 @@ TEST_F(HttpSignalingServerTest, RoutesOnlyTheTwoEndpoints)
 
 TEST_F(HttpSignalingServerTest, RejectsABadNetworkIdOrAMissingOffer)
 {
-    for (const auto *path : {"/v1/join/", "/v1/join/a/b", "/v1/join/a?b", "/v1/join/a\"b"}) {
+    for (const auto *path : {"/v1/join/", "/v1/join/a/b", "/v1/join/?b", "/v1/join/a\"b"}) {
         EXPECT_TRUE(roundTrip(post(path, Offer)).starts_with("HTTP/1.1 400 Expected /v1/join/{networkId}\r\n")) << path;
     }
     EXPECT_TRUE(roundTrip(post("/v1/join/" + std::string(129, '1'), Offer)).starts_with("HTTP/1.1 400 "));
