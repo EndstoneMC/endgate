@@ -169,7 +169,7 @@ TEST(IdentityAssertionTest, RejectsBrokenEnvelopes)
     EXPECT_FALSE(IdentityAssertion::extractFromSdp(with("not base64!")));
     EXPECT_FALSE(IdentityAssertion::extractFromSdp(with("e30=")));
     EXPECT_FALSE(IdentityAssertion::extractFromSdp(with("eyJhc3NlcnRpb24iOjF9")));
-    const auto envelope = "eyJhc3NlcnRpb24iOiJ4IiwiaWRwIjp7ImRvbWFpbiI6ImQiLCJwcm90b2NvbCI6InAifX0=";
+    const auto *const envelope = "eyJhc3NlcnRpb24iOiJ4IiwiaWRwIjp7ImRvbWFpbiI6ImQiLCJwcm90b2NvbCI6InAifX0=";
     EXPECT_TRUE(IdentityAssertion::extractFromSdp(with(envelope)));
     EXPECT_FALSE(IdentityAssertion::extractFromSdp("v=0\r\na=identity:" + std::string(envelope) + "\r\n"));
     EXPECT_FALSE(IdentityAssertion::extractFromSdp(with(envelope))->getToken());

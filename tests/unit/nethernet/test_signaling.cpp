@@ -42,7 +42,7 @@ public:
 
     void onJoin(std::string network_id, std::string offer, JoinResponse response) override
     {
-        const std::lock_guard lock(mutex);
+        const std::scoped_lock lock(mutex);
         joins.emplace_back(std::move(network_id), std::move(offer));
         behaviour(response);
     }
@@ -143,7 +143,7 @@ TEST_F(HttpSignalingServerTest, TradesAnOfferForAnAnswer)
     EXPECT_TRUE(response.starts_with("HTTP/1.1 200 OK\r\n")) << response;
     EXPECT_NE(response.find("Content-Type: application/sdp\r\n"), std::string::npos);
     EXPECT_TRUE(response.ends_with("\r\n\r\nv=0\r\nanswer\r\n")) << response;
-    const std::lock_guard lock(handler_.mutex);
+    const std::scoped_lock lock(handler_.mutex);
     ASSERT_EQ(handler_.joins.size(), 1U);
     EXPECT_EQ(handler_.joins[0].first, "9876543210123456789");
     EXPECT_EQ(handler_.joins[0].second, Offer);
@@ -208,7 +208,7 @@ TEST_F(HttpSignalingServerTest, RejectsABadNetworkIdOrAMissingOffer)
     const auto response = roundTrip(post("/v1/join/1", ""));
     EXPECT_TRUE(response.starts_with("HTTP/1.1 400 Missing SDP offer in request body\r\n")) << response;
     EXPECT_TRUE(response.ends_with("\r\n\r\nMissing SDP offer in request body"));
-    const std::lock_guard lock(handler_.mutex);
+    const std::scoped_lock lock(handler_.mutex);
     EXPECT_TRUE(handler_.joins.empty());
 }
 
@@ -239,7 +239,7 @@ TEST_F(HttpSignalingServerTest, ReadsARequestArrivingInPieces)
         asio::detached);
     client.run_for(3s);
     EXPECT_TRUE(response.starts_with("HTTP/1.1 200 OK\r\n")) << response;
-    const std::lock_guard lock(handler_.mutex);
+    const std::scoped_lock lock(handler_.mutex);
     ASSERT_EQ(handler_.joins.size(), 1U);
     EXPECT_EQ(handler_.joins[0].second, Offer);
 }
