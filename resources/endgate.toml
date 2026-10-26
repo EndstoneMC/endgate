@@ -24,6 +24,25 @@ try = [
     "lobby"
 ]
 
+[nethernet]
+# Should players be able to join over NetherNet as well as RakNet?
+enabled = true
+
+# Which addresses should players reach the proxy at over NetherNet? Leave empty to use this
+# machine's own addresses.
+public-addresses = []
+
+# Which certificate chain and private key (PEM) should NetherNet join requests be served over HTTPS
+# with? Leave both empty to serve plain HTTP only.
+tls-certificate-chain = ""
+tls-private-key = ""
+
+# Where is the key that identifies the proxy to players kept? It is created if missing.
+identity-key = "identity.pem"
+
+# What name should players see when asked whether to trust the proxy?
+identity-domain = "Endgate"
+
 [advanced]
 # How much compression should be done (from 0-9). The default is -1, which uses the
 # default level of 6.

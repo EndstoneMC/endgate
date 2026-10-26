@@ -6,6 +6,7 @@
 #include <system_error>
 #include <variant>
 
+#include <asio/ip/address.hpp>
 #include <glaze/toml.hpp>
 #include <spdlog/logger.h>
 
@@ -24,6 +25,23 @@ struct Advanced {
     };
 };
 
+struct NetherNet {
+    bool enabled{};
+    std::vector<std::string> public_addresses;
+    std::string tls_certificate_chain;
+    std::string tls_private_key;
+    std::string identity_key;
+    std::string identity_domain;
+
+    struct glaze {
+        using T = NetherNet;
+        static constexpr auto value =
+            glz::object("enabled", &T::enabled, "public-addresses", &T::public_addresses, "tls-certificate-chain",
+                        &T::tls_certificate_chain, "tls-private-key", &T::tls_private_key, "identity-key",
+                        &T::identity_key, "identity-domain", &T::identity_domain);
+    };
+};
+
 struct Document {
     std::string config_version;
     std::string bind;
@@ -31,13 +49,15 @@ struct Document {
     int show_max_players{};
     bool online_mode{};
     std::map<std::string, std::variant<std::string, std::vector<std::string>>> servers;
+    NetherNet nethernet;
     Advanced advanced;
 
     struct glaze {
         using T = Document;
-        static constexpr auto value = glz::object("config-version", &T::config_version, "bind", &T::bind, "motd",
-                                                  &T::motd, "show-max-players", &T::show_max_players, "online-mode",
-                                                  &T::online_mode, "servers", &T::servers, "advanced", &T::advanced);
+        static constexpr auto value =
+            glz::object("config-version", &T::config_version, "bind", &T::bind, "motd", &T::motd, "show-max-players",
+                        &T::show_max_players, "online-mode", &T::online_mode, "servers", &T::servers, "nethernet",
+                        &T::nethernet, "advanced", &T::advanced);
     };
 };
 }  // namespace
@@ -89,6 +109,12 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
         }
     }
     config.compression_level_ = document.advanced.compression_level;
+    config.nethernet_enabled_ = document.nethernet.enabled;
+    config.nethernet_public_addresses_ = document.nethernet.public_addresses;
+    config.nethernet_tls_certificate_chain_ = document.nethernet.tls_certificate_chain;
+    config.nethernet_tls_private_key_ = document.nethernet.tls_private_key;
+    config.nethernet_identity_key_ = document.nethernet.identity_key;
+    config.nethernet_identity_domain_ = document.nethernet.identity_domain;
     return config;
 }
 
@@ -103,6 +129,25 @@ bool ProxyConfig::validate() const
     }
     else if (compression_level_ == 0) {
         logger.warn("ALL packets going through the proxy will be uncompressed. This will increase bandwidth usage.");
+    }
+
+    if (nethernet_enabled_) {
+        for (const auto &address : nethernet_public_addresses_) {
+            asio::error_code ec;
+            asio::ip::make_address(address, ec);
+            if (ec) {
+                logger.error("Invalid NetherNet public address {}", address);
+                valid = false;
+            }
+        }
+        if (nethernet_tls_certificate_chain_.empty() != nethernet_tls_private_key_.empty()) {
+            logger.error("NetherNet over HTTPS needs both tls-certificate-chain and tls-private-key");
+            valid = false;
+        }
+        if (nethernet_identity_key_.empty()) {
+            logger.error("NetherNet needs an identity-key path");
+            valid = false;
+        }
     }
     return valid;
 }
@@ -140,6 +185,36 @@ const std::vector<std::string> &ProxyConfig::getAttemptConnectionOrder() const
 int ProxyConfig::getCompressionLevel() const
 {
     return compression_level_;
+}
+
+bool ProxyConfig::isNetherNetEnabled() const
+{
+    return nethernet_enabled_;
+}
+
+const std::vector<std::string> &ProxyConfig::getNetherNetPublicAddresses() const
+{
+    return nethernet_public_addresses_;
+}
+
+const std::filesystem::path &ProxyConfig::getNetherNetTlsCertificateChain() const
+{
+    return nethernet_tls_certificate_chain_;
+}
+
+const std::filesystem::path &ProxyConfig::getNetherNetTlsPrivateKey() const
+{
+    return nethernet_tls_private_key_;
+}
+
+const std::filesystem::path &ProxyConfig::getNetherNetIdentityKey() const
+{
+    return nethernet_identity_key_;
+}
+
+const std::string &ProxyConfig::getNetherNetIdentityDomain() const
+{
+    return nethernet_identity_domain_;
 }
 
 }  // namespace endgate
