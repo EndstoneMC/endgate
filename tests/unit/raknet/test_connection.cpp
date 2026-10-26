@@ -339,6 +339,30 @@ TEST(Connection, UnverifiedSenderSendingAnythingButARequestIsClosed)
     EXPECT_TRUE(server.connection->isClosed());
 }
 
+TEST(Connection, UnverifiedSenderCannotParkMoreThanTheHandshakeBudget)
+{
+    Simulation simulation;
+    Server server{simulation};
+    server.receive(fromHex("07"
+                           "00ffff00fefefefefdfdfdfd12345678"
+                           "04f5fffffe4abc"
+                           "0578"
+                           "000000000000c1c1"),
+                   simulation.now());
+    const std::string fragment(2 * 1000, 'a');
+    for (std::uint32_t id = 0; id < 80 && !server.connection->isClosed(); ++id) {
+        const auto number = test::toHex(std::array{std::byte(id), std::byte{0}, std::byte{0}});
+        const auto split_id = test::toHex(std::array{std::byte{0}, std::byte(id)});
+        server.receive(fromHex("84" + number +
+                               "101f40"
+                               "00000002" +
+                               split_id + "00000000" + fragment),
+                       simulation.now());
+    }
+    EXPECT_TRUE(server.connection->isClosed());
+    EXPECT_EQ(server.events.notifications.back(), "held split and ordered packets exceed the maximum held bytes");
+}
+
 TEST(Connection, HalfOpenConnectionIsReapedAfterTenSeconds)
 {
     Simulation simulation;

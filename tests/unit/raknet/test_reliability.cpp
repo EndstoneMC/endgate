@@ -543,6 +543,85 @@ TEST(Reliability, SplitBoundsAreEnforced)
     EXPECT_EQ(pair.b.errors, 3);
 }
 
+TEST(Reliability, HeldSplitFragmentsAreChargedTheirOverheadAndBounded)
+{
+    Pair pair;
+    pair.b.layer.setMaximumHeldBytes(10 * ReliabilityLayer::HELD_PACKET_OVERHEAD);
+    for (std::uint32_t id = 0; id < 9; ++id) {
+        const auto number = test::toHex(std::array{std::byte(id), std::byte{0}, std::byte{0}});
+        const auto split_id = test::toHex(std::array{std::byte{0}, std::byte(id)});
+        pair.b.inject("84" + number +
+                      "100008"
+                      "00000800" +
+                      split_id +
+                      "00000000"
+                      "fe");
+    }
+    EXPECT_EQ(pair.b.errors, 0);
+    EXPECT_EQ(pair.b.layer.getHeldBytes(), 9 * (1 + ReliabilityLayer::HELD_PACKET_OVERHEAD));
+    pair.b.inject("84090000"
+                  "100008"
+                  "00000800"
+                  "0009"
+                  "00000000"
+                  "fe");
+    EXPECT_EQ(pair.b.errors, 1);
+    EXPECT_TRUE(pair.b.layer.isDeadConnection());
+}
+
+TEST(Reliability, HeldOrderedPacketsAreBounded)
+{
+    Pair pair;
+    pair.b.layer.setMaximumHeldBytes(4 * (3 + ReliabilityLayer::HELD_PACKET_OVERHEAD));
+    for (std::uint32_t i = 0; i < 4; ++i) {
+        const auto index = test::toHex(std::array{std::byte(i + 1), std::byte{0}, std::byte{0}});
+        pair.b.inject("84" + index + "600018" + index + index +
+                      "00"
+                      "fe0102");
+    }
+    EXPECT_FALSE(pair.b.layer.isDeadConnection());
+    pair.b.inject("84050000"
+                  "600018"
+                  "050000"
+                  "050000"
+                  "00"
+                  "fe0102");
+    EXPECT_TRUE(pair.b.layer.isDeadConnection());
+    EXPECT_TRUE(pair.b.received.empty());
+}
+
+TEST(Reliability, ReleasedPacketsGiveTheirBudgetBack)
+{
+    Pair pair;
+    for (std::uint32_t i = 0; i < 3; ++i) {
+        const auto index = test::toHex(std::array{std::byte(i + 1), std::byte{0}, std::byte{0}});
+        pair.b.inject("84" + index + "600018" + index + index +
+                      "00"
+                      "fe0102");
+    }
+    pair.b.inject("84000000"
+                  "100010"
+                  "00000002"
+                  "0001"
+                  "00000000"
+                  "fe00");
+    EXPECT_GT(pair.b.layer.getHeldBytes(), 0U);
+    pair.b.inject("84040000"
+                  "100010"
+                  "00000002"
+                  "0001"
+                  "00000001"
+                  "0102");
+    pair.b.inject("84050000"
+                  "600018"
+                  "000000"
+                  "000000"
+                  "00"
+                  "fe0102");
+    EXPECT_EQ(pair.b.received.size(), 5U);
+    EXPECT_EQ(pair.b.layer.getHeldBytes(), 0U);
+}
+
 TEST(Reliability, HoleCountBeyondTheBoundIsRejected)
 {
     Pair pair;
