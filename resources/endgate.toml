@@ -29,10 +29,11 @@ try = [
 # machine's own addresses.
 public-addresses = []
 
-# Which certificate chain and private key (PEM) should NetherNet join requests be served over HTTPS
-# with? Leave both empty to serve plain HTTP only.
-tls-certificate-chain = ""
-tls-private-key = ""
+# Which certificate and key should NetherNet join requests be served over HTTPS with? These take the
+# same PEM files as nginx's ssl_certificate and ssl_certificate_key, such as Let's Encrypt's
+# fullchain.pem and privkey.pem. Leave both empty to serve plain HTTP only.
+tls-certificate = ""
+tls-certificate-key = ""
 
 [advanced]
 # How much compression should be done (from 0-9). The default is -1, which uses the

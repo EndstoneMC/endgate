@@ -28,8 +28,8 @@ public:
     [[nodiscard]] const std::vector<std::string> &getAttemptConnectionOrder() const;
     [[nodiscard]] int getCompressionLevel() const;
     [[nodiscard]] const std::vector<std::string> &getNetherNetPublicAddresses() const;
-    [[nodiscard]] const std::filesystem::path &getNetherNetTlsCertificateChain() const;
-    [[nodiscard]] const std::filesystem::path &getNetherNetTlsPrivateKey() const;
+    [[nodiscard]] const std::filesystem::path &getNetherNetTlsCertificate() const;
+    [[nodiscard]] const std::filesystem::path &getNetherNetTlsCertificateKey() const;
 
 private:
     std::string bind_;
@@ -40,8 +40,8 @@ private:
     std::vector<std::string> attempt_connection_order_;
     int compression_level_{};
     std::vector<std::string> nethernet_public_addresses_;
-    std::filesystem::path nethernet_tls_certificate_chain_;
-    std::filesystem::path nethernet_tls_private_key_;
+    std::filesystem::path nethernet_tls_certificate_;
+    std::filesystem::path nethernet_tls_certificate_key_;
 };
 
 }  // namespace endgate

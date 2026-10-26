@@ -27,13 +27,13 @@ struct Advanced {
 
 struct NetherNet {
     std::vector<std::string> public_addresses;
-    std::string tls_certificate_chain;
-    std::string tls_private_key;
+    std::string tls_certificate;
+    std::string tls_certificate_key;
 
     struct glaze {
         using T = NetherNet;
-        static constexpr auto value = glz::object("public-addresses", &T::public_addresses, "tls-certificate-chain",
-                                                  &T::tls_certificate_chain, "tls-private-key", &T::tls_private_key);
+        static constexpr auto value = glz::object("public-addresses", &T::public_addresses, "tls-certificate",
+                                                  &T::tls_certificate, "tls-certificate-key", &T::tls_certificate_key);
     };
 };
 
@@ -105,8 +105,8 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
     }
     config.compression_level_ = document.advanced.compression_level;
     config.nethernet_public_addresses_ = document.nethernet.public_addresses;
-    config.nethernet_tls_certificate_chain_ = document.nethernet.tls_certificate_chain;
-    config.nethernet_tls_private_key_ = document.nethernet.tls_private_key;
+    config.nethernet_tls_certificate_ = document.nethernet.tls_certificate;
+    config.nethernet_tls_certificate_key_ = document.nethernet.tls_certificate_key;
     return config;
 }
 
@@ -131,8 +131,8 @@ bool ProxyConfig::validate() const
             valid = false;
         }
     }
-    if (nethernet_tls_certificate_chain_.empty() != nethernet_tls_private_key_.empty()) {
-        logger.error("NetherNet over HTTPS needs both tls-certificate-chain and tls-private-key");
+    if (nethernet_tls_certificate_.empty() != nethernet_tls_certificate_key_.empty()) {
+        logger.error("NetherNet over HTTPS needs both tls-certificate and tls-certificate-key");
         valid = false;
     }
     return valid;
@@ -178,14 +178,14 @@ const std::vector<std::string> &ProxyConfig::getNetherNetPublicAddresses() const
     return nethernet_public_addresses_;
 }
 
-const std::filesystem::path &ProxyConfig::getNetherNetTlsCertificateChain() const
+const std::filesystem::path &ProxyConfig::getNetherNetTlsCertificate() const
 {
-    return nethernet_tls_certificate_chain_;
+    return nethernet_tls_certificate_;
 }
 
-const std::filesystem::path &ProxyConfig::getNetherNetTlsPrivateKey() const
+const std::filesystem::path &ProxyConfig::getNetherNetTlsCertificateKey() const
 {
-    return nethernet_tls_private_key_;
+    return nethernet_tls_certificate_key_;
 }
 
 }  // namespace endgate
