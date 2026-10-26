@@ -87,6 +87,28 @@ a=sctp-port:5000
 a=max-message-size:262144
 )");
 
+const std::string CapturedClientOffer = crlf(R"(v=0
+o=- 8262678597354354447 2 IN IP4 127.0.0.1
+s=-
+t=0 0
+a=group:BUNDLE 0
+a=extmap-allow-mixed
+a=msid-semantic: WMS
+a=identity:eyJhc3NlcnRpb24iOiJ7XCJmaW5nZXJwcmludHNcIjpcIlwiLFwidG9rZW5cIjpcIlwifSIsImlkcCI6eyJkb21haW4iOiJodHRwczovL2F1dGhvcml6YXRpb24uZnJhbmNoaXNlLm1pbmVjcmFmdC1zZXJ2aWNlcy5uZXQvIiwicHJvdG9jb2wiOiJkZWZhdWx0In19
+m=application 51855 UDP/DTLS/SCTP webrtc-datachannel
+c=IN IP4 192.0.2.10
+a=candidate:3494126524 1 udp 2122260223 192.0.2.10 51855 typ host generation 0 network-id 4
+a=candidate:2196473220 1 udp 2122194687 198.51.100.20 51856 typ host generation 0 network-id 1 network-cost 10
+a=ice-ufrag:t6mk
+a=ice-pwd:K2r6gSr8elsFGxr6FWjjsgwk
+a=ice-options:trickle
+a=fingerprint:sha-256 84:BB:6F:D6:98:A6:76:B4:3E:76:28:C1:7A:E2:26:31:EA:D8:D4:AF:D0:64:6F:FB:86:07:80:F5:E2:67:E9:5E
+a=setup:actpass
+a=mid:0
+a=sctp-port:5000
+a=max-message-size:262144
+)");
+
 const CertificateFingerprint MojangGuideAnswerFingerprint{
     .algorithm = "sha-256",
     .value = "11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00"};
@@ -139,6 +161,32 @@ TEST(DescriptionTest, ParsesAConstructedLibwebrtcOffer)
     EXPECT_EQ(offer->candidates[1].address, "fd00::1:2");
     EXPECT_EQ(offer->candidates[1].foundation, "3316475512");
     EXPECT_FALSE(offer->end_of_candidates);
+}
+
+TEST(DescriptionTest, ParsesAnOfferCapturedFromARealClient)
+{
+    const auto offer = Description::parse(CapturedClientOffer);
+    ASSERT_TRUE(offer);
+    EXPECT_EQ(offer->bundle, std::vector<std::string>{"0"});
+    EXPECT_EQ(offer->identity,
+              "eyJhc3NlcnRpb24iOiJ7XCJmaW5nZXJwcmludHNcIjpcIlwiLFwidG9rZW5cIjpcIlwifSIsImlkcCI6eyJkb21haW4iOiJodHRwczov"
+              "L2F1dGhvcml6YXRpb24uZnJhbmNoaXNlLm1pbmVjcmFmdC1zZXJ2aWNlcy5uZXQvIiwicHJvdG9jb2wiOiJkZWZhdWx0In19");
+    EXPECT_EQ(offer->mid, "0");
+    EXPECT_EQ(offer->ice_ufrag, "t6mk");
+    EXPECT_EQ(offer->ice_pwd, "K2r6gSr8elsFGxr6FWjjsgwk");
+    EXPECT_EQ(offer->ice_options, std::vector<std::string>{"trickle"});
+    ASSERT_EQ(offer->fingerprints.size(), 1U);
+    EXPECT_EQ(offer->setup, DtlsSetup::ActPass);
+    EXPECT_EQ(offer->sctp_port, 5000);
+    EXPECT_EQ(offer->max_message_size, 262144U);
+    EXPECT_FALSE(offer->end_of_candidates);
+    ASSERT_EQ(offer->candidates.size(), 2U);
+    EXPECT_EQ(offer->candidates[0].address, "192.0.2.10");
+    EXPECT_EQ(offer->candidates[0].port, 51855);
+    EXPECT_EQ(offer->candidates[0].priority, 2122260223U);
+    EXPECT_EQ(offer->candidates[0].type, "host");
+    EXPECT_EQ(offer->candidates[1].address, "198.51.100.20");
+    EXPECT_EQ(offer->candidates[1].port, 51856);
 }
 
 TEST(DescriptionTest, AnswersTheMojangGuideOfferAsTheGuideDoes)
