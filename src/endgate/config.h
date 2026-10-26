@@ -30,8 +30,6 @@ public:
     [[nodiscard]] const std::vector<std::string> &getNetherNetPublicAddresses() const;
     [[nodiscard]] const std::filesystem::path &getNetherNetTlsCertificateChain() const;
     [[nodiscard]] const std::filesystem::path &getNetherNetTlsPrivateKey() const;
-    [[nodiscard]] const std::filesystem::path &getNetherNetIdentityKey() const;
-    [[nodiscard]] const std::string &getNetherNetIdentityDomain() const;
 
 private:
     std::string bind_;
@@ -44,8 +42,6 @@ private:
     std::vector<std::string> nethernet_public_addresses_;
     std::filesystem::path nethernet_tls_certificate_chain_;
     std::filesystem::path nethernet_tls_private_key_;
-    std::filesystem::path nethernet_identity_key_;
-    std::string nethernet_identity_domain_;
 };
 
 }  // namespace endgate

@@ -34,12 +34,6 @@ public-addresses = []
 tls-certificate-chain = ""
 tls-private-key = ""
 
-# Where is the key that identifies the proxy to players kept? It is created if missing.
-identity-key = "identity.pem"
-
-# What name should players see when asked whether to trust the proxy?
-identity-domain = "Endgate"
-
 [advanced]
 # How much compression should be done (from 0-9). The default is -1, which uses the
 # default level of 6.

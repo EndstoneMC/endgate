@@ -29,15 +29,11 @@ struct NetherNet {
     std::vector<std::string> public_addresses;
     std::string tls_certificate_chain;
     std::string tls_private_key;
-    std::string identity_key;
-    std::string identity_domain;
 
     struct glaze {
         using T = NetherNet;
-        static constexpr auto value =
-            glz::object("public-addresses", &T::public_addresses, "tls-certificate-chain", &T::tls_certificate_chain,
-                        "tls-private-key", &T::tls_private_key, "identity-key", &T::identity_key, "identity-domain",
-                        &T::identity_domain);
+        static constexpr auto value = glz::object("public-addresses", &T::public_addresses, "tls-certificate-chain",
+                                                  &T::tls_certificate_chain, "tls-private-key", &T::tls_private_key);
     };
 };
 
@@ -111,8 +107,6 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
     config.nethernet_public_addresses_ = document.nethernet.public_addresses;
     config.nethernet_tls_certificate_chain_ = document.nethernet.tls_certificate_chain;
     config.nethernet_tls_private_key_ = document.nethernet.tls_private_key;
-    config.nethernet_identity_key_ = document.nethernet.identity_key;
-    config.nethernet_identity_domain_ = document.nethernet.identity_domain;
     return config;
 }
 
@@ -139,10 +133,6 @@ bool ProxyConfig::validate() const
     }
     if (nethernet_tls_certificate_chain_.empty() != nethernet_tls_private_key_.empty()) {
         logger.error("NetherNet over HTTPS needs both tls-certificate-chain and tls-private-key");
-        valid = false;
-    }
-    if (nethernet_identity_key_.empty()) {
-        logger.error("NetherNet needs an identity-key path");
         valid = false;
     }
     return valid;
@@ -196,16 +186,6 @@ const std::filesystem::path &ProxyConfig::getNetherNetTlsCertificateChain() cons
 const std::filesystem::path &ProxyConfig::getNetherNetTlsPrivateKey() const
 {
     return nethernet_tls_private_key_;
-}
-
-const std::filesystem::path &ProxyConfig::getNetherNetIdentityKey() const
-{
-    return nethernet_identity_key_;
-}
-
-const std::string &ProxyConfig::getNetherNetIdentityDomain() const
-{
-    return nethernet_identity_domain_;
 }
 
 }  // namespace endgate
