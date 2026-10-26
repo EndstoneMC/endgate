@@ -295,6 +295,30 @@ TEST(Reliability, DatagramsNeverExceedTheMtu)
     }
 }
 
+TEST(Reliability, StaleUnreliableMessagesAreCulledEvenWhileTheWindowIsClosed)
+{
+    Pair pair;
+    pair.a.layer.setUnreliableTimeout(1000ms);
+    pair.simulation.setConditions(0, {1.0});
+    for (std::uint32_t i = 0; i < 4; ++i) {
+        pair.a.send(message(i, 1300), PacketReliability::Reliable);
+    }
+    for (std::uint32_t i = 100; i < 200; ++i) {
+        pair.a.send(message(i, 100), PacketReliability::Unreliable);
+    }
+    EXPECT_EQ(pair.a.layer.getMessagesInSendBuffer(), 102U);
+    pair.simulation.runUntil([] { return false; }, 1600ms);
+    EXPECT_EQ(pair.a.layer.getMessagesInSendBuffer(), 2U);
+    pair.simulation.setConditions(0, {});
+    ASSERT_TRUE(pair.simulation.runUntil([&] { return pair.a.layer.getMessagesInResendBuffer() == 0; }, 10s));
+    pair.simulation.runUntil([] { return false; }, 100ms);
+    std::set<std::uint32_t> delivered;
+    for (const auto &received : pair.b.received) {
+        delivered.insert(sequenceOf(received));
+    }
+    EXPECT_EQ(delivered, (std::set<std::uint32_t>{0, 1, 2, 3}));
+}
+
 TEST(Reliability, SmallMessagesShareADatagram)
 {
     Pair pair;
