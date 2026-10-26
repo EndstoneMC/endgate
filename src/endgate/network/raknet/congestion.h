@@ -18,7 +18,7 @@ public:
 
     explicit CCRakNetSlidingWindow(std::size_t max_datagram_payload);
 
-    [[nodiscard]] std::size_t getRetransmissionBandwidth(std::size_t unacknowledged_bytes) const
+    [[nodiscard]] static std::size_t getRetransmissionBandwidth(std::size_t unacknowledged_bytes)
     {
         return unacknowledged_bytes;
     }
