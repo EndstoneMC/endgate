@@ -42,7 +42,7 @@ struct Reliability {
  * @see rtc::impl::DataChannel
  */
 struct DataChannelOpen {
-    static constexpr std::uint8_t message_type = 0x03;
+    static constexpr std::uint8_t MessageType = 0x03;
 
     std::uint8_t channel_type;
     std::uint16_t priority;
@@ -62,7 +62,7 @@ struct DataChannelOpen {
  * @see RFC 8832 section 5.2
  */
 struct DataChannelAck {
-    static constexpr std::uint8_t message_type = 0x02;
+    static constexpr std::uint8_t MessageType = 0x02;
 };
 
 }  // namespace endgate::rtc

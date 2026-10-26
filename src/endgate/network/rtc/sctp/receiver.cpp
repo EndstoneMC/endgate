@@ -8,17 +8,17 @@
 namespace endgate::rtc::sctp {
 namespace {
 
-constexpr std::size_t fragment_overhead = 64;
-constexpr std::uint64_t ssn_origin = std::uint64_t{1} << 16U;
+constexpr std::size_t FragmentOverhead = 64;
+constexpr std::uint64_t SsnOrigin = std::uint64_t{1} << 16U;
 
 std::size_t charge(const ByteBuf &payload)
 {
-    return payload.length() + fragment_overhead;
+    return payload.length() + FragmentOverhead;
 }
 
 std::size_t charge(const ForwardTsnChunk &chunk)
 {
-    return fragment_overhead + 4 * chunk.skipped.size();
+    return FragmentOverhead + 4 * chunk.skipped.size();
 }
 
 }  // namespace
@@ -63,7 +63,7 @@ Receiver::Outcome Receiver::track(const DataChunk &chunk, std::uint64_t tsn)
     constexpr std::size_t max_duplicates = 16;
 
     data_in_packet_ = true;
-    if (!seen_data_ || (chunk.flags & DataChunk::immediate_flag) != 0) {
+    if (!seen_data_ || (chunk.flags & DataChunk::ImmediateFlag) != 0) {
         seen_data_ = true;
         immediate_ = true;
     }
@@ -167,7 +167,7 @@ void Receiver::handleTimeout(Clock::time_point now)
 
 SackChunk Receiver::makeSack(std::size_t max_size)
 {
-    constexpr std::size_t fixed_size = Chunk::header_size + 12;
+    constexpr std::size_t fixed_size = Chunk::HeaderSize + 12;
     SackChunk sack{
         .cumulative_tsn_ack = cumulativeTsn(),
         .a_rwnd = advertisedWindow(),
@@ -273,13 +273,13 @@ void Receiver::advanceCumulative()
 
 void Receiver::assemble(std::uint64_t tsn, Fragment fragment, std::vector<Message> &delivered)
 {
-    constexpr std::uint8_t whole = DataChunk::beginning_flag | DataChunk::end_flag;
+    constexpr std::uint8_t whole = DataChunk::BeginningFlag | DataChunk::EndFlag;
     if ((fragment.flags & whole) == whole) {
         complete(fragment.ssn,
                  {
                      .stream = fragment.stream,
                      .ppid = fragment.ppid,
-                     .unordered = (fragment.flags & DataChunk::unordered_flag) != 0,
+                     .unordered = (fragment.flags & DataChunk::UnorderedFlag) != 0,
                      .payload = std::move(fragment.payload),
                  },
                  delivered);
@@ -289,27 +289,27 @@ void Receiver::assemble(std::uint64_t tsn, Fragment fragment, std::vector<Messag
     buffered_ += charge(fragment.payload);
     const auto inserted = fragments_.emplace(tsn, std::move(fragment)).first;
     const auto same_message = [](const Fragment &left, const Fragment &right) {
-        const auto unordered = (left.flags & DataChunk::unordered_flag) != 0;
-        return left.stream == right.stream && unordered == ((right.flags & DataChunk::unordered_flag) != 0) &&
+        const auto unordered = (left.flags & DataChunk::UnorderedFlag) != 0;
+        return left.stream == right.stream && unordered == ((right.flags & DataChunk::UnorderedFlag) != 0) &&
                (unordered || left.ssn == right.ssn);
     };
 
     auto last = inserted;
-    while ((last->second.flags & DataChunk::end_flag) == 0) {
+    while ((last->second.flags & DataChunk::EndFlag) == 0) {
         const auto next = std::next(last);
         if (next == fragments_.end() || next->first != last->first + 1 ||
-            (next->second.flags & DataChunk::beginning_flag) != 0 || !same_message(last->second, next->second)) {
+            (next->second.flags & DataChunk::BeginningFlag) != 0 || !same_message(last->second, next->second)) {
             return;
         }
         last = next;
     }
     auto first = inserted;
-    while ((first->second.flags & DataChunk::beginning_flag) == 0) {
+    while ((first->second.flags & DataChunk::BeginningFlag) == 0) {
         if (first == fragments_.begin()) {
             return;
         }
         const auto previous = std::prev(first);
-        if (previous->first + 1 != first->first || (previous->second.flags & DataChunk::end_flag) != 0 ||
+        if (previous->first + 1 != first->first || (previous->second.flags & DataChunk::EndFlag) != 0 ||
             !same_message(previous->second, first->second)) {
             return;
         }
@@ -319,7 +319,7 @@ void Receiver::assemble(std::uint64_t tsn, Fragment fragment, std::vector<Messag
     Message message{
         .stream = first->second.stream,
         .ppid = first->second.ppid,
-        .unordered = (first->second.flags & DataChunk::unordered_flag) != 0,
+        .unordered = (first->second.flags & DataChunk::UnorderedFlag) != 0,
         .payload = {},
     };
     const auto ssn = first->second.ssn;
@@ -343,7 +343,7 @@ void Receiver::complete(std::uint16_t ssn, Message message, std::vector<Message>
         return;
     }
     auto &stream =
-        ordered_.try_emplace(message.stream, OrderedStream{.next_ssn = ssn_origin, .blocked = {}}).first->second;
+        ordered_.try_emplace(message.stream, OrderedStream{.next_ssn = SsnOrigin, .blocked = {}}).first->second;
     const auto unwrapped = unwrap(ssn, stream.next_ssn);
     if (unwrapped < stream.next_ssn) {
         return;
@@ -379,7 +379,7 @@ void Receiver::skip(std::uint64_t new_cumulative, std::span<const ForwardTsnChun
     }
     fragments_.erase(fragments_.begin(), stop);
     for (auto orphan = new_cumulative + 1; !fragments_.empty() && fragments_.begin()->first == orphan &&
-                                           (fragments_.begin()->second.flags & DataChunk::beginning_flag) == 0;
+                                           (fragments_.begin()->second.flags & DataChunk::BeginningFlag) == 0;
          ++orphan) {
         buffered_ -= charge(fragments_.begin()->second.payload);
         fragments_.erase(fragments_.begin());
@@ -390,7 +390,7 @@ void Receiver::skip(std::uint64_t new_cumulative, std::span<const ForwardTsnChun
             continue;
         }
         auto &stream =
-            ordered_.try_emplace(entry.stream, OrderedStream{.next_ssn = ssn_origin, .blocked = {}}).first->second;
+            ordered_.try_emplace(entry.stream, OrderedStream{.next_ssn = SsnOrigin, .blocked = {}}).first->second;
         const auto ssn = unwrap(entry.ssn, stream.next_ssn);
         while (!stream.blocked.empty() && stream.blocked.begin()->first <= ssn) {
             auto node = stream.blocked.extract(stream.blocked.begin());

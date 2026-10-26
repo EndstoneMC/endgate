@@ -8,17 +8,17 @@
 namespace endgate::rtc {
 namespace {
 
-constexpr std::uint8_t unordered_bit = 0x80;
-constexpr std::uint8_t reliable = 0x00;
-constexpr std::uint8_t partial_reliable_rexmit = 0x01;
-constexpr std::uint8_t partial_reliable_timed = 0x02;
+constexpr std::uint8_t UnorderedBit = 0x80;
+constexpr std::uint8_t Reliable = 0x00;
+constexpr std::uint8_t PartialReliableRexmit = 0x01;
+constexpr std::uint8_t PartialReliableTimed = 0x02;
 
 }  // namespace
 
 std::optional<DataChannelOpen> DataChannelOpen::parse(std::span<const std::byte> message)
 {
     constexpr std::size_t fields_size = 12;
-    if (message.size() < fields_size || std::to_integer<std::uint8_t>(message[0]) != message_type) {
+    if (message.size() < fields_size || std::to_integer<std::uint8_t>(message[0]) != MessageType) {
         return std::nullopt;
     }
     const auto load16 = [&](std::size_t offset) {
@@ -45,19 +45,19 @@ std::optional<DataChannelOpen> DataChannelOpen::parse(std::span<const std::byte>
 DataChannelOpen DataChannelOpen::of(std::string label, std::string protocol, const Reliability &reliability,
                                     std::uint16_t priority)
 {
-    auto channel_type = reliable;
+    auto channel_type = Reliable;
     std::uint32_t parameter = 0;
     if (reliability.max_packet_life_time) {
-        channel_type = partial_reliable_timed;
+        channel_type = PartialReliableTimed;
         parameter = static_cast<std::uint32_t>(std::clamp<std::chrono::milliseconds::rep>(
             reliability.max_packet_life_time->count(), 0, std::numeric_limits<std::uint32_t>::max()));
     }
     else if (reliability.max_retransmits) {
-        channel_type = partial_reliable_rexmit;
+        channel_type = PartialReliableRexmit;
         parameter = *reliability.max_retransmits;
     }
     if (reliability.unordered) {
-        channel_type |= unordered_bit;
+        channel_type |= UnorderedBit;
     }
     return {
         .channel_type = channel_type,
@@ -70,16 +70,16 @@ DataChannelOpen DataChannelOpen::of(std::string label, std::string protocol, con
 
 std::optional<Reliability> DataChannelOpen::reliability() const
 {
-    Reliability result{.unordered = (channel_type & unordered_bit) != 0,
+    Reliability result{.unordered = (channel_type & UnorderedBit) != 0,
                        .max_retransmits = std::nullopt,
                        .max_packet_life_time = std::nullopt};
-    switch (channel_type & ~unordered_bit) {
-    case reliable:
+    switch (channel_type & ~UnorderedBit) {
+    case Reliable:
         return result;
-    case partial_reliable_rexmit:
+    case PartialReliableRexmit:
         result.max_retransmits = reliability_parameter;
         return result;
-    case partial_reliable_timed:
+    case PartialReliableTimed:
         result.max_packet_life_time = std::chrono::milliseconds{reliability_parameter};
         return result;
     default:
@@ -92,7 +92,7 @@ std::vector<std::byte> DataChannelOpen::serialize() const
     std::vector<std::byte> out;
     out.reserve(12 + label.size() + protocol.size());
     sctp::ByteWriter writer(out);
-    writer.write8(message_type);
+    writer.write8(MessageType);
     writer.write8(channel_type);
     writer.write16(priority);
     writer.write32(reliability_parameter);

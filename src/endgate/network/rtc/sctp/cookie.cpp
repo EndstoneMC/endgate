@@ -9,12 +9,12 @@
 namespace endgate::rtc::sctp {
 namespace {
 
-constexpr std::size_t fields_size = 41;
-constexpr std::size_t mac_size = 32;
+constexpr std::size_t FieldsSize = 41;
+constexpr std::size_t MacSize = 32;
 
-std::array<std::byte, mac_size> authenticate(const StateCookie::Key &key, std::span<const std::byte> fields)
+std::array<std::byte, MacSize> authenticate(const StateCookie::Key &key, std::span<const std::byte> fields)
 {
-    std::array<std::byte, mac_size> mac{};
+    std::array<std::byte, MacSize> mac{};
     unsigned int length = mac.size();
     HMAC(EVP_sha256(), key.data(), static_cast<int>(key.size()), reinterpret_cast<const unsigned char *>(fields.data()),
          fields.size(), reinterpret_cast<unsigned char *>(mac.data()), &length);
@@ -35,7 +35,7 @@ std::uint64_t load(std::span<const std::byte> data, std::size_t offset, std::siz
 std::vector<std::byte> StateCookie::seal(const Key &key, std::chrono::steady_clock::time_point now) const
 {
     std::vector<std::byte> data;
-    data.reserve(fields_size + mac_size);
+    data.reserve(FieldsSize + MacSize);
     ByteWriter writer(data);
     writer.write64(static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count()));
@@ -57,11 +57,11 @@ std::optional<StateCookie::Opened> StateCookie::open(const Key &key, std::span<c
                                                      std::chrono::steady_clock::time_point now,
                                                      std::chrono::steady_clock::duration lifetime)
 {
-    if (data.size() != fields_size + mac_size) {
+    if (data.size() != FieldsSize + MacSize) {
         return std::nullopt;
     }
-    const auto mac = authenticate(key, data.first(fields_size));
-    if (CRYPTO_memcmp(mac.data(), data.subspan(fields_size).data(), mac_size) != 0) {
+    const auto mac = authenticate(key, data.first(FieldsSize));
+    if (CRYPTO_memcmp(mac.data(), data.subspan(FieldsSize).data(), MacSize) != 0) {
         return std::nullopt;
     }
     const auto created =

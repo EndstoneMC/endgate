@@ -148,10 +148,10 @@ void SctpTransport::onMessage(sctp::Message message)
         std::vector<std::byte> bytes(message.payload.length());
         message.payload.copyTo(bytes);
         const auto type = std::to_integer<std::uint8_t>(bytes[0]);
-        if (type == DataChannelOpen::message_type) {
+        if (type == DataChannelOpen::MessageType) {
             handleOpen(message.stream, bytes);
         }
-        else if (type == DataChannelAck::message_type && channel != channels_.end()) {
+        else if (type == DataChannelAck::MessageType && channel != channels_.end()) {
             channel->second.acknowledged = true;
         }
         return;
@@ -236,7 +236,7 @@ void SctpTransport::handleOpen(std::uint16_t stream, std::span<const std::byte> 
         refuse(stream);
         return;
     }
-    constexpr std::array ack{std::byte{DataChannelAck::message_type}};
+    constexpr std::array ack{std::byte{DataChannelAck::MessageType}};
     if (!association_.send(stream, static_cast<std::uint32_t>(Ppid::Dcep), ByteBuf::copyBuffer(ack), {}, now_)) {
         refuse(stream);
         return;

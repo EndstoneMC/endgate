@@ -114,7 +114,7 @@ TEST_F(DataChannelTest, SendsOrderedUntilTheChannelIsAcknowledged)
         for (const auto &chunk : Packet::parse(packet)->chunks) {
             const auto data = chunk.type == 0 ? DataChunk::parse(chunk) : std::nullopt;
             if (data && data->ppid == static_cast<std::uint32_t>(Ppid::Binary)) {
-                flags.push_back(data->flags & DataChunk::unordered_flag);
+                flags.push_back(data->flags & DataChunk::UnorderedFlag);
             }
         }
         return true;
@@ -125,7 +125,7 @@ TEST_F(DataChannelTest, SendsOrderedUntilTheChannelIsAcknowledged)
     network.run(1s);
     ASSERT_TRUE(network.a->send(*stream, bufferOf("late"), true, network.now));
     network.run(1s);
-    EXPECT_EQ(flags, (std::vector<std::uint8_t>{0, DataChunk::unordered_flag}));
+    EXPECT_EQ(flags, (std::vector<std::uint8_t>{0, DataChunk::UnorderedFlag}));
     EXPECT_EQ(network.endpoint_b.messages.size(), 2U);
 }
 

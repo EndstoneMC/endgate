@@ -13,10 +13,10 @@ namespace {
 
 using namespace std::chrono_literals;
 
-constexpr std::uint8_t beginning = DataChunk::beginning_flag;
-constexpr std::uint8_t end = DataChunk::end_flag;
-constexpr std::uint8_t whole = DataChunk::beginning_flag | DataChunk::end_flag;
-constexpr std::uint8_t unordered = DataChunk::unordered_flag;
+constexpr std::uint8_t beginning = DataChunk::BeginningFlag;
+constexpr std::uint8_t end = DataChunk::EndFlag;
+constexpr std::uint8_t whole = DataChunk::BeginningFlag | DataChunk::EndFlag;
+constexpr std::uint8_t unordered = DataChunk::UnorderedFlag;
 
 const Receiver::Config config{.window = 1 << 20, .max_message_size = 262144, .streams = 1024};
 const auto start = std::chrono::steady_clock::time_point{} + 1h;
@@ -110,7 +110,7 @@ TEST_F(ReceiverTest, HonoursImmediateBit)
     data(100, 1, 0, whole, "a");
     receiver.endPacket(start, 200ms);
     receiver.makeSack(1200);
-    data(101, 1, 1, whole | DataChunk::immediate_flag, "b");
+    data(101, 1, 1, whole | DataChunk::ImmediateFlag, "b");
     receiver.endPacket(start, 200ms);
     EXPECT_TRUE(receiver.sackRequired());
 }

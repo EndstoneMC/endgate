@@ -28,7 +28,7 @@ std::vector<std::byte> serialized(auto &&add)
     PacketBuilder builder(buffer, {}, 65536);
     add(builder);
     const auto packet = builder.build();
-    return {packet.begin() + CommonHeader::size, packet.end()};
+    return {packet.begin() + CommonHeader::Size, packet.end()};
 }
 
 std::vector<std::byte> copy(std::span<const std::byte> span)
@@ -88,7 +88,7 @@ TEST(DataChunk, ParsesCapture)
     EXPECT_EQ(data->stream, 2);
     EXPECT_EQ(data->ssn, 1);
     EXPECT_EQ(data->ppid, 53U);
-    EXPECT_EQ(data->flags, DataChunk::beginning_flag | DataChunk::end_flag);
+    EXPECT_EQ(data->flags, DataChunk::BeginningFlag | DataChunk::EndFlag);
     EXPECT_EQ(copy(data->payload), bytes({0, 1, 2, 3}));
 }
 

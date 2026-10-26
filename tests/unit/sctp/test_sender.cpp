@@ -85,10 +85,10 @@ TEST_F(SenderTest, AssignsTsnsAndPerStreamSequenceNumbers)
     EXPECT_EQ(sent[0].tsn, 1000U);
     EXPECT_EQ(sent[0].stream, 1);
     EXPECT_EQ(sent[0].ssn, 0);
-    EXPECT_EQ(sent[0].flags, DataChunk::beginning_flag | DataChunk::end_flag);
+    EXPECT_EQ(sent[0].flags, DataChunk::BeginningFlag | DataChunk::EndFlag);
     EXPECT_EQ(sent[1].tsn, 1001U);
     EXPECT_EQ(sent[1].stream, 3);
-    EXPECT_EQ(sent[1].flags, DataChunk::beginning_flag | DataChunk::end_flag | DataChunk::unordered_flag);
+    EXPECT_EQ(sent[1].flags, DataChunk::BeginningFlag | DataChunk::EndFlag | DataChunk::UnorderedFlag);
     EXPECT_EQ(sent[2].stream, 1);
     EXPECT_EQ(sent[2].ssn, 1);
     EXPECT_EQ(sent[3].stream, 3);
@@ -103,11 +103,11 @@ TEST_F(SenderTest, FragmentsToThePacketSize)
     ASSERT_EQ(sent.size(), 3U);
     EXPECT_EQ(packets, 3U);
     EXPECT_EQ(sent[0].length, fragment_size);
-    EXPECT_EQ(sent[0].flags, DataChunk::beginning_flag);
+    EXPECT_EQ(sent[0].flags, DataChunk::BeginningFlag);
     EXPECT_EQ(sent[1].length, fragment_size);
     EXPECT_EQ(sent[1].flags, 0);
     EXPECT_EQ(sent[2].length, 3000 - 2 * fragment_size);
-    EXPECT_EQ(sent[2].flags, DataChunk::end_flag);
+    EXPECT_EQ(sent[2].flags, DataChunk::EndFlag);
     for (const auto &chunk : sent) {
         EXPECT_EQ(chunk.ssn, 0);
         EXPECT_EQ(chunk.stream, 2);
@@ -123,7 +123,7 @@ TEST_F(SenderTest, KeepsSmallMessagesWholeInTheNextPacket)
     ASSERT_EQ(sent.size(), 2U);
     EXPECT_EQ(packets, 2U);
     EXPECT_EQ(sent[1].length, 500U);
-    EXPECT_EQ(sent[1].flags, DataChunk::beginning_flag | DataChunk::end_flag);
+    EXPECT_EQ(sent[1].flags, DataChunk::BeginningFlag | DataChunk::EndFlag);
 }
 
 TEST_F(SenderTest, StopsAtTheCongestionWindow)
@@ -298,7 +298,7 @@ TEST_F(SenderTest, DiscardsTheUnsentRestOfAnAbandonedMessage)
     ASSERT_TRUE(packet);
     const auto data = DataChunk::parse(packet->chunks[0]);
     EXPECT_EQ(data->tsn, 1002U);
-    EXPECT_EQ(data->flags & DataChunk::beginning_flag, DataChunk::beginning_flag);
+    EXPECT_EQ(data->flags & DataChunk::BeginningFlag, DataChunk::BeginningFlag);
 }
 
 TEST_F(SenderTest, AbandonsEveryFragmentOfTheMessage)
