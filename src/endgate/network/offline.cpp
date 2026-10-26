@@ -21,9 +21,9 @@ void OfflineMessageHandler::setPingResponder(std::uint16_t port)
 
     const auto ping = server_.getServerListPingHandler().getInitialPing();
     const auto announcement = std::format(
-        "MCPE;{};{};{};{};{};{};{};{};{};{};{};{};", ping.getVersion().getName(), ping.getVersion().getProtocol(),
-        ping.getDescription(), ping.getPlayers().getOnline(), ping.getPlayers().getMax(), guid_, ping.getLevelName(),
-        toString(ping.getGameType()), joinable_through_server_screen, port, port, editor_world);
+        "MCPE;{};{};{};{};{};{};{};{};{};{};{};{};", ping.getDescription(), ping.getVersion().getProtocol(),
+        ping.getVersion().getName(), ping.getPlayers().getOnline(), ping.getPlayers().getMax(), guid_,
+        ping.getLevelName(), toString(ping.getGameType()), joinable_through_server_screen, port, port, editor_world);
 
     const auto length = static_cast<std::uint16_t>(announcement.size());
     offline_ping_response_.clear();
