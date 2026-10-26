@@ -27,7 +27,6 @@ public:
     [[nodiscard]] const std::map<std::string, std::string> &getServers() const;
     [[nodiscard]] const std::vector<std::string> &getAttemptConnectionOrder() const;
     [[nodiscard]] int getCompressionLevel() const;
-    [[nodiscard]] bool isNetherNetEnabled() const;
     [[nodiscard]] const std::vector<std::string> &getNetherNetPublicAddresses() const;
     [[nodiscard]] const std::filesystem::path &getNetherNetTlsCertificateChain() const;
     [[nodiscard]] const std::filesystem::path &getNetherNetTlsPrivateKey() const;
@@ -42,7 +41,6 @@ private:
     std::map<std::string, std::string> servers_;
     std::vector<std::string> attempt_connection_order_;
     int compression_level_{};
-    bool nethernet_enabled_{};
     std::vector<std::string> nethernet_public_addresses_;
     std::filesystem::path nethernet_tls_certificate_chain_;
     std::filesystem::path nethernet_tls_private_key_;

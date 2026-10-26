@@ -26,7 +26,6 @@ struct Advanced {
 };
 
 struct NetherNet {
-    bool enabled{};
     std::vector<std::string> public_addresses;
     std::string tls_certificate_chain;
     std::string tls_private_key;
@@ -36,9 +35,9 @@ struct NetherNet {
     struct glaze {
         using T = NetherNet;
         static constexpr auto value =
-            glz::object("enabled", &T::enabled, "public-addresses", &T::public_addresses, "tls-certificate-chain",
-                        &T::tls_certificate_chain, "tls-private-key", &T::tls_private_key, "identity-key",
-                        &T::identity_key, "identity-domain", &T::identity_domain);
+            glz::object("public-addresses", &T::public_addresses, "tls-certificate-chain", &T::tls_certificate_chain,
+                        "tls-private-key", &T::tls_private_key, "identity-key", &T::identity_key, "identity-domain",
+                        &T::identity_domain);
     };
 };
 
@@ -109,7 +108,6 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
         }
     }
     config.compression_level_ = document.advanced.compression_level;
-    config.nethernet_enabled_ = document.nethernet.enabled;
     config.nethernet_public_addresses_ = document.nethernet.public_addresses;
     config.nethernet_tls_certificate_chain_ = document.nethernet.tls_certificate_chain;
     config.nethernet_tls_private_key_ = document.nethernet.tls_private_key;
@@ -131,23 +129,21 @@ bool ProxyConfig::validate() const
         logger.warn("ALL packets going through the proxy will be uncompressed. This will increase bandwidth usage.");
     }
 
-    if (nethernet_enabled_) {
-        for (const auto &address : nethernet_public_addresses_) {
-            asio::error_code ec;
-            asio::ip::make_address(address, ec);
-            if (ec) {
-                logger.error("Invalid NetherNet public address {}", address);
-                valid = false;
-            }
-        }
-        if (nethernet_tls_certificate_chain_.empty() != nethernet_tls_private_key_.empty()) {
-            logger.error("NetherNet over HTTPS needs both tls-certificate-chain and tls-private-key");
+    for (const auto &address : nethernet_public_addresses_) {
+        asio::error_code ec;
+        asio::ip::make_address(address, ec);
+        if (ec) {
+            logger.error("Invalid NetherNet public address {}", address);
             valid = false;
         }
-        if (nethernet_identity_key_.empty()) {
-            logger.error("NetherNet needs an identity-key path");
-            valid = false;
-        }
+    }
+    if (nethernet_tls_certificate_chain_.empty() != nethernet_tls_private_key_.empty()) {
+        logger.error("NetherNet over HTTPS needs both tls-certificate-chain and tls-private-key");
+        valid = false;
+    }
+    if (nethernet_identity_key_.empty()) {
+        logger.error("NetherNet needs an identity-key path");
+        valid = false;
     }
     return valid;
 }
@@ -185,11 +181,6 @@ const std::vector<std::string> &ProxyConfig::getAttemptConnectionOrder() const
 int ProxyConfig::getCompressionLevel() const
 {
     return compression_level_;
-}
-
-bool ProxyConfig::isNetherNetEnabled() const
-{
-    return nethernet_enabled_;
 }
 
 const std::vector<std::string> &ProxyConfig::getNetherNetPublicAddresses() const

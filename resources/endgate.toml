@@ -25,9 +25,6 @@ try = [
 ]
 
 [nethernet]
-# Should players be able to join over NetherNet as well as RakNet?
-enabled = true
-
 # Which addresses should players reach the proxy at over NetherNet? Leave empty to use this
 # machine's own addresses.
 public-addresses = []
