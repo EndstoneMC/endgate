@@ -15,7 +15,7 @@ package = false
 nethernet = { git = "https://github.com/EndstoneMC/nethernet-python" }
 
 [tool.pytest.ini_options]
-testpaths = ["network"]
+testpaths = ["integration"]
 
 [tool.ruff]
 line-length = 120
