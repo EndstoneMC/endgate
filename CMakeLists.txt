@@ -44,6 +44,7 @@ add_subdirectory(src/endgate/network/nethernet)
 add_subdirectory(tests/unit/raknet)
 add_subdirectory(tests/unit/rtc)
 add_subdirectory(tests/unit/sctp)
+add_subdirectory(tests/interop)
 add_subdirectory(tests/unit/nethernet)
 
 add_executable(endgate
