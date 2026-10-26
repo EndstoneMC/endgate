@@ -27,7 +27,6 @@ public:
     [[nodiscard]] const std::map<std::string, std::string> &getServers() const;
     [[nodiscard]] const std::vector<std::string> &getAttemptConnectionOrder() const;
     [[nodiscard]] int getCompressionLevel() const;
-    [[nodiscard]] const std::vector<std::string> &getPublicAddresses() const;
     [[nodiscard]] const std::filesystem::path &getTlsCertificate() const;
     [[nodiscard]] const std::filesystem::path &getTlsCertificateKey() const;
 
@@ -39,7 +38,6 @@ private:
     std::map<std::string, std::string> servers_;
     std::vector<std::string> attempt_connection_order_;
     int compression_level_{};
-    std::vector<std::string> public_addresses_;
     std::filesystem::path tls_certificate_;
     std::filesystem::path tls_certificate_key_;
 };

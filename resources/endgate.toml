@@ -4,9 +4,6 @@ config-version = "1.0"
 # What port should the proxy be bound to? By default, we'll bind to all addresses on port 19132.
 bind = "0.0.0.0:19132"
 
-# Which addresses do players reach the proxy at? Leave empty to use this machine's own addresses.
-public-addresses = []
-
 # Which certificate and key should join requests be served over HTTPS with? These take the same PEM
 # files as nginx's ssl_certificate and ssl_certificate_key, such as Let's Encrypt's fullchain.pem and
 # privkey.pem. Leave both empty to serve plain HTTP only.

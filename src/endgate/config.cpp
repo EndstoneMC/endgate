@@ -6,7 +6,6 @@
 #include <system_error>
 #include <variant>
 
-#include <asio/ip/address.hpp>
 #include <glaze/toml.hpp>
 #include <spdlog/logger.h>
 
@@ -28,7 +27,6 @@ struct Advanced {
 struct Document {
     std::string config_version;
     std::string bind;
-    std::vector<std::string> public_addresses;
     std::string tls_certificate;
     std::string tls_certificate_key;
     std::string motd;
@@ -39,11 +37,10 @@ struct Document {
 
     struct glaze {
         using T = Document;
-        static constexpr auto value =
-            glz::object("config-version", &T::config_version, "bind", &T::bind, "public-addresses",
-                        &T::public_addresses, "tls-certificate", &T::tls_certificate, "tls-certificate-key",
-                        &T::tls_certificate_key, "motd", &T::motd, "show-max-players", &T::show_max_players,
-                        "online-mode", &T::online_mode, "servers", &T::servers, "advanced", &T::advanced);
+        static constexpr auto value = glz::object(
+            "config-version", &T::config_version, "bind", &T::bind, "tls-certificate", &T::tls_certificate,
+            "tls-certificate-key", &T::tls_certificate_key, "motd", &T::motd, "show-max-players", &T::show_max_players,
+            "online-mode", &T::online_mode, "servers", &T::servers, "advanced", &T::advanced);
     };
 };
 }  // namespace
@@ -95,7 +92,6 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
         }
     }
     config.compression_level_ = document.advanced.compression_level;
-    config.public_addresses_ = document.public_addresses;
     config.tls_certificate_ = document.tls_certificate;
     config.tls_certificate_key_ = document.tls_certificate_key;
     return config;
@@ -114,14 +110,6 @@ bool ProxyConfig::validate() const
         logger.warn("ALL packets going through the proxy will be uncompressed. This will increase bandwidth usage.");
     }
 
-    for (const auto &address : public_addresses_) {
-        asio::error_code ec;
-        asio::ip::make_address(address, ec);
-        if (ec) {
-            logger.error("Invalid public address {}", address);
-            valid = false;
-        }
-    }
     if (tls_certificate_.empty() != tls_certificate_key_.empty()) {
         logger.error("HTTPS needs both tls-certificate and tls-certificate-key");
         valid = false;
@@ -162,11 +150,6 @@ const std::vector<std::string> &ProxyConfig::getAttemptConnectionOrder() const
 int ProxyConfig::getCompressionLevel() const
 {
     return compression_level_;
-}
-
-const std::vector<std::string> &ProxyConfig::getPublicAddresses() const
-{
-    return public_addresses_;
 }
 
 const std::filesystem::path &ProxyConfig::getTlsCertificate() const
