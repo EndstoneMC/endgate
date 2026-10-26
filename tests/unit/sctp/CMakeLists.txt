@@ -1,6 +1,7 @@
 include(GoogleTest)
 
 add_executable(endgate_sctp_tests
+        test_chunks.cpp
         test_crc32c.cpp
         test_packet.cpp
 )
