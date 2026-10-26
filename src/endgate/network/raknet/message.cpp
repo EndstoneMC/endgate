@@ -54,7 +54,9 @@ std::optional<UnconnectedPing> UnconnectedPing::decode(std::span<const std::byte
     if (ping_id != MessageId::UnconnectedPing && ping_id != MessageId::UnconnectedPingOpenConnections) {
         return std::nullopt;
     }
-    return UnconnectedPing{ping_id, *send_ping_time, reader.readUint64().value_or(UNASSIGNED_RAKNET_GUID)};
+    return UnconnectedPing{.id = ping_id,
+                           .send_ping_time = *send_ping_time,
+                           .client_guid = reader.readUint64().value_or(UNASSIGNED_RAKNET_GUID)};
 }
 
 void UnconnectedPing::encode(Writer &writer) const
@@ -78,7 +80,8 @@ std::optional<UnconnectedPong> UnconnectedPong::decode(std::span<const std::byte
         !std::ranges::equal(*magic, OFFLINE_MESSAGE_DATA_ID) || reader.remaining() >= max_offline_data_length) {
         return std::nullopt;
     }
-    return UnconnectedPong{*send_ping_time, *server_guid, reader.readRemaining()};
+    return UnconnectedPong{
+        .send_ping_time = *send_ping_time, .server_guid = *server_guid, .data = reader.readRemaining()};
 }
 
 void UnconnectedPong::encode(Writer &writer) const
@@ -96,8 +99,9 @@ std::optional<OpenConnectionRequest1> OpenConnectionRequest1::decode(std::span<c
         return std::nullopt;
     }
     const auto mtu = std::min<std::size_t>(message.size() + UDP_HEADER_SIZE, std::numeric_limits<std::uint16_t>::max());
-    return OpenConnectionRequest1{std::to_integer<std::uint8_t>(message[1 + OFFLINE_MESSAGE_DATA_ID.size()]),
-                                  static_cast<std::uint16_t>(mtu)};
+    return OpenConnectionRequest1{.protocol =
+                                      std::to_integer<std::uint8_t>(message[1 + OFFLINE_MESSAGE_DATA_ID.size()]),
+                                  .mtu = static_cast<std::uint16_t>(mtu)};
 }
 
 void OpenConnectionRequest1::encode(Writer &writer) const
@@ -122,7 +126,7 @@ std::optional<OpenConnectionReply1> OpenConnectionReply1::decode(std::span<const
     if (!server_guid || !security) {
         return std::nullopt;
     }
-    OpenConnectionReply1 reply{*server_guid, std::nullopt, 0};
+    OpenConnectionReply1 reply{.server_guid = *server_guid};
     if (*security != 0) {
         reply.cookie = reader.readUint32();
         if (!reply.cookie) {
@@ -160,8 +164,9 @@ std::optional<OpenConnectionRequest2> OpenConnectionRequest2::decode(std::span<c
     if (!server_address || !mtu) {
         return std::nullopt;
     }
-    return OpenConnectionRequest2{std::nullopt, *server_address, *mtu,
-                                  reader.readUint64().value_or(UNASSIGNED_RAKNET_GUID)};
+    return OpenConnectionRequest2{.server_address = *server_address,
+                                  .mtu = *mtu,
+                                  .client_guid = reader.readUint64().value_or(UNASSIGNED_RAKNET_GUID)};
 }
 
 void OpenConnectionRequest2::encode(Writer &writer) const
@@ -190,7 +195,10 @@ std::optional<OpenConnectionReply2> OpenConnectionReply2::decode(std::span<const
         return std::nullopt;
     }
     const auto security = reader.readUint8().value_or(0);
-    return OpenConnectionReply2{*server_guid, *client_address, *mtu, (security & 0x80U) != 0};
+    return OpenConnectionReply2{.server_guid = *server_guid,
+                                .client_address = *client_address,
+                                .mtu = *mtu,
+                                .security = (security & 0x80U) != 0};
 }
 
 void OpenConnectionReply2::encode(Writer &writer) const
@@ -215,7 +223,7 @@ std::optional<IncompatibleProtocolVersion> IncompatibleProtocolVersion::decode(s
     if (!protocol || !server_guid) {
         return std::nullopt;
     }
-    return IncompatibleProtocolVersion{*protocol, *server_guid};
+    return IncompatibleProtocolVersion{.protocol = *protocol, .server_guid = *server_guid};
 }
 
 void IncompatibleProtocolVersion::encode(Writer &writer) const
@@ -241,7 +249,7 @@ std::optional<OfflineRejection> OfflineRejection::decode(std::span<const std::by
     if (!server_guid) {
         return std::nullopt;
     }
-    return OfflineRejection{id, *server_guid};
+    return OfflineRejection{.id = id, .server_guid = *server_guid};
 }
 
 void OfflineRejection::encode(Writer &writer) const
@@ -259,7 +267,7 @@ std::optional<ConnectedPing> ConnectedPing::decode(std::span<const std::byte> me
     if (!id || static_cast<MessageId>(*id) != MessageId::ConnectedPing || !send_ping_time || reader.remaining() != 0) {
         return std::nullopt;
     }
-    return ConnectedPing{*send_ping_time};
+    return ConnectedPing{.send_ping_time = *send_ping_time};
 }
 
 void ConnectedPing::encode(Writer &writer) const
@@ -278,7 +286,7 @@ std::optional<ConnectedPong> ConnectedPong::decode(std::span<const std::byte> me
         reader.remaining() != 0) {
         return std::nullopt;
     }
-    return ConnectedPong{*send_ping_time, *send_pong_time};
+    return ConnectedPong{.send_ping_time = *send_ping_time, .send_pong_time = *send_pong_time};
 }
 
 void ConnectedPong::encode(Writer &writer) const
@@ -298,7 +306,10 @@ std::optional<ConnectionRequest> ConnectionRequest::decode(std::span<const std::
         return std::nullopt;
     }
     const auto security = reader.readUint8();
-    return ConnectionRequest{*client_guid, *send_ping_time, security.value_or(0) != 0, reader.readRemaining()};
+    return ConnectionRequest{.client_guid = *client_guid,
+                             .send_ping_time = *send_ping_time,
+                             .security = security.value_or(0) != 0,
+                             .password = reader.readRemaining()};
 }
 
 void ConnectionRequest::encode(Writer &writer) const
