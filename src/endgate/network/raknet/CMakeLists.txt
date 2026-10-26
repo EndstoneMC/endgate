@@ -7,6 +7,7 @@ add_library(endgate_raknet STATIC
         connection.cpp
         offline.cpp
 )
+add_library(endgate::raknet ALIAS endgate_raknet)
 
 target_include_directories(endgate_raknet PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(endgate_raknet PUBLIC asio::asio)

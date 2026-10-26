@@ -51,7 +51,7 @@ target_include_directories(endgate PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}/gener
 target_compile_definitions(endgate PRIVATE ENDGATE_VERSION="${PROJECT_VERSION}")
 
 target_link_libraries(endgate PRIVATE
-        endgate_raknet
+        endgate::raknet
         asio::asio
         glaze::glaze
         replxx::replxx
