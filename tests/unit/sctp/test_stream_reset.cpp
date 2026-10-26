@@ -236,6 +236,60 @@ TEST(StreamReset, AnswersRepeatedAndOutOfSequenceRequests)
     EXPECT_EQ(network.endpoint_b.incoming_resets.size(), 1U);
 }
 
+TEST(StreamReset, FollowsARequestRetriedUnderANewSequenceNumber)
+{
+    Network network;
+    connect(network);
+    std::vector<std::byte> request;
+    auto data_dropped = false;
+    network.filter = [&](std::span<const std::byte> packet, bool to_b) {
+        if (to_b && request.empty() && hasChunk(packet, ChunkType::ReConfig)) {
+            request.assign(packet.begin(), packet.end());
+            return false;
+        }
+        if (to_b && !data_dropped && hasChunk(packet, ChunkType::Data)) {
+            data_dropped = true;
+            return false;
+        }
+        return true;
+    };
+    ASSERT_TRUE(network.a->send(1, 51, bufferOf("lost once"), {}, network.now));
+    const Streams streams{1};
+    ASSERT_TRUE(network.a->resetStreams(streams, network.now));
+    network.collect();
+    ASSERT_FALSE(request.empty());
+
+    const auto answer = [&](std::span<const std::byte> packet) {
+        network.endpoint_b.outbox.clear();
+        network.b->handlePacket(packet, network.now);
+        for (const auto &sent : network.endpoint_b.outbox) {
+            const auto responses = responsesIn(sent);
+            if (!responses.empty()) {
+                network.endpoint_b.outbox.clear();
+                return std::optional{responses[0].result};
+            }
+        }
+        network.endpoint_b.outbox.clear();
+        return std::optional<ReconfigResult>{};
+    };
+    EXPECT_EQ(answer(request), ReconfigResult::InProgress);
+
+    const auto parsed = Packet::parse(request);
+    auto renumbered = request;
+    const auto offset = static_cast<std::size_t>(parsed->chunks[0].value.data() - request.data()) + 4;
+    renumbered[offset + 3] = static_cast<std::byte>(std::to_integer<std::uint8_t>(renumbered[offset + 3]) + 1);
+    std::fill_n(renumbered.begin() + 8, 4, std::byte{0});
+    const auto checksum = crc32c(renumbered);
+    for (std::size_t i = 0; i < 4; ++i) {
+        renumbered[8 + i] = static_cast<std::byte>(checksum >> (8 * i));
+    }
+    EXPECT_EQ(answer(renumbered), ReconfigResult::InProgress);
+
+    ASSERT_TRUE(network.runUntil([&] { return !network.endpoint_b.incoming_resets.empty(); }, 10s));
+    EXPECT_EQ(network.endpoint_b.messages.size(), 1U);
+    EXPECT_EQ(answer(renumbered), ReconfigResult::SuccessPerformed);
+}
+
 TEST(StreamReset, RefusesResetBeforeEstablishment)
 {
     Network network;

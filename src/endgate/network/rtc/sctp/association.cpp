@@ -779,7 +779,8 @@ void Association::handleReconfig(const Chunk &chunk, Clock::time_point now)
             }
             evaluate(request->request_sequence, [&] {
                 if (tcb_->receiver.resetDeferred()) {
-                    return ReconfigResult::ErrorRequestAlreadyInProgress;
+                    tcb_->deferred_request = request->request_sequence;
+                    return ReconfigResult::InProgress;
                 }
                 if (tcb_->receiver.reached(request->last_assigned_tsn)) {
                     tcb_->receiver.resetStreams(request->streams);
