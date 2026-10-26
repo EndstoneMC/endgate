@@ -4,6 +4,7 @@
 #include <array>
 #include <charconv>
 #include <optional>
+#include <random>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -53,8 +54,8 @@ public:
     Session(Endpoint &endpoint, const raknet::SystemAddress &address, const raknet::OpenConnectionRequest2 &request,
             std::uint16_t system_index, raknet::TimePoint now)
         : endpoint_(endpoint), address_(address), key_(toString(address)), timer_(endpoint.strand_),
-          creation_time_(now),
-          connection_(*this, endpoint.getConnectionConfiguration(), address, request, system_index, now)
+          creation_time_(now), connection_(*this, endpoint.getConnectionConfiguration(endpoint.offline_.getGuid()),
+                                           address, request, system_index, now)
     {
     }
 
@@ -62,7 +63,8 @@ public:
             raknet::TimePoint now)
         : endpoint_(endpoint), address_(address), key_(toString(address)), socket_(std::move(socket)),
           timer_(endpoint.strand_), creation_time_(now),
-          connection_(*this, endpoint.getConnectionConfiguration(), address, now)
+          connection_(*this, endpoint.getConnectionConfiguration(std::mt19937_64{std::random_device{}()}()), address,
+                      now)
     {
     }
 
@@ -318,9 +320,9 @@ std::uint16_t Endpoint::getFreeSystemIndex() const
     return static_cast<std::uint16_t>(std::ranges::find(used, false) - used.begin());
 }
 
-raknet::ConnectionConfiguration Endpoint::getConnectionConfiguration() const
+raknet::ConnectionConfiguration Endpoint::getConnectionConfiguration(std::uint64_t guid)
 {
-    return {.guid = offline_.getGuid()};
+    return {.guid = guid};
 }
 
 void Endpoint::channelActive(Session &session)

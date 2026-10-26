@@ -72,7 +72,7 @@ private:
                      const raknet::SystemAddress &address);
     [[nodiscard]] bool isGuidInUse(std::uint64_t guid) const;
     [[nodiscard]] std::uint16_t getFreeSystemIndex() const;
-    [[nodiscard]] raknet::ConnectionConfiguration getConnectionConfiguration() const;
+    [[nodiscard]] static raknet::ConnectionConfiguration getConnectionConfiguration(std::uint64_t guid);
 
     ProxyServer &server_;
     spdlog::logger &logger_;
