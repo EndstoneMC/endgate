@@ -34,6 +34,17 @@ struct IceCandidate {
 };
 
 /**
+ * An address an answer offers the client. A server-reflexive one carries the local address that NAT
+ * maps to it.
+ *
+ * @see RFC 8445 section 5.1.1
+ */
+struct CandidateAddress {
+    asio::ip::udp::endpoint address;
+    std::optional<asio::ip::udp::endpoint> base;
+};
+
+/**
  * @see RFC 8842 section 5
  */
 enum class DtlsSetup {
@@ -74,7 +85,7 @@ struct Description {
      */
     [[nodiscard]] static Description answer(const Description &offer, const IceCredentials &credentials,
                                             const CertificateFingerprint &fingerprint,
-                                            std::span<const asio::ip::udp::endpoint> addresses);
+                                            std::span<const CandidateAddress> addresses);
 
     [[nodiscard]] std::string generate(std::uint64_t session_id) const;
 };

@@ -193,7 +193,7 @@ TEST(DescriptionTest, AnswersTheMojangGuideOfferAsTheGuideDoes)
 {
     const auto offer = Description::parse(MojangGuideOffer);
     ASSERT_TRUE(offer);
-    const std::vector<asio::ip::udp::endpoint> addresses{{asio::ip::make_address("10.0.0.50"), 23456}};
+    const std::vector<CandidateAddress> addresses{{.address = {asio::ip::make_address("10.0.0.50"), 23456}}};
     const auto answer = Description::answer(*offer, {.ufrag = "wxyz", .pwd = "zyxwvutsrqponmlkjihgfedcb"},
                                             MojangGuideAnswerFingerprint, addresses);
 
@@ -246,9 +246,9 @@ TEST(DescriptionTest, RanksHostCandidatesInTheOrderGiven)
 {
     const auto offer = Description::parse(MojangGuideOffer);
     ASSERT_TRUE(offer);
-    const std::vector<asio::ip::udp::endpoint> addresses{{asio::ip::make_address("203.0.113.9"), 19132},
-                                                         {asio::ip::make_address("2001:db8::9"), 19132},
-                                                         {asio::ip::make_address("::ffff:10.1.2.3"), 19132}};
+    const std::vector<CandidateAddress> addresses{{.address = {asio::ip::make_address("203.0.113.9"), 19132}},
+                                                  {.address = {asio::ip::make_address("2001:db8::9"), 19132}},
+                                                  {.address = {asio::ip::make_address("::ffff:10.1.2.3"), 19132}}};
     const auto answer =
         Description::answer(*offer, IceCredentials::generate(), MojangGuideAnswerFingerprint, addresses);
     ASSERT_EQ(answer.candidates.size(), 3U);
@@ -259,11 +259,37 @@ TEST(DescriptionTest, RanksHostCandidatesInTheOrderGiven)
     EXPECT_NE(answer.candidates[0].foundation, answer.candidates[1].foundation);
 }
 
+TEST(DescriptionTest, OffersAnAddressBehindNatAsServerReflexive)
+{
+    const auto offer = Description::parse(CapturedClientOffer);
+    ASSERT_TRUE(offer);
+    const std::vector<CandidateAddress> addresses{
+        {.address = {asio::ip::make_address("203.0.113.9"), 19134},
+         .base = asio::ip::udp::endpoint{asio::ip::make_address("10.0.0.5"), 19132}},
+        {.address = {asio::ip::make_address("10.0.0.5"), 19132}},
+    };
+    const auto answer =
+        Description::answer(*offer, IceCredentials::generate(), MojangGuideAnswerFingerprint, addresses);
+    ASSERT_EQ(answer.candidates.size(), 2U);
+    EXPECT_EQ(answer.candidates[0].type, "srflx");
+    EXPECT_EQ(answer.candidates[0].priority, 1694498815U);
+    EXPECT_EQ(answer.candidates[0].toString(),
+              "candidate:1 1 udp 1694498815 203.0.113.9 19134 typ srflx raddr 10.0.0.5 rport 19132");
+    EXPECT_EQ(answer.candidates[1].type, "host");
+    EXPECT_EQ(answer.candidates[1].priority, 2130706175U);
+    EXPECT_FALSE(answer.candidates[1].related_address);
+    const auto generated = answer.generate(1);
+    EXPECT_NE(
+        generated.find("a=candidate:1 1 udp 1694498815 203.0.113.9 19134 typ srflx raddr 10.0.0.5 rport 19132\r\n"),
+        std::string::npos)
+        << generated;
+}
+
 TEST(DescriptionTest, ReadsBackWhatItWrites)
 {
     const auto offer = Description::parse(ConstructedLibwebrtcOffer);
     ASSERT_TRUE(offer);
-    const std::vector<asio::ip::udp::endpoint> addresses{{asio::ip::make_address("198.51.100.1"), 19132}};
+    const std::vector<CandidateAddress> addresses{{.address = {asio::ip::make_address("198.51.100.1"), 19132}}};
     const auto credentials = IceCredentials::generate();
     auto answer = Description::answer(*offer, credentials, MojangGuideAnswerFingerprint, addresses);
     answer.identity = "aWRlbnRpdHk=";

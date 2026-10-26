@@ -253,8 +253,7 @@ std::optional<Description> Description::parse(std::string_view sdp)
 }
 
 Description Description::answer(const Description &offer, const IceCredentials &credentials,
-                                const CertificateFingerprint &fingerprint,
-                                std::span<const asio::ip::udp::endpoint> addresses)
+                                const CertificateFingerprint &fingerprint, std::span<const CandidateAddress> addresses)
 {
     Description answer;
     answer.mid = offer.mid;
@@ -274,22 +273,25 @@ Description Description::answer(const Description &offer, const IceCredentials &
     answer.sctp_port = 5000;
     answer.max_message_size = 262144;
     for (std::size_t index = 0; index < std::min(addresses.size(), MaxCandidates); ++index) {
-        const auto &address = addresses[index];
-        const auto unmapped =
-            address.address().is_v6() && address.address().to_v6().is_v4_mapped()
-                ? asio::ip::address{asio::ip::make_address_v4(asio::ip::v4_mapped, address.address().to_v6())}
-                : address.address();
         constexpr std::uint32_t host_type_preference = 126;
+        constexpr std::uint32_t server_reflexive_type_preference = 100;
+        const auto unmapped = [](const asio::ip::address &address) {
+            return address.is_v6() && address.to_v6().is_v4_mapped()
+                     ? asio::ip::address{asio::ip::make_address_v4(asio::ip::v4_mapped, address.to_v6())}
+                     : address;
+        };
+        const auto &[address, base] = addresses[index];
+        const auto type_preference = base ? server_reflexive_type_preference : host_type_preference;
         answer.candidates.push_back({
             .foundation = std::to_string(index + 1),
             .component = 1,
             .transport = "udp",
-            .priority = (host_type_preference << 24U) | ((65535U - static_cast<std::uint32_t>(index)) << 8U) | 255U,
-            .address = unmapped.to_string(),
+            .priority = (type_preference << 24U) | ((65535U - static_cast<std::uint32_t>(index)) << 8U) | 255U,
+            .address = unmapped(address.address()).to_string(),
             .port = address.port(),
-            .type = "host",
-            .related_address = std::nullopt,
-            .related_port = std::nullopt,
+            .type = base ? "srflx" : "host",
+            .related_address = base ? std::optional{unmapped(base->address()).to_string()} : std::nullopt,
+            .related_port = base ? std::optional{base->port()} : std::nullopt,
         });
     }
     answer.end_of_candidates = true;
