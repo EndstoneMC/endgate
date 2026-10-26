@@ -1,0 +1,126 @@
+#pragma once
+
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_set>
+#include <utility>
+#include <variant>
+
+#include <asio/awaitable.hpp>
+#include <asio/io_context.hpp>
+#include <asio/ip/tcp.hpp>
+#include <asio/ssl/context.hpp>
+#include <asio/steady_timer.hpp>
+#include <asio/strand.hpp>
+
+#include "endgate/network/ping.h"
+
+namespace endgate::nethernet {
+
+/**
+ * Completes one join with an SDP answer or a NetherNet error code, once, from any thread. A join
+ * that is never completed times out.
+ *
+ * @see NetherNet::HttpSignalingServer::SendSignal
+ */
+class JoinResponse {
+public:
+    struct Pending {
+        explicit Pending(asio::strand<asio::io_context::executor_type> strand) : timer(std::move(strand)) {}
+
+        asio::steady_timer timer;
+        std::optional<std::variant<std::string, std::uint32_t>> result;
+    };
+
+    explicit JoinResponse(std::shared_ptr<Pending> pending) : pending_(std::move(pending)) {}
+
+    void answer(std::string sdp) const;
+
+    /**
+     * @see NetherNet::ESessionError
+     */
+    void reject(std::uint32_t session_error) const;
+
+private:
+    std::shared_ptr<Pending> pending_;
+};
+
+/**
+ * What the signalling server needs from the proxy: the ping it shows, and an answer to every offer.
+ */
+class JoinHandler {
+public:
+    virtual ~JoinHandler() = default;
+    [[nodiscard]] virtual ServerPing getServerPing() = 0;
+    virtual void onJoin(std::string network_id, std::string offer, JoinResponse response) = 0;
+};
+
+/**
+ * NetherNet's HTTP signalling, as BDS serves it on its server port: GET /v1/join for the ping and
+ * POST /v1/join/{networkId} to trade an SDP offer for an answer. A connection whose first byte opens a
+ * TLS record is served over TLS when a certificate is configured, and refused at once when not.
+ *
+ * @see NetherNet::HttpSignalingServer
+ * @see NetherNet::HttpServer
+ */
+class HttpSignalingServer : public std::enable_shared_from_this<HttpSignalingServer> {
+public:
+    struct Config {
+        std::size_t max_connections{64};
+        std::size_t max_request_bytes{65536};
+        std::chrono::milliseconds request_timeout{std::chrono::seconds{10}};
+        std::chrono::milliseconds write_timeout{std::chrono::seconds{10}};
+        std::chrono::milliseconds join_timeout{std::chrono::seconds{10}};
+    };
+
+    [[nodiscard]] static std::shared_ptr<HttpSignalingServer> create(asio::io_context &io_context, JoinHandler &handler,
+                                                                     Config config,
+                                                                     std::shared_ptr<asio::ssl::context> tls);
+
+    [[nodiscard]] static std::shared_ptr<asio::ssl::context> loadTls(const std::filesystem::path &certificate_chain,
+                                                                     const std::filesystem::path &private_key);
+
+    void listen(const asio::ip::tcp::endpoint &endpoint);
+    void close();
+
+    [[nodiscard]] asio::ip::tcp::endpoint getLocalEndpoint() const { return acceptor_.local_endpoint(); }
+
+private:
+    struct Request {
+        std::string method;
+        std::string path;
+        std::string body;
+    };
+
+    struct Response {
+        std::uint16_t status;
+        std::string reason;
+        std::string content_type;
+        std::string body;
+    };
+
+    HttpSignalingServer(asio::io_context &io_context, JoinHandler &handler, Config config,
+                        std::shared_ptr<asio::ssl::context> tls);
+
+    static asio::awaitable<void> accept(std::shared_ptr<HttpSignalingServer> self);
+    static asio::awaitable<void> serve(std::shared_ptr<HttpSignalingServer> self, asio::ip::tcp::socket socket);
+
+    template <typename Stream>
+    asio::awaitable<void> exchange(Stream &stream, std::chrono::steady_clock::time_point deadline);
+
+    asio::awaitable<Response> respond(Request request);
+
+    asio::strand<asio::io_context::executor_type> strand_;
+    asio::ip::tcp::acceptor acceptor_;
+    JoinHandler &handler_;
+    Config config_;
+    std::shared_ptr<asio::ssl::context> tls_;
+    std::unordered_set<asio::ip::tcp::socket *> connections_;
+};
+
+}  // namespace endgate::nethernet

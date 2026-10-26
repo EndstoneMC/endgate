@@ -1,5 +1,6 @@
 add_library(endgate_nethernet STATIC
         identity.cpp
+        signaling.cpp
 )
 
 target_include_directories(endgate_nethernet PUBLIC ${PROJECT_SOURCE_DIR}/src)
