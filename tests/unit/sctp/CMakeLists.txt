@@ -2,6 +2,7 @@ include(GoogleTest)
 
 add_executable(endgate_sctp_tests
         test_crc32c.cpp
+        test_packet.cpp
 )
 
 target_link_libraries(endgate_sctp_tests PRIVATE endgate_sctp GTest::gtest_main)
