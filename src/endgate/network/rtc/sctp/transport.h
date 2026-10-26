@@ -30,7 +30,8 @@ struct DataChannel {
  * by resetting their streams; each delivers whole messages, never fragments.
  *
  * Channels the peer opens are reported through onChannelOpen once they are acknowledged. A channel opened here is
- * usable as soon as createDataChannel returns.
+ * usable as soon as createDataChannel returns. A listener may call back into the transport from any callback but
+ * sendPacket, and must not destroy it from one.
  *
  * @see RFC 8831
  * @see RFC 8832

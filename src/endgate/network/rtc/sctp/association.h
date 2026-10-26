@@ -27,7 +27,7 @@ namespace endgate::rtc::sctp {
  * or not connect() was called.
  *
  * Listener callbacks other than sendPacket are queued and run once the call that caused them has finished, so a
- * listener may call back into the association. sendPacket must not.
+ * listener may call back into the association. sendPacket must not, and no callback may destroy the association.
  *
  * @see RFC 9260 section 4
  * @see RFC 8261
