@@ -454,5 +454,15 @@ TEST_F(ReceiverTest, ReplaysForwardTsnHeldBehindDeferredReset)
     EXPECT_EQ(receiver.bufferedBytes(), 0U);
 }
 
+TEST_F(ReceiverTest, AcknowledgesDataItDiscards)
+{
+    const DataChunk chunk{.tsn = 100, .stream = 2000, .ssn = 0, .ppid = 51, .flags = whole, .payload = {}};
+    EXPECT_EQ(receiver.acknowledge(chunk), Receiver::Outcome::Accepted);
+    EXPECT_EQ(receiver.acknowledge(chunk), Receiver::Outcome::Duplicate);
+    EXPECT_EQ(receiver.cumulativeTsn(), 100U);
+    EXPECT_EQ(receiver.bufferedBytes(), 0U);
+    EXPECT_TRUE(delivered.empty());
+}
+
 }  // namespace
 }  // namespace endgate::rtc::sctp

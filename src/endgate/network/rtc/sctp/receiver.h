@@ -57,6 +57,11 @@ public:
     Outcome receive(const DataChunk &chunk, ByteBuf payload, std::vector<Message> &delivered);
 
     /**
+     * @see RFC 9260 section 6.5
+     */
+    Outcome acknowledge(const DataChunk &chunk);
+
+    /**
      * @see RFC 3758 section 3.6
      */
     bool forwardTsn(const ForwardTsnChunk &chunk, std::vector<Message> &delivered);
@@ -105,6 +110,7 @@ private:
 
     using Held = std::variant<std::pair<std::uint64_t, Fragment>, ForwardTsnChunk>;
 
+    Outcome track(const DataChunk &chunk, std::uint64_t tsn);
     void advanceCumulative();
     void assemble(std::uint64_t tsn, Fragment fragment, std::vector<Message> &delivered);
     void complete(std::uint16_t ssn, Message message, std::vector<Message> &delivered);

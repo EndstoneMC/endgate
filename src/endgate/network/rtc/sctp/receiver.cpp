@@ -30,6 +30,34 @@ Receiver::Receiver(const Config &config, std::uint32_t peer_initial_tsn)
 
 Receiver::Outcome Receiver::receive(const DataChunk &chunk, ByteBuf payload, std::vector<Message> &delivered)
 {
+    const auto tsn = unwrap(chunk.tsn, cumulative_);
+    const auto outcome = track(chunk, tsn);
+    if (outcome != Outcome::Accepted) {
+        return outcome;
+    }
+    Fragment fragment{
+        .stream = chunk.stream,
+        .ssn = chunk.ssn,
+        .ppid = chunk.ppid,
+        .flags = chunk.flags,
+        .payload = std::move(payload),
+    };
+    if (affectedByReset(tsn, chunk.stream)) {
+        buffered_ += charge(fragment.payload);
+        held_.emplace_back(std::pair{tsn, std::move(fragment)});
+        return Outcome::Accepted;
+    }
+    assemble(tsn, std::move(fragment), delivered);
+    return Outcome::Accepted;
+}
+
+Receiver::Outcome Receiver::acknowledge(const DataChunk &chunk)
+{
+    return track(chunk, unwrap(chunk.tsn, cumulative_));
+}
+
+Receiver::Outcome Receiver::track(const DataChunk &chunk, std::uint64_t tsn)
+{
     constexpr std::uint64_t max_distance = 65535;
     constexpr std::size_t max_ranges = 256;
     constexpr std::size_t max_duplicates = 16;
@@ -40,7 +68,6 @@ Receiver::Outcome Receiver::receive(const DataChunk &chunk, ByteBuf payload, std
         immediate_ = true;
     }
 
-    const auto tsn = unwrap(chunk.tsn, cumulative_);
     const auto range =
         std::ranges::lower_bound(received_, tsn, {}, [](const auto &received) { return received.second + 1; });
     if (tsn <= cumulative_ || (range != received_.end() && range->first <= tsn && tsn <= range->second)) {
@@ -84,20 +111,6 @@ Receiver::Outcome Receiver::receive(const DataChunk &chunk, ByteBuf payload, std
         immediate_ = true;
         return Outcome::Dropped;
     }
-
-    Fragment fragment{
-        .stream = chunk.stream,
-        .ssn = chunk.ssn,
-        .ppid = chunk.ppid,
-        .flags = chunk.flags,
-        .payload = std::move(payload),
-    };
-    if (affectedByReset(tsn, chunk.stream)) {
-        buffered_ += charge(fragment.payload);
-        held_.emplace_back(std::pair{tsn, std::move(fragment)});
-        return Outcome::Accepted;
-    }
-    assemble(tsn, std::move(fragment), delivered);
     return Outcome::Accepted;
 }
 
