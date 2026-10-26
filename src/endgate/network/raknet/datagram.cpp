@@ -208,7 +208,7 @@ void RangeList::insert(std::uint32_t index)
 void RangeList::serialize(Writer &writer, std::size_t max_bits)
 {
     constexpr std::size_t count_bits = 16;
-    constexpr std::size_t index_bits = 24;
+    constexpr std::size_t index_bits = 32;
 
     std::size_t bits_written = 0;
     std::size_t count = 0;
