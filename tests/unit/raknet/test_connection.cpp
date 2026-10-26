@@ -507,6 +507,7 @@ TEST(Connection, SecondConnectionRequestIsAcceptedAgain)
 {
     Handshake handshake;
     ASSERT_TRUE(handshake.connect());
+    handshake.simulation.runUntil([] { return false; }, 100ms);
     const auto before = handshake.server.events.datagrams.size();
     handshake.server.connection->handleDatagram(fromHex("84"
                                                         "300000"
@@ -538,6 +539,29 @@ TEST(Connection, DetectLostConnectionsIsAcknowledgedAndIgnored)
     EXPECT_TRUE(handshake.server.events.messages.empty());
     EXPECT_TRUE(handshake.server.events.disconnected.empty());
     EXPECT_GT(handshake.server.events.datagrams.size(), before);
+}
+
+TEST(Connection, RepeatedConnectionRequestsQueueOneAnswerAtATime)
+{
+    Handshake handshake;
+    ASSERT_TRUE(handshake.connect());
+    handshake.simulation.runUntil([] { return false; }, 100ms);
+    handshake.simulation.setConditions(1, {1.0});
+    for (std::uint32_t i = 0; i < 50; ++i) {
+        const auto number = toHex(std::array{std::byte(0x30 + i), std::byte{0}, std::byte{0}});
+        const auto reliable = toHex(std::array{std::byte(0x10 + i), std::byte{0}, std::byte{0}});
+        handshake.server.connection->handleDatagram(fromHex("84" + number + "400090" + reliable +
+                                                            "09"
+                                                            "000000000000c1c1"
+                                                            "000000000000004d"
+                                                            "00"),
+                                                    handshake.simulation.now());
+    }
+    std::size_t answers = 0;
+    for (const auto &datagram : handshake.server.events.datagrams) {
+        answers += toHex(datagram).find("1004f5fffffdc350") != std::string::npos ? 1 : 0;
+    }
+    EXPECT_EQ(answers, 2U);
 }
 
 TEST(Connection, UserMessagesReachTheListenerAndControlMessagesDoNot)
