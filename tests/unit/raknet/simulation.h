@@ -88,7 +88,9 @@ public:
                 auto datagram = in_flight_.top();
                 in_flight_.pop();
                 ++delivered_.at(datagram.to);
-                nodes_.at(datagram.to).receive(datagram.bytes, now_);
+                if (const auto &receiver = nodes_.at(datagram.to).receive) {
+                    receiver(datagram.bytes, now_);
+                }
                 continue;
             }
             for (auto &node : nodes_) {

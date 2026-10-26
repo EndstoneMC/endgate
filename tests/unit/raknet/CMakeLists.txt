@@ -6,6 +6,7 @@ add_executable(endgate_raknet_tests
         test_datagram.cpp
         test_congestion.cpp
         test_reliability.cpp
+        test_connection.cpp
 )
 
 target_link_libraries(endgate_raknet_tests PRIVATE endgate_raknet GTest::gtest_main)
