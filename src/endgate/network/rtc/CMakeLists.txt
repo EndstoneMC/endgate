@@ -1,4 +1,5 @@
 add_library(endgate_rtc STATIC
+        ice.cpp
         stun.cpp
 )
 
