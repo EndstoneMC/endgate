@@ -40,6 +40,7 @@ struct ConnectionConfiguration {
     std::vector<std::byte> password;
     unsigned send_connection_attempt_count{12};
     std::chrono::milliseconds time_between_send_connection_attempts{500};
+    std::size_t maximum_held_bytes{ReliabilityLayer::MAXIMUM_HELD_BYTES};
 };
 
 /**

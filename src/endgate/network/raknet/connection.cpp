@@ -10,6 +10,7 @@ namespace {
 
 constexpr auto CONNECTION_REQUEST_TIMEOUT = std::chrono::milliseconds{10000};
 constexpr auto PING_INTERVAL = std::chrono::milliseconds{5000};
+constexpr std::size_t HANDSHAKE_HELD_BYTES = 64 * 1024;
 
 std::size_t clampMtu(std::size_t mtu)
 {
@@ -28,6 +29,7 @@ Connection::Connection(Listener &listener, ConnectionConfiguration configuration
     reliability_layer_.emplace(static_cast<ReliabilityLayer::Listener &>(*this), mtu_size_, now);
     reliability_layer_->setTimeoutTime(configuration_.timeout_time);
     reliability_layer_->setUnreliableTimeout(configuration_.unreliable_timeout);
+    reliability_layer_->setMaximumHeldBytes(HANDSHAKE_HELD_BYTES);
 }
 
 Connection::Connection(Listener &listener, ConnectionConfiguration configuration, SystemAddress system_address,
@@ -132,6 +134,7 @@ void Connection::handleOfflineMessage(std::span<const std::byte> datagram, TimeP
         reliability_layer_.emplace(static_cast<ReliabilityLayer::Listener &>(*this), mtu_size_, now);
         reliability_layer_->setTimeoutTime(configuration_.timeout_time);
         reliability_layer_->setUnreliableTimeout(configuration_.unreliable_timeout);
+        reliability_layer_->setMaximumHeldBytes(HANDSHAKE_HELD_BYTES);
         connect_mode_ = ConnectMode::RequestedConnection;
         connection_time_ = now;
         last_reliable_send_ = now;
@@ -229,6 +232,7 @@ void Connection::handleMessage(ByteBuf message, TimePoint now)
             return;
         }
         connect_mode_ = ConnectMode::Connected;
+        reliability_layer_->setMaximumHeldBytes(configuration_.maximum_held_bytes);
         pingInternal(PacketReliability::Unreliable, now);
         their_internal_system_address_ = incoming->internal_addresses;
         onConnectedPong(incoming->send_ping_time, now);
@@ -274,6 +278,7 @@ void Connection::handleMessage(ByteBuf message, TimePoint now)
         onConnectedPong(accepted->send_ping_time, now);
         my_external_system_address_ = accepted->client_address;
         connect_mode_ = ConnectMode::Connected;
+        reliability_layer_->setMaximumHeldBytes(configuration_.maximum_held_bytes);
 
         std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
         Writer writer{buffer};
