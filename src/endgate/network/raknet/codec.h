@@ -10,6 +10,11 @@
 namespace endgate::raknet {
 
 /**
+ * @see RakNet::SystemAddress
+ */
+using SystemAddress = asio::ip::udp::endpoint;
+
+/**
  * @see RakNet::BitStream
  */
 class Reader {
@@ -33,7 +38,7 @@ public:
     /**
      * @see RakNet::BitStream::Read(SystemAddress &)
      */
-    [[nodiscard]] std::optional<asio::ip::udp::endpoint> readAddress();
+    [[nodiscard]] std::optional<SystemAddress> readAddress();
 
 private:
     std::span<const std::byte> data_;
@@ -65,7 +70,7 @@ public:
     /**
      * @see RakNet::BitStream::Write(const SystemAddress &)
      */
-    void writeAddress(const asio::ip::udp::endpoint &address);
+    void writeAddress(const SystemAddress &address);
 
 private:
     std::span<std::byte> buffer_;

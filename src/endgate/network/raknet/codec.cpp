@@ -97,7 +97,7 @@ std::optional<float> Reader::readFloat()
     return std::bit_cast<float>(*bits);
 }
 
-std::optional<asio::ip::udp::endpoint> Reader::readAddress()
+std::optional<SystemAddress> Reader::readAddress()
 {
     const auto version = readUint8();
     if (!version) {
@@ -112,7 +112,7 @@ std::optional<asio::ip::udp::endpoint> Reader::readAddress()
         asio::ip::address_v4::bytes_type bytes{};
         std::ranges::transform(*inverted, bytes.begin(),
                                [](std::byte byte) { return std::to_integer<unsigned char>(~byte); });
-        return asio::ip::udp::endpoint{asio::ip::address_v4{bytes}, *port};
+        return SystemAddress{asio::ip::address_v4{bytes}, *port};
     }
     const auto family = readBytes(2);
     const auto port = readUint16();
@@ -129,7 +129,7 @@ std::optional<asio::ip::udp::endpoint> Reader::readAddress()
     for (const auto byte : *scope_id | std::views::reverse) {
         scope = scope << 8U | std::to_integer<std::uint32_t>(byte);
     }
-    return asio::ip::udp::endpoint{asio::ip::address_v6{bytes, scope}, *port};
+    return SystemAddress{asio::ip::address_v6{bytes, scope}, *port};
 }
 
 std::span<std::byte> Writer::claim(std::size_t count)
@@ -189,7 +189,7 @@ void Writer::writeFloat(float value)
     writeUint32(std::bit_cast<std::uint32_t>(value));
 }
 
-void Writer::writeAddress(const asio::ip::udp::endpoint &address)
+void Writer::writeAddress(const SystemAddress &address)
 {
     if (address.address().is_v4()) {
         writeUint8(4);
