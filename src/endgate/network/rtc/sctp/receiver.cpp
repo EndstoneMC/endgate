@@ -59,7 +59,7 @@ Receiver::Outcome Receiver::acknowledge(const DataChunk &chunk)
 Receiver::Outcome Receiver::track(const DataChunk &chunk, std::uint64_t tsn)
 {
     constexpr std::uint64_t max_distance = 65535;
-    constexpr std::size_t max_ranges = 256;
+    constexpr std::size_t max_ranges = 4096;
     constexpr std::size_t max_duplicates = 16;
 
     data_in_packet_ = true;

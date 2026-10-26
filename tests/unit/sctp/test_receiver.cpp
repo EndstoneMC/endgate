@@ -315,12 +315,13 @@ TEST_F(ReceiverTest, DropsTsnsFarAhead)
 
 TEST_F(ReceiverTest, BoundsTrackedGaps)
 {
-    for (std::uint32_t i = 0; i < 256; ++i) {
+    for (std::uint32_t i = 0; i < 4096; ++i) {
         EXPECT_EQ(data(102 + 2 * i, 1, 0, whole | unordered, "x"), Receiver::Outcome::Accepted);
     }
-    EXPECT_EQ(data(102 + 2 * 256, 1, 0, whole | unordered, "x"), Receiver::Outcome::Dropped);
+    EXPECT_EQ(data(102 + 2 * 4096, 1, 0, whole | unordered, "x"), Receiver::Outcome::Dropped);
     EXPECT_EQ(data(103, 1, 0, whole | unordered, "x"), Receiver::Outcome::Accepted);
-    EXPECT_EQ(receiver.makeSack(1200).gap_blocks.size(), 255U);
+    EXPECT_EQ(receiver.makeSack(1200).gap_blocks.size(), (1200U - 16) / 4);
+    EXPECT_EQ(receiver.makeSack(65536).gap_blocks.size(), 4095U);
 }
 
 TEST_F(ReceiverTest, FollowsTsnAcrossWrap)
