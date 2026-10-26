@@ -351,7 +351,7 @@ void Association::dispatch(const Packet &packet, Clock::time_point now)
             }
             break;
         case ChunkType::Heartbeat:
-            if (tcb_) {
+            if (tcb_ && CommonHeader::size + Chunk::header_size + chunk.value.size() <= config_.mtu) {
                 queue(ChunkType::HeartbeatAck, 0, {chunk.value.begin(), chunk.value.end()});
             }
             break;

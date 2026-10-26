@@ -441,6 +441,41 @@ TEST(Association, AnswersHeartbeatsAndMeasuresRtt)
     EXPECT_FALSE(network.endpoint_a.closed);
 }
 
+TEST(Association, IgnoresHeartbeatTooLargeToEcho)
+{
+    Network network;
+    network.a->connect(network.now);
+    ASSERT_TRUE(network.runUntil([&] { return established(network); }, 1s));
+    std::uint32_t tag = 0;
+    network.filter = [&](std::span<const std::byte> packet, bool to_b) {
+        if (to_b) {
+            tag = tagOf(packet);
+        }
+        return true;
+    };
+    ASSERT_TRUE(network.a->send(0, 51, bufferOf("x"), {}, network.now));
+    network.run(1s);
+    const auto heartbeat = [&](std::size_t size) {
+        std::vector<std::byte> value;
+        ByteWriter(value).writeTlv(static_cast<std::uint16_t>(ParameterType::HeartbeatInfo),
+                                   std::vector<std::byte>(size));
+        std::vector<std::byte> buffer;
+        PacketBuilder builder(buffer, {.source_port = 5000, .destination_port = 5000, .verification_tag = tag}, 65535);
+        builder.addChunk(ChunkType::Heartbeat, 0, value);
+        network.endpoint_b.outbox.clear();
+        network.b->handlePacket(builder.build(), network.now);
+        auto acks = 0;
+        for (const auto &packet : network.endpoint_b.outbox) {
+            acks += hasChunk(packet, ChunkType::HeartbeatAck) ? 1 : 0;
+        }
+        return acks;
+    };
+    EXPECT_EQ(heartbeat(16), 1);
+    EXPECT_EQ(heartbeat(1191 - 20), 1);
+    EXPECT_EQ(heartbeat(1191 - 19), 0);
+    EXPECT_EQ(heartbeat(16000), 0);
+}
+
 TEST(Association, AbortsWhenHeartbeatsGoUnanswered)
 {
     Association::Config config;
