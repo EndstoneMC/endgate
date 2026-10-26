@@ -30,6 +30,37 @@ enum class DisconnectReason {
     Rejected,
 };
 
+[[nodiscard]] constexpr std::string_view toString(DisconnectReason reason)
+{
+    switch (reason) {
+    case DisconnectReason::ConnectionLost:
+        return "connection lost";
+    case DisconnectReason::ClosedByPeer:
+        return "closed by peer";
+    case DisconnectReason::ClosedLocally:
+        return "closed locally";
+    case DisconnectReason::ConnectionAttemptFailed:
+        return "connection attempt failed";
+    case DisconnectReason::InvalidPassword:
+        return "invalid password";
+    case DisconnectReason::AlreadyConnected:
+        return "already connected";
+    case DisconnectReason::NoFreeIncomingConnections:
+        return "no free incoming connections";
+    case DisconnectReason::ConnectionBanned:
+        return "connection banned";
+    case DisconnectReason::IncompatibleProtocolVersion:
+        return "incompatible protocol version";
+    case DisconnectReason::IpRecentlyConnected:
+        return "ip recently connected";
+    case DisconnectReason::HandshakeTimedOut:
+        return "handshake timed out";
+    case DisconnectReason::Rejected:
+        return "rejected";
+    }
+    return "unknown";
+}
+
 /**
  * @see RakNet::RakPeer
  */

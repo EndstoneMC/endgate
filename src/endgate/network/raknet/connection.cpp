@@ -190,6 +190,10 @@ void Connection::handleMessages(TimePoint now)
 
 void Connection::handleMessage(ByteBuf message, TimePoint now)
 {
+    if (!reliability_layer_) {
+        return;
+    }
+    auto &reliability_layer = *reliability_layer_;
     std::array<std::byte, 1> first{};
     message.copyTo(first);
     const auto id = static_cast<MessageId>(first[0]);
@@ -222,7 +226,7 @@ void Connection::handleMessage(ByteBuf message, TimePoint now)
             parseConnectionRequestPacket(bytes, now);
             return;
         }
-        if (reliability_layer_->isOutgoingDataWaiting()) {
+        if (reliability_layer.isOutgoingDataWaiting()) {
             return;
         }
         const auto request = ConnectionRequest::decode(bytes);
@@ -235,7 +239,7 @@ void Connection::handleMessage(ByteBuf message, TimePoint now)
             return;
         }
         connect_mode_ = ConnectMode::Connected;
-        reliability_layer_->setMaximumHeldBytes(configuration_.maximum_held_bytes);
+        reliability_layer.setMaximumHeldBytes(configuration_.maximum_held_bytes);
         pingInternal(PacketReliability::Unreliable, now);
         their_internal_system_address_ = incoming->internal_addresses;
         onConnectedPong(incoming->send_ping_time, now);
@@ -281,7 +285,7 @@ void Connection::handleMessage(ByteBuf message, TimePoint now)
         onConnectedPong(accepted->send_ping_time, now);
         my_external_system_address_ = accepted->client_address;
         connect_mode_ = ConnectMode::Connected;
-        reliability_layer_->setMaximumHeldBytes(configuration_.maximum_held_bytes);
+        reliability_layer.setMaximumHeldBytes(configuration_.maximum_held_bytes);
 
         std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
         Writer writer{buffer};
