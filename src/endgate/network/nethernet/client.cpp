@@ -58,22 +58,6 @@ struct Capability {
     };
 };
 
-std::shared_ptr<asio::ssl::context> defaultClientTls()
-{
-    auto context = std::make_shared<asio::ssl::context>(asio::ssl::context::tls_client);
-    context->set_options(asio::ssl::context::default_workarounds | asio::ssl::context::no_sslv2 |
-                         asio::ssl::context::no_sslv3 | asio::ssl::context::no_tlsv1 | asio::ssl::context::no_tlsv1_1);
-    context->set_verify_mode(asio::ssl::verify_none);
-    return context;
-}
-
-bool isIpLiteral(const std::string &host)
-{
-    std::error_code error;
-    std::ignore = asio::ip::make_address(host, error);
-    return !error;
-}
-
 template <typename Stream>
 Awaitable<std::optional<HttpResponse>> readExchange(Stream &stream, const std::string &request,
                                                     const SignalingClient::Config &config)
@@ -190,9 +174,18 @@ Awaitable<std::optional<HttpResponse>> httpExchange(asio::io_context &io_context
         co_return co_await readExchange(socket, request, config);
     }
 
-    const auto context = config.tls ? config.tls : defaultClientTls();
+    auto context = config.tls;
+    if (!context) {
+        context = std::make_shared<asio::ssl::context>(asio::ssl::context::tls_client);
+        context->set_options(asio::ssl::context::default_workarounds | asio::ssl::context::no_sslv2 |
+                             asio::ssl::context::no_sslv3 | asio::ssl::context::no_tlsv1 |
+                             asio::ssl::context::no_tlsv1_1);
+        context->set_verify_mode(asio::ssl::verify_none);
+    }
     asio::ssl::stream<asio::ip::tcp::socket &> stream(socket, *context);
-    if (!isIpLiteral(host)) {
+    std::error_code address_error;
+    std::ignore = asio::ip::make_address(host, address_error);
+    if (address_error) {
         SSL_set_tlsext_host_name(stream.native_handle(), host.c_str());
     }
     const auto [handshake_error] = co_await stream.async_handshake(

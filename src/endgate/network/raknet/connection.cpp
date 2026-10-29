@@ -9,7 +9,6 @@ namespace endgate::raknet {
 namespace {
 
 constexpr auto CONNECTION_REQUEST_TIMEOUT = std::chrono::milliseconds{10000};
-constexpr auto PING_INTERVAL = std::chrono::milliseconds{5000};
 constexpr std::size_t HANDSHAKE_HELD_BYTES = 64 * 1024;
 
 std::size_t clampMtu(std::size_t mtu)
@@ -390,22 +389,23 @@ void Connection::close(bool send_disconnection_notification, TimePoint now)
 
 void Connection::sendOpenConnectionRequests(TimePoint now)
 {
+    constexpr std::array<std::size_t, 3> mtu_sizes{MAXIMUM_MTU_SIZE, 1200, MINIMUM_MTU_SIZE};
     const auto per_size =
-        std::max(1U, configuration_.send_connection_attempt_count / static_cast<unsigned>(MTU_SIZES.size()));
+        std::max(1U, configuration_.send_connection_attempt_count / static_cast<unsigned>(mtu_sizes.size()));
     while (!isClosed() && now >= next_request_time_) {
         if (requests_made_ >= configuration_.send_connection_attempt_count + 1) {
             closeConnectionInternal(DisconnectReason::ConnectionAttemptFailed);
             return;
         }
-        const auto mtu_size_index = std::min<std::size_t>(requests_made_ / per_size, MTU_SIZES.size() - 1);
+        const auto mtu_size_index = std::min<std::size_t>(requests_made_ / per_size, mtu_sizes.size() - 1);
         ++requests_made_;
         next_request_time_ = now + configuration_.time_between_send_connection_attempts;
 
         auto buffer = Unpooled::buffer(MAXIMUM_MTU_SIZE, MAXIMUM_MTU_SIZE);
         OpenConnectionRequest1{.protocol = RAKNET_PROTOCOL_VERSION,
-                               .mtu = static_cast<std::uint16_t>(MTU_SIZES[mtu_size_index])}
+                               .mtu = static_cast<std::uint16_t>(mtu_sizes[mtu_size_index])}
             .encode(buffer);
-        if (!listener_.sendMtuProbe(buffer.slice()) && mtu_size_index + 1 < MTU_SIZES.size()) {
+        if (!listener_.sendMtuProbe(buffer.slice()) && mtu_size_index + 1 < mtu_sizes.size()) {
             requests_made_ = static_cast<unsigned>((mtu_size_index + 1) * per_size);
             next_request_time_ = now;
         }
@@ -414,6 +414,7 @@ void Connection::sendOpenConnectionRequests(TimePoint now)
 
 void Connection::update(TimePoint now)
 {
+    constexpr auto ping_interval = std::chrono::milliseconds{5000};
     if (isClosed()) {
         return;
     }
@@ -431,7 +432,7 @@ void Connection::update(TimePoint now)
         last_reliable_send_ = now;
     }
     if (connect_mode_ == ConnectMode::Connected && now >= next_ping_time_ && !lowest_ping_) {
-        next_ping_time_ = now + PING_INTERVAL;
+        next_ping_time_ = now + ping_interval;
         pingInternal(PacketReliability::Unreliable, now);
     }
 

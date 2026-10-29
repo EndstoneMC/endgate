@@ -13,11 +13,7 @@ namespace endgate::rtc {
 
 namespace {
 
-constexpr std::size_t MAX_DESCRIPTION_LENGTH = 65536;
 constexpr std::size_t MAX_CANDIDATES = 32;
-constexpr std::size_t MAX_FINGERPRINTS = 8;
-constexpr std::size_t MAX_TOKENS = 8;
-constexpr std::string_view LINE_ENDING = "\r\n";
 
 template <typename Number>
 std::optional<Number> parseNumber(std::string_view text)
@@ -101,7 +97,10 @@ std::string IceCandidate::toString() const
 
 std::optional<Description> Description::parse(std::string_view sdp)
 {
-    if (sdp.size() > MAX_DESCRIPTION_LENGTH) {
+    constexpr std::size_t max_description_length = 65536;
+    constexpr std::size_t max_fingerprints = 8;
+    constexpr std::size_t max_tokens = 8;
+    if (sdp.size() > max_description_length) {
         return std::nullopt;
     }
 
@@ -157,7 +156,7 @@ std::optional<Description> Description::parse(std::string_view sdp)
         auto &level = in_media ? media : session;
         if (key == "group") {
             const auto tokens = tokensOf(argument);
-            if (!in_media && !tokens.empty() && tokens.front() == "BUNDLE" && tokens.size() <= MAX_TOKENS + 1) {
+            if (!in_media && !tokens.empty() && tokens.front() == "BUNDLE" && tokens.size() <= max_tokens + 1) {
                 description.bundle.assign(tokens.begin() + 1, tokens.end());
             }
         }
@@ -180,7 +179,7 @@ std::optional<Description> Description::parse(std::string_view sdp)
             level.ice_pwd = argument;
         }
         else if (key == "ice-options") {
-            const auto tokens = tokensOf(argument) | std::views::take(MAX_TOKENS);
+            const auto tokens = tokensOf(argument) | std::views::take(max_tokens);
             level.ice_options.emplace(tokens.begin(), tokens.end());
         }
         else if (key == "fingerprint") {
@@ -190,7 +189,7 @@ std::optional<Description> Description::parse(std::string_view sdp)
                                      [](char c) { return std::isxdigit(static_cast<unsigned char>(c)) || c == ':'; })) {
                 return std::nullopt;
             }
-            if (level.fingerprints.size() < MAX_FINGERPRINTS) {
+            if (level.fingerprints.size() < max_fingerprints) {
                 level.fingerprints.push_back({.algorithm = std::string(tokens[0]), .value = std::string(tokens[1])});
             }
         }
@@ -342,7 +341,7 @@ std::string Description::generate(std::uint64_t session_id) const
     std::string sdp;
     const auto line = [&sdp](std::string_view text) {
         sdp += text;
-        sdp += LINE_ENDING;
+        sdp += "\r\n";
     };
     line("v=0");
     line(std::format("o=- {} 2 IN IP4 127.0.0.1", session_id));

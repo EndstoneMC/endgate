@@ -193,16 +193,6 @@ void IceTransport::reselect()
 
 namespace {
 
-StunMessage::TransactionId newTransactionId()
-{
-    StunMessage::TransactionId transaction_id{};
-    if (RAND_bytes(reinterpret_cast<unsigned char *>(transaction_id.data()), static_cast<int>(transaction_id.size())) !=
-        1) {
-        throw std::runtime_error("RAND_bytes failed to generate a STUN transaction id");
-    }
-    return transaction_id;
-}
-
 std::uint32_t hostPriority(std::size_t index)
 {
     constexpr std::uint32_t host_type_preference = 126;
@@ -364,7 +354,10 @@ void IceController::sendCheck(std::chrono::steady_clock::time_point now, Candida
     StunMessage request;
     request.message_class = StunClass::Request;
     request.method = StunMethod::Binding;
-    request.transaction_id = newTransactionId();
+    if (RAND_bytes(reinterpret_cast<unsigned char *>(request.transaction_id.data()),
+                   static_cast<int>(request.transaction_id.size())) != 1) {
+        throw std::runtime_error("RAND_bytes failed to generate a STUN transaction id");
+    }
     request.username = remote_ufrag_ + ":" + local_.ufrag;
     request.priority = pair.priority;
     if (role_ == Role::Controlling) {

@@ -126,7 +126,6 @@ struct Claims {
 };
 
 constexpr std::string_view IDENTITY_PREFIX = "a=identity:";
-constexpr std::string_view FINGERPRINT_PREFIX = "a=fingerprint:";
 constexpr glz::opts LENIENT_READ{.error_on_unknown_keys = false, .error_on_missing_keys = true};
 
 struct Curve {
@@ -600,12 +599,13 @@ std::string IdentityAssertion::stripFromSdp(std::string_view sdp)
 
 std::string IdentityAssertion::fingerprintsOf(std::string_view sdp)
 {
+    constexpr std::string_view fingerprint_prefix = "a=fingerprint:";
     FingerprintList list;
     for (const auto line : linesOf(sdp)) {
-        if (!startsWithIgnoringCase(line, FINGERPRINT_PREFIX)) {
+        if (!startsWithIgnoringCase(line, fingerprint_prefix)) {
             continue;
         }
-        const auto value = line.substr(FINGERPRINT_PREFIX.size());
+        const auto value = line.substr(fingerprint_prefix.size());
         const auto space = value.find(' ');
         if (space == std::string_view::npos || space == 0 || space + 1 == value.size()) {
             continue;

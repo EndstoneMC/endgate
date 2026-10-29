@@ -26,11 +26,6 @@ inline constexpr std::size_t MAXIMUM_MTU_SIZE = 1600;
 inline constexpr std::size_t MINIMUM_MTU_SIZE = 576;
 
 /**
- * @see mtuSizes
- */
-inline constexpr std::array<std::size_t, 3> MTU_SIZES{MAXIMUM_MTU_SIZE, 1200, MINIMUM_MTU_SIZE};
-
-/**
  * @see UDP_HEADER_SIZE
  */
 inline constexpr std::size_t UDP_HEADER_SIZE = 28;

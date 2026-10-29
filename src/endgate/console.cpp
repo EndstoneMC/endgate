@@ -18,22 +18,18 @@ namespace endgate {
 
 namespace {
 constexpr auto HISTORY_FILE = ".console_history";
-
-bool isInteractive()
-{
-#ifdef _WIN32
-    return _isatty(_fileno(stdin)) != 0 && _isatty(_fileno(stdout)) != 0;
-#else
-    return isatty(fileno(stdin)) != 0 && isatty(fileno(stdout)) != 0;
-#endif
-}
 }  // namespace
 
 Console::Console(ProxyServer &server) : server_(server), logger_(LogManager::getLogger("endgate::Console"))
 {
     constexpr std::size_t max_history_size = 1000;
 
-    if (isInteractive()) {
+#ifdef _WIN32
+    const bool interactive = _isatty(_fileno(stdin)) != 0 && _isatty(_fileno(stdout)) != 0;
+#else
+    const bool interactive = isatty(fileno(stdin)) != 0 && isatty(fileno(stdout)) != 0;
+#endif
+    if (interactive) {
         rx_ = replxx::Replxx{};
         rx_->bind_key_internal(replxx::Replxx::KEY::control('J'), "commit_line");
         rx_->set_max_history_size(max_history_size);
