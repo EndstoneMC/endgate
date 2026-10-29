@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 import signal
@@ -10,19 +9,24 @@ import threading
 import time
 from pathlib import Path
 
-import pytest
 import raknet
 
-REPOSITORY = Path(__file__).resolve().parents[3]
+REPOSITORY = Path(__file__).resolve().parents[2]
 DEFAULT_BINARY = REPOSITORY / "build" / "RelWithDebInfo" / "endgate"
-
-_observations: dict[str, object] = {}
 
 
 def free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
+    """A loopback port free for UDP and TCP both, since endgate binds the two at one number."""
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+            udp.bind(("127.0.0.1", 0))
+            port = udp.getsockname()[1]
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp:
+                try:
+                    tcp.bind(("127.0.0.1", port))
+                except OSError:
+                    continue
+            return port
 
 
 def normalize_log(line: str) -> str:
@@ -34,12 +38,24 @@ def normalize_log(line: str) -> str:
 class Proxy:
     """An endgate process listening on loopback, configured to send every player to one backend."""
 
-    def __init__(self, binary: Path, workdir: Path, backend_port: int, max_players: int = 10) -> None:
+    def __init__(
+        self,
+        binary: Path,
+        workdir: Path,
+        backend_port: int | None,
+        max_players: int = 10,
+        backend: str | None = None,
+        debug: bool = False,
+        tls: tuple[Path, Path] | None = None,
+    ) -> None:
         self.binary = binary
         self.workdir = workdir
         self.port = free_port()
         self.backend_port = backend_port
+        self.backend = backend or f"127.0.0.1:{backend_port}"
         self.max_players = max_players
+        self.debug = debug
+        self.tls = tls
         self.lines: list[str] = []
         self._listening = threading.Event()
         self.process: subprocess.Popen | None = None
@@ -48,7 +64,18 @@ class Proxy:
     def address(self) -> tuple[str, int]:
         return "127.0.0.1", self.port
 
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.port}"
+
     def start(self) -> Proxy:
+        for _ in range(5):
+            if self._launch():
+                return self
+            self.port = free_port()
+        raise RuntimeError("endgate did not start listening:\n" + "\n".join(self.lines))
+
+    def _launch(self) -> bool:
         self.workdir.mkdir(parents=True, exist_ok=True)
         (self.workdir / "endgate.toml").write_text(
             "\n".join(
@@ -58,8 +85,10 @@ class Proxy:
                     'motd = "Endgate Test"',
                     f"show-max-players = {self.max_players}",
                     "online-mode = false",
+                    f'tls-certificate = "{self.tls[0] if self.tls else ""}"',
+                    f'tls-certificate-key = "{self.tls[1] if self.tls else ""}"',
                     "[servers]",
-                    f'lobby = "127.0.0.1:{self.backend_port}"',
+                    f'lobby = "{self.backend}"',
                     'try = ["lobby"]',
                     "[advanced]",
                     "compression-level = -1",
@@ -67,23 +96,31 @@ class Proxy:
                 ]
             )
         )
+        environment = dict(os.environ, SPDLOG_LEVEL="debug") if self.debug else None
+        self.lines = []
+        self._listening.clear()
         self.process = subprocess.Popen(
             [str(self.binary)],
             cwd=self.workdir,
+            env=environment,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
         )
-        threading.Thread(target=self._pump, daemon=True).start()
-        if not self._listening.wait(10):
+        threading.Thread(target=self._pump, args=(self.process,), daemon=True).start()
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and self.process.poll() is None:
+            if self._listening.wait(0.05):
+                return True
+        if self.process.poll() is None:
             self.stop()
             raise RuntimeError("endgate did not start listening:\n" + "\n".join(self.lines))
-        return self
+        return False
 
-    def _pump(self) -> None:
-        assert self.process is not None and self.process.stdout is not None
-        for line in self.process.stdout:
+    def _pump(self, process: subprocess.Popen) -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
             line = normalize_log(line.rstrip("\n"))
             self.lines.append(line)
             if line.startswith("INFO Listening on"):
@@ -91,11 +128,12 @@ class Proxy:
 
     def events(self, pattern: str = "") -> list[str]:
         startup = ("INFO Booting", "INFO Connections will use", "INFO Listening", "INFO Done")
-        lines = [line for line in self.lines if not line.startswith(startup) and re.search(pattern, line)]
-        return [
+        lines = [
             line.replace(f"127.0.0.1:{self.backend_port}", "<backend>").replace(f"127.0.0.1:{self.port}", "<proxy>")
-            for line in lines
+            for line in self.lines
+            if not line.startswith(startup)
         ]
+        return [line for line in lines if re.search(pattern, line)]
 
     def wait_for(self, pattern: str, timeout: float = 5.0) -> bool:
         deadline = time.monotonic() + timeout
@@ -121,58 +159,18 @@ class Proxy:
         return self.process.returncode
 
 
-def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption("--endgate", default=os.environ.get("ENDGATE_BINARY", str(DEFAULT_BINARY)))
-    parser.addoption("--observations", default=os.environ.get("ENDGATE_OBSERVATIONS"))
+class EchoBackend:
+    """A RakNet backend that sends every message straight back to the connection it came from."""
 
+    def __init__(self) -> None:
+        self.server = raknet.create_server(("127.0.0.1", free_port()), max_connections=32)
+        self.port = self.server.local_address[1]
+        threading.Thread(target=self.server.serve_forever, args=(self._echo,), daemon=True).start()
 
-@pytest.fixture(scope="session")
-def binary(request: pytest.FixtureRequest) -> Path:
-    path = Path(request.config.getoption("--endgate"))
-    if not path.exists():
-        pytest.exit(f"endgate binary not found at {path}")
-    return path
+    @staticmethod
+    def _echo(connection) -> None:
+        for message in connection:
+            connection.send(message)
 
-
-@pytest.fixture
-def observe(request: pytest.FixtureRequest):
-    """Record a value the A/B runner compares between two builds."""
-
-    def record(name: str, value: object) -> object:
-        _observations[f"{request.node.nodeid}::{name}"] = json.loads(json.dumps(value, default=list))
-        return value
-
-    return record
-
-
-def pytest_sessionfinish(session: pytest.Session) -> None:
-    target = session.config.getoption("--observations")
-    if target:
-        Path(target).write_text(json.dumps(_observations, indent=1, sort_keys=True))
-
-
-@pytest.fixture
-def backend():
-    server = raknet.create_server(("127.0.0.1", free_port()), max_connections=32)
-    yield server
-    server.close(0)
-
-
-@pytest.fixture
-def make_proxy(binary: Path, tmp_path: Path):
-    started: list[Proxy] = []
-
-    def make(backend_port: int, max_players: int = 10) -> Proxy:
-        proxy = Proxy(binary, tmp_path / f"proxy{len(started)}", backend_port, max_players).start()
-        started.append(proxy)
-        return proxy
-
-    yield make
-    for proxy in started:
-        assert proxy.alive(), "endgate exited during the test:\n" + "\n".join(proxy.lines[-40:])
-        assert proxy.stop() == 0, "endgate did not shut down cleanly:\n" + "\n".join(proxy.lines[-40:])
-
-
-@pytest.fixture
-def proxy(make_proxy, backend) -> Proxy:
-    return make_proxy(backend.local_address[1])
+    def close(self) -> None:
+        self.server.close(0)
