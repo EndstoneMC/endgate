@@ -37,10 +37,24 @@ def test_a_raknet_pin_skips_detection(make_proxy, echo_backend):
     assert not proxy.events("DEBUG Backend .* speaks")
 
 
-def test_a_nethernet_backend_closes_the_player_until_endgate_can_dial_one(make_proxy, echo_backend):
-    proxy = make_proxy(echo_backend.port, backend=f"nethernet://127.0.0.1:{echo_backend.port}")
+def test_a_bare_address_on_a_nethernet_server_is_detected_as_nethernet(make_proxy, nethernet_backend):
+    proxy = make_proxy(nethernet_backend.port, debug=True)
+    assert round_trip(proxy) == BATCH + b"\x01ping"
+    assert proxy.events("DEBUG Backend <backend> speaks NetherNet")
+
+
+def test_a_nethernet_pin_skips_detection(make_proxy, nethernet_backend):
+    backend = f"nethernet://127.0.0.1:{nethernet_backend.port}"
+    proxy = make_proxy(nethernet_backend.port, backend=backend, debug=True)
+    assert round_trip(proxy) == BATCH + b"\x01ping"
+    assert not proxy.events("DEBUG Backend .* speaks")
+
+
+def test_a_raknet_pin_on_a_nethernet_server_is_not_overridden(make_proxy, nethernet_backend):
+    backend = f"raknet://127.0.0.1:{nethernet_backend.port}"
+    proxy = make_proxy(nethernet_backend.port, backend=backend, debug=True)
     assert round_trip(proxy) is None
-    assert proxy.events("WARN Backend nethernet://<backend> speaks NetherNet, which endgate can't connect to yet")
+    assert not proxy.events("DEBUG Backend .* speaks")
 
 
 def test_a_backend_that_answers_nothing_closes_the_player(make_proxy):
