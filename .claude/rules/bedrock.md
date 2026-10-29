@@ -51,8 +51,9 @@ This is `ServerConnectionAuthValidator::_validateBase`, called from `ServerNetwo
    - a signature that doesn't verify under the trusted key for the token's `kid` fails with 46, after the forced fetch above;
    - an `aud` other than `api://auth-minecraft-services/multiplayer` fails with 123 `DiscoveryEnvironmentMismatch` when the token's `iss` differs from the OpenID `issuer`, else with 46. `iss` is consulted only here.
 3. A self-signed token needs `mAllowSelfSigned`, else 46. It is then checked for expiry (144) and verified under its own `cpk` (46).
-   - `mAllowSelfSigned` is the level's LAN broadcast intent and not `requireTrustedAuthentication`, which follows `online-mode`.
-   - So with `online-mode = true`, a self-signed login is refused.
+   - `mAllowSelfSigned` is the world's `LANBroadcastIntent` and not `requireTrustedAuthentication`, which equals `online-mode` on BDS.
+   - `LANBroadcastIntent` is a byte tag in `level.dat`. A new world takes it from its `LevelSettings`, and `enable-lan-visibility` doesn't set it.
+   - So a self-signed login is accepted only with `online-mode = false` and the world's `LANBroadcastIntent` set.
 4. The client-data JWT's `x5u` must equal the token's `cpk` and verify under it (`WebToken::verifyWithIncludedKey`), else 46.
 5. An empty display name fails with 143 `InvalidName`.
 
