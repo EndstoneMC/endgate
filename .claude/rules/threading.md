@@ -14,8 +14,8 @@ Netty's event loop model, 1:1, as Velocity uses it: `EventLoopGroup` (`next`, `s
 - No strands. Within a loop, one channel hands a batch to the other with a direct call.
 - Listen with one UDP socket per loop on the same port with `SO_REUSEPORT`, as Velocity's `enable-reuse-port` binds once per worker. Linux keeps a sender on one socket, so a player is created on the loop that received its first datagram.
 - Nothing a player owns is shared across threads, so engines, buffers and session state need no mutex, atomic or lock.
+- Server-wide registries may be shared behind a `std::mutex`, as Velocity shares its concurrent maps: the RakNet client GUIDs, NetherNet's pending joins and the loop that owns each NetherNet session.
 - Never block a loop. Resolve hostnames, connect and wait asynchronously.
 - asio allows concurrent synchronous `send_to` on one socket, but not concurrent asynchronous operations.
-- The shared endpoint strand on main and the per-connection strands in the phase 2 endpoint work predate this model: replace them, don't extend them.
-- A NetherNet join only writes the answer and records the ICE credentials in a pending-joins table, the one structure shared across loops. The session is created on the loop whose socket receives the client's first valid STUN check.
+- A NetherNet join only writes the answer and records the offer and ICE credentials in the pending-joins table, which expires. The session is created on the loop whose socket receives the client's first valid STUN check.
 - A check from another of the client's candidate addresses that lands on a different loop is handed to the owner with `execute()`, and that loop caches which loop owns the address.
