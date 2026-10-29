@@ -79,27 +79,22 @@ std::chrono::milliseconds remainingUntil(std::chrono::steady_clock::time_point d
 
 void JoinResponse::answer(std::string sdp) const
 {
-    if (!pending_->event_loop.inEventLoop()) {
-        pending_->event_loop.execute(
-            [response = *this, sdp = std::move(sdp)]() mutable { response.answer(std::move(sdp)); });
-        return;
-    }
-    if (!pending_->result) {
-        pending_->result = std::move(sdp);
-        pending_->timer.cancel();
-    }
+    pending_->event_loop.execute([pending = pending_, sdp = std::move(sdp)]() mutable {
+        if (!pending->result) {
+            pending->result = std::move(sdp);
+            pending->timer.cancel();
+        }
+    });
 }
 
 void JoinResponse::reject(std::uint32_t session_error) const
 {
-    if (!pending_->event_loop.inEventLoop()) {
-        pending_->event_loop.execute([response = *this, session_error] { response.reject(session_error); });
-        return;
-    }
-    if (!pending_->result) {
-        pending_->result = session_error;
-        pending_->timer.cancel();
-    }
+    pending_->event_loop.execute([pending = pending_, session_error] {
+        if (!pending->result) {
+            pending->result = session_error;
+            pending->timer.cancel();
+        }
+    });
 }
 
 HttpSignalingServer::HttpSignalingServer(EventLoop &event_loop, JoinHandler &handler, Config config,
@@ -141,15 +136,13 @@ void HttpSignalingServer::listen(const asio::ip::tcp::endpoint &endpoint)
 
 void HttpSignalingServer::close()
 {
-    if (!event_loop_.inEventLoop()) {
-        event_loop_.execute([self = shared_from_this()] { self->close(); });
-        return;
-    }
-    asio::error_code ignored;
-    std::ignore = acceptor_.close(ignored);
-    for (auto *socket : connections_) {
-        std::ignore = socket->close(ignored);
-    }
+    event_loop_.execute([self = shared_from_this()] {
+        asio::error_code ignored;
+        std::ignore = self->acceptor_.close(ignored);
+        for (auto *socket : self->connections_) {
+            std::ignore = socket->close(ignored);
+        }
+    });
 }
 
 Awaitable<void> HttpSignalingServer::accept(std::shared_ptr<HttpSignalingServer> self)
@@ -402,9 +395,7 @@ Awaitable<HttpSignalingServer::Response> HttpSignalingServer::respond(Request re
                                 .host = std::move(request.host),
                                 .port = request.port},
                     JoinResponse{pending});
-    if (!pending->result) {
-        co_await pending->timer.async_wait(AWAITABLE);
-    }
+    co_await pending->timer.async_wait(AWAITABLE);
     if (!pending->result) {
         co_return error(504, "Gateway Timeout");
     }

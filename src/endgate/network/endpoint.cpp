@@ -72,7 +72,7 @@ Awaitable<void> Endpoint::receive()
         if (ec || size == 0) {
             continue;
         }
-        handleDatagram(std::span{buffer}.first(size), sender, false);
+        handleDatagram(std::span{buffer}.first(size), sender);
     }
 }
 
@@ -82,8 +82,7 @@ void Endpoint::sendTo(const raknet::SystemAddress &address, ByteBufView datagram
     socket_->send_to(asio::buffer(datagram.nioBuffer()), address, 0, ignored);
 }
 
-void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender,
-                              bool forwarded)
+void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender)
 {
     const auto id = static_cast<raknet::MessageId>(datagram.front());
     const bool offline_message = raknet::isOfflineMessage(Unpooled::wrappedBuffer(datagram));
@@ -98,12 +97,12 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::i
         connection->handleDatagram(datagram, sender);
         return;
     }
-    if (const auto owner = forwards_.find(sender); owner != forwards_.end() && !forwarded && !offline_message) {
-        owner->second->getEventLoop().execute([target = owner->second, copy = Unpooled::copiedBuffer(datagram),
-                                               sender]() mutable { target->forward(std::move(copy), sender); });
-        return;
+
+    Endpoint *owner = nullptr;
+    if (const auto cached = forwards_.find(sender); cached != forwards_.end() && !offline_message) {
+        owner = cached->second;
     }
-    if (const auto peeked = rtc::StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(datagram))) {
+    else if (const auto peeked = rtc::StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(datagram))) {
         const std::string ufrag(*peeked);
         if (const auto session = ufrags_.find(ufrag); session != ufrags_.end()) {
             const auto connection = session->second;
@@ -122,25 +121,40 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::i
             connection->handleDatagram(datagram, sender);
             return;
         }
-        if (auto *const owner = std::get_if<Endpoint *>(&claim); owner != nullptr && !forwarded && *owner != this) {
+        if (const auto *const claimed = std::get_if<Endpoint *>(&claim)) {
+            owner = *claimed;
             if (forwards_.size() >= 4096) {
                 forwards_.clear();
             }
-            forwards_.insert_or_assign(sender, *owner);
-            (*owner)->getEventLoop().execute([target = *owner, copy = Unpooled::copiedBuffer(datagram),
-                                              sender]() mutable { target->forward(std::move(copy), sender); });
+            forwards_.insert_or_assign(sender, owner);
         }
+    }
+    else if (offline_message && id == raknet::MessageId::OpenConnectionRequest2) {
+        accept(datagram, sender);
         return;
     }
-    if (offline_message && id == raknet::MessageId::OpenConnectionRequest2) {
-        accept(datagram, sender);
+    if (owner != nullptr && owner != this) {
+        owner->getEventLoop().execute([owner, copy = Unpooled::copiedBuffer(datagram), sender]() mutable {
+            owner->forward(std::move(copy), sender);
+        });
     }
 }
 
-void Endpoint::forward(ByteBuf datagram, const asio::ip::udp::endpoint &sender)
+void Endpoint::forward(const ByteBuf &datagram, const asio::ip::udp::endpoint &sender)
 {
-    if (!closed_ && datagram.isReadable()) {
-        handleDatagram(datagram.nioBuffer(), sender, true);
+    if (closed_ || !datagram.isReadable()) {
+        return;
+    }
+    if (const auto route = routes_.find(sender); route != routes_.end()) {
+        const auto connection = route->second;
+        connection->handleDatagram(datagram.nioBuffer(), sender);
+        return;
+    }
+    if (const auto peeked = rtc::StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(datagram.nioBuffer()))) {
+        if (const auto session = ufrags_.find(std::string(*peeked)); session != ufrags_.end()) {
+            const auto connection = session->second;
+            connection->handleDatagram(datagram.nioBuffer(), sender);
+        }
     }
 }
 
@@ -240,11 +254,12 @@ void Endpoint::unregisterConnection(const std::shared_ptr<MinecraftConnection> &
 void Endpoint::activated(const std::shared_ptr<MinecraftConnection> &connection)
 {
     const auto registration = connections_.find(connection);
-    if (registration == connections_.end() || !registration->second.half_open) {
+    if (registration == connections_.end()) {
         return;
     }
-    half_open_.erase(*registration->second.half_open);
-    registration->second.half_open.reset();
+    if (const auto half_open = std::exchange(registration->second.half_open, std::nullopt)) {
+        half_open_.erase(*half_open);
+    }
 }
 
 void Endpoint::addRoute(const asio::ip::udp::endpoint &remote, const std::shared_ptr<MinecraftConnection> &connection)

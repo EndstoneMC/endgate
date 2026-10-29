@@ -52,14 +52,13 @@ public:
         return next_session_id_++;
     }
 
-    [[nodiscard]] bool addPending(PendingJoin join)
+    [[nodiscard]] bool addPending(const PendingJoin &join)
     {
         const std::scoped_lock lock(mutex_);
         if (owners_.contains(join.credentials.ufrag)) {
             return false;
         }
-        auto ufrag = join.credentials.ufrag;
-        return pending_.try_emplace(std::move(ufrag), std::move(join)).second;
+        return pending_.try_emplace(join.credentials.ufrag, join).second;
     }
 
     void removePending(const std::string &ufrag)

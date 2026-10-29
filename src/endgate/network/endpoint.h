@@ -69,7 +69,7 @@ public:
 
     void start();
     void close();
-    void forward(ByteBuf datagram, const asio::ip::udp::endpoint &sender);
+    void forward(const ByteBuf &datagram, const asio::ip::udp::endpoint &sender);
 
     /**
      * Keeps track of a connection the endpoint did not accept itself, so it is shut down with the
@@ -102,7 +102,7 @@ private:
     Awaitable<void> join(nethernet::JoinRequest request, nethernet::JoinResponse response);
 
     Awaitable<void> receive();
-    void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender, bool forwarded);
+    void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender);
     Awaitable<void> expire(std::string ufrag);
     void accept(std::span<const std::byte> datagram, const raknet::SystemAddress &sender);
     void sendTo(const raknet::SystemAddress &address, ByteBufView datagram) override;
