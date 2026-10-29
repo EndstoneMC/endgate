@@ -16,7 +16,7 @@ Velocity is PaperMC/Velocity. Read the Java before writing any C++.
    | Velocity | endgate |
    | --- | --- |
    | Netty event loops, channels | asio, strands (`threading.md`) |
-   | Netty pipeline and `ByteBuf` | `network/pipeline.h`, `network/buffer.h` |
+   | Netty pipeline and `ByteBuf` | `network/pipeline.h`, `network/codec.h`, `buffer/bytebuf.h` |
    | `private static final Logger` | a `spdlog::logger &` member |
    | JLine, TerminalConsoleAppender | replxx, `logging/appender.h` |
    | night-config | glaze |

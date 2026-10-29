@@ -1,42 +1,36 @@
-#include "endgate/network/handler.h"
+#include "endgate/network/compress.h"
 
 #include <libdeflate.h>
 #include <snappy.h>
 
 #include <algorithm>
-#include <expected>
-#include <utility>
+#include <format>
 
 namespace endgate {
 
-CompressionHandler::CompressionHandler(int compression_level)
+MinecraftCompressDecoder::MinecraftCompressDecoder()
+    : decompressor_(libdeflate_alloc_decompressor(), libdeflate_free_decompressor)
 {
-    constexpr int default_compression_level = 6;
-    compressor_ = {libdeflate_alloc_compressor(compression_level < 0 ? default_compression_level : compression_level),
-                   libdeflate_free_compressor};
-    decompressor_ = {libdeflate_alloc_decompressor(), libdeflate_free_decompressor};
 }
 
-void CompressionHandler::setCompressionEnabled(bool enabled, PacketCompressionAlgorithm algorithm,
-                                               std::uint16_t threshold)
+void MinecraftCompressDecoder::setCompressionEnabled(bool enabled, PacketCompressionAlgorithm algorithm)
 {
     enabled_ = enabled;
     algorithm_ = algorithm;
-    threshold_ = threshold;
 }
 
-void CompressionHandler::setHybridCompressionEnabled(bool enabled)
+void MinecraftCompressDecoder::setHybridCompressionEnabled(bool enabled)
 {
     hybrid_ = enabled;
 }
 
-std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBufView &batch)
+ByteBuf MinecraftCompressDecoder::decompress(const ByteBufView &batch) const
 {
     constexpr std::size_t max_decompressed_size = 64 * 1024 * 1024;
 
     const auto input = batch.nioBuffer();
     if (input.empty()) {
-        return std::unexpected(DecodeError::EmptyBatch);
+        throw DecoderException("batch is empty");
     }
 
     const CompressionHeader header =
@@ -48,22 +42,22 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf
     }
 
     if (!header.isCompressedWith(algorithm_)) {
-        return std::unexpected(DecodeError::UnknownCompressionAlgorithm);
+        throw DecoderException("batch names an unknown compression algorithm");
     }
 
     if (header.isCompressedWith(PacketCompressionAlgorithm::Snappy)) {
         std::size_t size = 0;
         if (!snappy::GetUncompressedLength(reinterpret_cast<const char *>(payload.data()), payload.size(), &size)) {
-            return std::unexpected(DecodeError::CorruptCompressedData);
+            throw DecoderException("batch is corrupt");
         }
         if (size > max_decompressed_size) {
-            return std::unexpected(DecodeError::DecompressedSizeExceeded);
+            throw DecoderException("batch expands beyond the permitted size");
         }
 
         auto out = Unpooled::buffer(size);
         if (!snappy::RawUncompress(reinterpret_cast<const char *>(payload.data()), payload.size(),
                                    reinterpret_cast<char *>(out.nioBuffer(0, size).data()))) {
-            return std::unexpected(DecodeError::CorruptCompressedData);
+            throw DecoderException("batch is corrupt");
         }
         out.writerIndex(size);
         return out;
@@ -81,16 +75,36 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf
                 return out;
             }
             if (result != LIBDEFLATE_INSUFFICIENT_SPACE) {
-                return std::unexpected(DecodeError::CorruptCompressedData);
+                throw DecoderException("batch is corrupt");
             }
         }
-        return std::unexpected(DecodeError::DecompressedSizeExceeded);
+        throw DecoderException("batch expands beyond the permitted size");
     }
 
-    return std::unexpected(DecodeError::UnknownCompressionAlgorithm);
+    throw DecoderException("batch names an unknown compression algorithm");
 }
 
-std::expected<ByteBuf, DecodeError> CompressionHandler::compress(const ByteBufView &batch)
+MinecraftCompressEncoder::MinecraftCompressEncoder(int compression_level)
+{
+    constexpr int default_compression_level = 6;
+    compressor_ = {libdeflate_alloc_compressor(compression_level < 0 ? default_compression_level : compression_level),
+                   libdeflate_free_compressor};
+}
+
+void MinecraftCompressEncoder::setCompressionEnabled(bool enabled, PacketCompressionAlgorithm algorithm,
+                                                     std::uint16_t threshold)
+{
+    enabled_ = enabled;
+    algorithm_ = algorithm;
+    threshold_ = threshold;
+}
+
+void MinecraftCompressEncoder::setHybridCompressionEnabled(bool enabled)
+{
+    hybrid_ = enabled;
+}
+
+void MinecraftCompressEncoder::compress(const ByteBufView &batch, ByteBuf &out) const
 {
     const auto input = batch.nioBuffer();
     const std::size_t prefix = hybrid_ ? CompressionHeader::SIZE : 0;
@@ -101,8 +115,8 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::compress(const ByteBufVi
                              ? snappy::MaxCompressedLength(input.size())
                              : libdeflate_deflate_compress_bound(compressor_.get(), input.size());
 
-        auto out = Unpooled::buffer(bound + prefix);
-        auto writable = out.nioBuffer(0, bound + prefix);
+        out.ensureWritable(bound + prefix);
+        auto writable = out.nioBuffer(out.writerIndex(), bound + prefix);
         std::size_t produced = 0;
 
         if (algorithm_ == PacketCompressionAlgorithm::Snappy) {
@@ -118,23 +132,19 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::compress(const ByteBufVi
             if (hybrid_) {
                 writable[0] = static_cast<std::byte>(CompressionHeader{algorithm_}.getRaw());
             }
-            out.writerIndex(produced + prefix);
-            return out;
+            out.writerIndex(out.writerIndex() + produced + prefix);
+            return;
         }
 
         if (!hybrid_) {
-            return std::unexpected(DecodeError::CompressionFailed);
+            throw EncoderException("batch could not be compressed");
         }
     }
 
-    auto out = Unpooled::buffer(input.size() + prefix);
-    auto writable = out.nioBuffer(0, input.size() + prefix);
     if (hybrid_) {
-        writable[0] = static_cast<std::byte>(CompressionHeader{PacketCompressionAlgorithm::None}.getRaw());
+        out.writeByte(CompressionHeader{PacketCompressionAlgorithm::None}.getRaw());
     }
-    std::ranges::copy(input, writable.begin() + static_cast<std::ptrdiff_t>(prefix));
-    out.writerIndex(input.size() + prefix);
-    return out;
+    out.writeBytes(input);
 }
 
 }  // namespace endgate
