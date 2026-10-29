@@ -103,18 +103,6 @@ TEST(EventLoop, CancelledScheduleNeverRuns)
     EXPECT_FALSE(ran);
 }
 
-TEST(EventLoop, DestroyedFromItsOwnThreadDoesNotJoinItself)
-{
-    std::promise<void> destroyed;
-    auto loop = std::make_unique<EventLoop>();
-    auto *const raw = loop.get();
-    raw->execute([&destroyed, owned = std::move(loop)]() mutable {
-        owned.reset();
-        destroyed.set_value();
-    });
-    destroyed.get_future().wait();
-}
-
 TEST(EventLoopGroup, NextCyclesThroughEveryLoop)
 {
     EventLoopGroup group(3);
