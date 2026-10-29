@@ -34,8 +34,8 @@ Endpoint::Endpoint(ProxyServer &server, EventLoop &event_loop, Registry &registr
                    std::span<const std::byte> offline_ping_response,
                    std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity,
                    std::shared_ptr<asio::ssl::context> tls)
-    : server_(server), logger_(LogManager::getLogger("endgate::Endpoint")), event_loop_(event_loop), registry_(registry),
-      socket_(std::move(socket)), offline_(*this, guid), certificate_(rtc::Certificate::shared()),
+    : server_(server), logger_(LogManager::getLogger("endgate::Endpoint")), event_loop_(event_loop),
+      registry_(registry), socket_(std::move(socket)), offline_(*this, guid), certificate_(rtc::Certificate::shared()),
       identity_(std::move(identity)), session_config_{.max_packet_size = 8 * 1024 * 1024},
       signaling_(nethernet::HttpSignalingServer::create(event_loop, *this, {}, std::move(tls)))
 {

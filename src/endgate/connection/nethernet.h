@@ -108,8 +108,8 @@ NetherNetConnection<Session>::NetherNetConnection(Endpoint &endpoint, const std:
                                                   const nethernet::NetworkSession::Config &config,
                                                   Clock::time_point now)
     requires(!DIALING)
-    : MinecraftConnection(endpoint, network_id), logger_(LogManager::getLogger("endgate::NetherNetConnection")), socket_(endpoint.getSocket()),
-      certificate_(certificate), timer_(eventLoop().getExecutor())
+    : MinecraftConnection(endpoint, network_id), logger_(LogManager::getLogger("endgate::NetherNetConnection")),
+      socket_(endpoint.getSocket()), certificate_(certificate), timer_(eventLoop().getExecutor())
 {
     session_.emplace(static_cast<nethernet::NetworkSession::Listener &>(*this), offer, std::move(local),
                      std::move(certificate), config, now);
