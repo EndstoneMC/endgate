@@ -87,14 +87,14 @@ std::optional<Reliability> DataChannelOpen::reliability() const
 ByteBuf DataChannelOpen::serialize() const
 {
     auto out = Unpooled::buffer(12 + label.size() + protocol.size());
-    out.writeByte(MESSAGE_TYPE)
-        .writeByte(channel_type)
-        .writeShort(priority)
-        .writeInt(reliability_parameter)
-        .writeShort(static_cast<std::uint16_t>(label.size()))
-        .writeShort(static_cast<std::uint16_t>(protocol.size()))
-        .writeBytes(std::as_bytes(std::span{label}))
-        .writeBytes(std::as_bytes(std::span{protocol}));
+    out.writeByte(MESSAGE_TYPE);
+    out.writeByte(channel_type);
+    out.writeShort(priority);
+    out.writeInt(reliability_parameter);
+    out.writeShort(static_cast<std::uint16_t>(label.size()));
+    out.writeShort(static_cast<std::uint16_t>(protocol.size()));
+    out.writeBytes(std::as_bytes(std::span{label}));
+    out.writeBytes(std::as_bytes(std::span{protocol}));
     return out;
 }
 

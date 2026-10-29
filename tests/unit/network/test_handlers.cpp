@@ -70,7 +70,8 @@ Chain chainOf(Wire &wire, Direction direction = Direction::Serverbound)
 std::string requestNetworkSettings(std::uint32_t header, std::int32_t version)
 {
     auto packet = Unpooled::buffer();
-    packet.writeUnsignedVarInt(header).writeInt(version);
+    packet.writeUnsignedVarInt(header);
+    packet.writeInt(version);
     const auto bytes = packet.nioBuffer();
     return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
 }
@@ -84,8 +85,8 @@ ByteBuf framed(std::initializer_list<std::string_view> packets)
 {
     auto batch = Unpooled::buffer();
     for (const auto packet : packets) {
-        batch.writeUnsignedVarInt(static_cast<std::uint32_t>(packet.size()))
-            .writeBytes(std::as_bytes(std::span{packet}));
+        batch.writeUnsignedVarInt(static_cast<std::uint32_t>(packet.size()));
+        batch.writeBytes(std::as_bytes(std::span{packet}));
     }
     return batch;
 }
@@ -182,7 +183,8 @@ TEST(MinecraftVarintFrameDecoder, RejectsMalformedLengths)
     chain.fireChannelRead(zero.slice());
 
     auto overrun = Unpooled::buffer();
-    overrun.writeUnsignedVarInt(9).writeBytes(std::as_bytes(std::span{std::string_view{"abc"}}));
+    overrun.writeUnsignedVarInt(9);
+    overrun.writeBytes(std::as_bytes(std::span{std::string_view{"abc"}}));
     chain.fireChannelRead(overrun.slice());
 
     auto truncated = Unpooled::buffer();
@@ -195,7 +197,8 @@ TEST(MinecraftVarintFrameDecoder, RejectsMalformedLengths)
     chain.fireChannelRead(too_long.slice());
 
     auto huge = Unpooled::buffer();
-    huge.writeUnsignedVarInt(0xFFFFFFFF).writeByte('a');
+    huge.writeUnsignedVarInt(0xFFFFFFFF);
+    huge.writeByte('a');
     chain.fireChannelRead(huge.slice());
 
     EXPECT_TRUE(wire.unknown.empty());
@@ -210,7 +213,8 @@ TEST(MinecraftVarintFrameDecoder, KeepsThePacketsAheadOfAMalformedLength)
     auto chain = chainOf(wire);
     chain.get<MinecraftVarintFrameDecoder>().setEnabled(true);
     auto batch = framed({"ok"});
-    batch.writeUnsignedVarInt(50).writeByte('z');
+    batch.writeUnsignedVarInt(50);
+    batch.writeByte('z');
 
     chain.fireChannelRead(batch.slice());
 

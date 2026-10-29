@@ -78,17 +78,20 @@ void Packet::seal(ByteBuf &packet)
 
 void CommonHeader::write(ByteBuf &out) const
 {
-    out.writeShort(source_port).writeShort(destination_port).writeInt(verification_tag).writeInt(0);
+    out.writeShort(source_port);
+    out.writeShort(destination_port);
+    out.writeInt(verification_tag);
+    out.writeInt(0);
 }
 
 void Chunk::write(ByteBuf &out) const
 {
     const auto length = HEADER_SIZE + value.readableBytes();
-    out.writeByte(type)
-        .writeByte(flags)
-        .writeShort(static_cast<std::uint16_t>(length))
-        .writeBytes(value.nioBuffer())
-        .writeZero(padded(length) - length);
+    out.writeByte(type);
+    out.writeByte(flags);
+    out.writeShort(static_cast<std::uint16_t>(length));
+    out.writeBytes(value.nioBuffer());
+    out.writeZero(padded(length) - length);
 }
 
 std::optional<std::vector<Tlv>> Tlv::parseAll(ByteBufView data)
@@ -113,10 +116,10 @@ std::optional<std::vector<Tlv>> Tlv::parseAll(ByteBufView data)
 
 void Tlv::write(ByteBuf &out) const
 {
-    out.writeZero(padded(out.writerIndex()) - out.writerIndex())
-        .writeShort(type)
-        .writeShort(static_cast<std::uint16_t>(HEADER_SIZE + value.readableBytes()))
-        .writeBytes(value.nioBuffer());
+    out.writeZero(padded(out.writerIndex()) - out.writerIndex());
+    out.writeShort(type);
+    out.writeShort(static_cast<std::uint16_t>(HEADER_SIZE + value.readableBytes()));
+    out.writeBytes(value.nioBuffer());
 }
 
 std::optional<DataChunk> DataChunk::parse(const Chunk &chunk)
@@ -137,15 +140,15 @@ std::optional<DataChunk> DataChunk::parse(const Chunk &chunk)
 void DataChunk::write(ByteBuf &out) const
 {
     const auto length = HEADER_SIZE + payload.readableBytes();
-    out.writeByte(static_cast<std::uint8_t>(ChunkType::Data))
-        .writeByte(flags)
-        .writeShort(static_cast<std::uint16_t>(length))
-        .writeInt(tsn)
-        .writeShort(stream)
-        .writeShort(ssn)
-        .writeInt(ppid)
-        .writeBytes(payload.nioBuffer())
-        .writeZero(padded(length) - length);
+    out.writeByte(static_cast<std::uint8_t>(ChunkType::Data));
+    out.writeByte(flags);
+    out.writeShort(static_cast<std::uint16_t>(length));
+    out.writeInt(tsn);
+    out.writeShort(stream);
+    out.writeShort(ssn);
+    out.writeInt(ppid);
+    out.writeBytes(payload.nioBuffer());
+    out.writeZero(padded(length) - length);
 }
 
 std::optional<InitChunk> InitChunk::parse(const Chunk &chunk)
@@ -177,16 +180,16 @@ std::optional<InitChunk> InitChunk::parse(const Chunk &chunk)
 void InitChunk::write(ByteBuf &out, ChunkType type, ByteBufView encoded_parameters) const
 {
     const auto length = Chunk::HEADER_SIZE + 16 + encoded_parameters.readableBytes();
-    out.writeByte(static_cast<std::uint8_t>(type))
-        .writeByte(0)
-        .writeShort(static_cast<std::uint16_t>(length))
-        .writeInt(initiate_tag)
-        .writeInt(a_rwnd)
-        .writeShort(outbound_streams)
-        .writeShort(inbound_streams)
-        .writeInt(initial_tsn)
-        .writeBytes(encoded_parameters.nioBuffer())
-        .writeZero(padded(length) - length);
+    out.writeByte(static_cast<std::uint8_t>(type));
+    out.writeByte(0);
+    out.writeShort(static_cast<std::uint16_t>(length));
+    out.writeInt(initiate_tag);
+    out.writeInt(a_rwnd);
+    out.writeShort(outbound_streams);
+    out.writeShort(inbound_streams);
+    out.writeInt(initial_tsn);
+    out.writeBytes(encoded_parameters.nioBuffer());
+    out.writeZero(padded(length) - length);
 }
 
 std::optional<SackChunk> SackChunk::parse(const Chunk &chunk)
@@ -221,16 +224,17 @@ std::optional<SackChunk> SackChunk::parse(const Chunk &chunk)
 
 void SackChunk::write(ByteBuf &out) const
 {
-    out.writeByte(static_cast<std::uint8_t>(ChunkType::Sack))
-        .writeByte(0)
-        .writeShort(
-            static_cast<std::uint16_t>(Chunk::HEADER_SIZE + 12 + 4 * (gap_blocks.size() + duplicate_tsns.size())))
-        .writeInt(cumulative_tsn_ack)
-        .writeInt(a_rwnd)
-        .writeShort(static_cast<std::uint16_t>(gap_blocks.size()))
-        .writeShort(static_cast<std::uint16_t>(duplicate_tsns.size()));
+    out.writeByte(static_cast<std::uint8_t>(ChunkType::Sack));
+    out.writeByte(0);
+    out.writeShort(
+        static_cast<std::uint16_t>(Chunk::HEADER_SIZE + 12 + 4 * (gap_blocks.size() + duplicate_tsns.size())));
+    out.writeInt(cumulative_tsn_ack);
+    out.writeInt(a_rwnd);
+    out.writeShort(static_cast<std::uint16_t>(gap_blocks.size()));
+    out.writeShort(static_cast<std::uint16_t>(duplicate_tsns.size()));
     for (const auto &block : gap_blocks) {
-        out.writeShort(block.start).writeShort(block.end);
+        out.writeShort(block.start);
+        out.writeShort(block.end);
     }
     for (const auto tsn : duplicate_tsns) {
         out.writeInt(tsn);
@@ -254,12 +258,13 @@ std::optional<ForwardTsnChunk> ForwardTsnChunk::parse(const Chunk &chunk)
 
 void ForwardTsnChunk::write(ByteBuf &out) const
 {
-    out.writeByte(static_cast<std::uint8_t>(ChunkType::ForwardTsn))
-        .writeByte(0)
-        .writeShort(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + 4 + 4 * skipped.size()))
-        .writeInt(new_cumulative_tsn);
+    out.writeByte(static_cast<std::uint8_t>(ChunkType::ForwardTsn));
+    out.writeByte(0);
+    out.writeShort(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + 4 + 4 * skipped.size()));
+    out.writeInt(new_cumulative_tsn);
     for (const auto &entry : skipped) {
-        out.writeShort(entry.stream).writeShort(entry.ssn);
+        out.writeShort(entry.stream);
+        out.writeShort(entry.ssn);
     }
 }
 

@@ -57,7 +57,8 @@ public:
             ctx.write(std::move(packet));
             return;
         }
-        batch_.writeUnsignedVarInt(static_cast<std::uint32_t>(packet.readableBytes())).writeBytes(packet.nioBuffer());
+        batch_.writeUnsignedVarInt(static_cast<std::uint32_t>(packet.readableBytes()));
+        batch_.writeBytes(packet.nioBuffer());
     }
 
     template <typename Context>

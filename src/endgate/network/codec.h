@@ -68,7 +68,8 @@ public:
             throw DecoderException(cause.what());
         }
         if (cumulated) {
-            self.cumulation_.skipBytes(in.readerIndex()).discardReadBytes();
+            self.cumulation_.skipBytes(in.readerIndex());
+            self.cumulation_.discardReadBytes();
         }
         else if (in.isReadable()) {
             self.cumulation_.writeBytes(in);

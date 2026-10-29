@@ -279,19 +279,19 @@ ByteBuf StunMessage::encode(std::optional<std::string_view> integrity_key) const
     const auto method_bits = static_cast<std::uint16_t>(method);
     out.writeShort(static_cast<std::uint16_t>((method_bits & 0x000FU) | ((method_bits & 0x0070U) << 1U) |
                                               ((method_bits & 0x0F80U) << 2U) |
-                                              static_cast<std::uint16_t>(message_class)))
-        .writeShort(0)
-        .writeInt(MAGIC_COOKIE)
-        .writeBytes(transaction_id);
+                                              static_cast<std::uint16_t>(message_class)));
+    out.writeShort(0);
+    out.writeInt(MAGIC_COOKIE);
+    out.writeBytes(transaction_id);
 
     if (xor_mapped_address) {
         const auto mask = xorMask(transaction_id);
         const auto address = xor_mapped_address->address();
-        out.writeShort(static_cast<std::uint16_t>(StunAttribute::XorMappedAddress))
-            .writeShort(address.is_v4() ? 8 : 20)
-            .writeByte(0)
-            .writeByte(address.is_v4() ? 0x01 : 0x02)
-            .writeShort(static_cast<std::uint16_t>(xor_mapped_address->port() ^ (MAGIC_COOKIE >> 16U)));
+        out.writeShort(static_cast<std::uint16_t>(StunAttribute::XorMappedAddress));
+        out.writeShort(address.is_v4() ? 8 : 20);
+        out.writeByte(0);
+        out.writeByte(address.is_v4() ? 0x01 : 0x02);
+        out.writeShort(static_cast<std::uint16_t>(xor_mapped_address->port() ^ (MAGIC_COOKIE >> 16U)));
         if (address.is_v4()) {
             const auto bytes = address.to_v4().to_bytes();
             for (std::size_t i = 0; i < bytes.size(); ++i) {
@@ -308,18 +308,18 @@ ByteBuf StunMessage::encode(std::optional<std::string_view> integrity_key) const
     if (error_code) {
         const auto reason =
             std::as_bytes(std::span{error_code->reason.data(), std::min(error_code->reason.size(), MAX_TEXT_LENGTH)});
-        out.writeShort(static_cast<std::uint16_t>(StunAttribute::ErrorCode))
-            .writeShort(static_cast<std::uint16_t>(4 + reason.size()))
-            .writeShort(0)
-            .writeByte(static_cast<std::uint8_t>(error_code->code / 100))
-            .writeByte(static_cast<std::uint8_t>(error_code->code % 100))
-            .writeBytes(reason)
-            .writeZero((4 - reason.size() % 4) % 4);
+        out.writeShort(static_cast<std::uint16_t>(StunAttribute::ErrorCode));
+        out.writeShort(static_cast<std::uint16_t>(4 + reason.size()));
+        out.writeShort(0);
+        out.writeByte(static_cast<std::uint8_t>(error_code->code / 100));
+        out.writeByte(static_cast<std::uint8_t>(error_code->code % 100));
+        out.writeBytes(reason);
+        out.writeZero((4 - reason.size() % 4) % 4);
     }
     if (!unknown_attributes.empty()) {
         const auto count = std::min(unknown_attributes.size(), MAX_UNKNOWN_ATTRIBUTES);
-        out.writeShort(static_cast<std::uint16_t>(StunAttribute::UnknownAttributes))
-            .writeShort(static_cast<std::uint16_t>(count * 2));
+        out.writeShort(static_cast<std::uint16_t>(StunAttribute::UnknownAttributes));
+        out.writeShort(static_cast<std::uint16_t>(count * 2));
         for (const auto attribute : unknown_attributes | std::views::take(MAX_UNKNOWN_ATTRIBUTES)) {
             out.writeShort(attribute);
         }
@@ -327,33 +327,36 @@ ByteBuf StunMessage::encode(std::optional<std::string_view> integrity_key) const
     }
     if (username) {
         const auto text = std::as_bytes(std::span{username->data(), std::min(username->size(), MAX_USERNAME_LENGTH)});
-        out.writeShort(static_cast<std::uint16_t>(StunAttribute::Username))
-            .writeShort(static_cast<std::uint16_t>(text.size()))
-            .writeBytes(text)
-            .writeZero((4 - text.size() % 4) % 4);
+        out.writeShort(static_cast<std::uint16_t>(StunAttribute::Username));
+        out.writeShort(static_cast<std::uint16_t>(text.size()));
+        out.writeBytes(text);
+        out.writeZero((4 - text.size() % 4) % 4);
     }
     if (priority) {
-        out.writeShort(static_cast<std::uint16_t>(StunAttribute::Priority)).writeShort(4).writeInt(*priority);
+        out.writeShort(static_cast<std::uint16_t>(StunAttribute::Priority));
+        out.writeShort(4);
+        out.writeInt(*priority);
     }
     if (use_candidate) {
-        out.writeShort(static_cast<std::uint16_t>(StunAttribute::UseCandidate)).writeShort(0);
+        out.writeShort(static_cast<std::uint16_t>(StunAttribute::UseCandidate));
+        out.writeShort(0);
     }
     if (ice_controlled) {
-        out.writeShort(static_cast<std::uint16_t>(StunAttribute::IceControlled))
-            .writeShort(8)
-            .writeLong(*ice_controlled);
+        out.writeShort(static_cast<std::uint16_t>(StunAttribute::IceControlled));
+        out.writeShort(8);
+        out.writeLong(*ice_controlled);
     }
     if (ice_controlling) {
-        out.writeShort(static_cast<std::uint16_t>(StunAttribute::IceControlling))
-            .writeShort(8)
-            .writeLong(*ice_controlling);
+        out.writeShort(static_cast<std::uint16_t>(StunAttribute::IceControlling));
+        out.writeShort(8);
+        out.writeLong(*ice_controlling);
     }
     if (software) {
         const auto text = std::as_bytes(std::span{software->data(), std::min(software->size(), MAX_TEXT_LENGTH)});
-        out.writeShort(static_cast<std::uint16_t>(StunAttribute::Software))
-            .writeShort(static_cast<std::uint16_t>(text.size()))
-            .writeBytes(text)
-            .writeZero((4 - text.size() % 4) % 4);
+        out.writeShort(static_cast<std::uint16_t>(StunAttribute::Software));
+        out.writeShort(static_cast<std::uint16_t>(text.size()));
+        out.writeBytes(text);
+        out.writeZero((4 - text.size() % 4) % 4);
     }
 
     if (integrity_key) {
@@ -361,14 +364,16 @@ ByteBuf StunMessage::encode(std::optional<std::string_view> integrity_key) const
             2, static_cast<std::uint16_t>(out.writerIndex() - HEADER_SIZE + ATTRIBUTE_HEADER_SIZE + INTEGRITY_SIZE));
         const auto bytes = out.nioBuffer();
         const auto digest = hmacSha1(bytes.first(HEADER_SIZE), bytes.subspan(HEADER_SIZE), *integrity_key);
-        out.writeShort(static_cast<std::uint16_t>(StunAttribute::MessageIntegrity))
-            .writeShort(INTEGRITY_SIZE)
-            .writeBytes(digest);
+        out.writeShort(static_cast<std::uint16_t>(StunAttribute::MessageIntegrity));
+        out.writeShort(INTEGRITY_SIZE);
+        out.writeBytes(digest);
     }
 
     out.setShort(2, static_cast<std::uint16_t>(out.writerIndex() - HEADER_SIZE + ATTRIBUTE_HEADER_SIZE + 4));
     const auto fingerprint = fingerprintOf(out.nioBuffer());
-    out.writeShort(static_cast<std::uint16_t>(StunAttribute::Fingerprint)).writeShort(4).writeInt(fingerprint);
+    out.writeShort(static_cast<std::uint16_t>(StunAttribute::Fingerprint));
+    out.writeShort(4);
+    out.writeInt(fingerprint);
     return out;
 }
 

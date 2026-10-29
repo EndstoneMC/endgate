@@ -321,8 +321,8 @@ public:
         if (message.empty()) {
             throw std::runtime_error("nothing to encode");
         }
-        out.writeUnsignedVarInt(static_cast<std::uint32_t>(message.size()))
-            .writeBytes(std::as_bytes(std::span{message}));
+        out.writeUnsignedVarInt(static_cast<std::uint32_t>(message.size()));
+        out.writeBytes(std::as_bytes(std::span{message}));
     }
 };
 

@@ -387,7 +387,8 @@ TEST_F(RawPeerTest, ClosesChannelWhosePeerDeniesTheReset)
     EXPECT_TRUE(server_.closed.empty());
 
     auto fields = Unpooled::buffer();
-    fields.writeInt(*sequence).writeInt(static_cast<std::uint32_t>(ReconfigResult::Denied));
+    fields.writeInt(*sequence);
+    fields.writeInt(static_cast<std::uint32_t>(ReconfigResult::Denied));
     auto value = Unpooled::buffer();
     Tlv{.type = static_cast<std::uint16_t>(ParameterType::ReconfigurationResponse), .value = fields.slice(), .raw = {}}
         .write(value);

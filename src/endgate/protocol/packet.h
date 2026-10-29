@@ -118,7 +118,8 @@ public:
         std::string body;
         bp::BinaryWriter writer{body};
         bp::serialize(writer, packet);
-        out.writeUnsignedVarInt(static_cast<std::uint32_t>(Packet::Id)).writeBytes(std::as_bytes(std::span{body}));
+        out.writeUnsignedVarInt(static_cast<std::uint32_t>(Packet::Id));
+        out.writeBytes(std::as_bytes(std::span{body}));
     }
 
 private:

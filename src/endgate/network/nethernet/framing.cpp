@@ -32,7 +32,8 @@ bool PacketQueue::push(ByteBufView packet, ESendType type)
         --fragments;
         const auto length = std::min(size - offset, fragment_size_);
         auto fragment = Unpooled::buffer(1 + length);
-        fragment.writeByte(fragments).writeBytes(packet.nioBuffer(packet.readerIndex() + offset, length));
+        fragment.writeByte(fragments);
+        fragment.writeBytes(packet.nioBuffer(packet.readerIndex() + offset, length));
         listener_.sendFragment(type, std::move(fragment));
         offset += length;
     }

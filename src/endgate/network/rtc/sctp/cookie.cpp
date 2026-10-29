@@ -25,17 +25,17 @@ ByteBuf StateCookie::seal(const Key &key, std::chrono::steady_clock::time_point 
 {
     auto data = Unpooled::buffer(FIELDS_SIZE + MAC_SIZE);
     data.writeLong(static_cast<std::uint64_t>(
-                       std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count()))
-        .writeInt(local_tag)
-        .writeInt(peer_tag)
-        .writeInt(local_initial_tsn)
-        .writeInt(peer_initial_tsn)
-        .writeInt(peer_a_rwnd)
-        .writeShort(peer_outbound_streams)
-        .writeShort(peer_inbound_streams)
-        .writeLong(tie_tag)
-        .writeByte(
-            static_cast<std::uint8_t>((peer_supports_forward_tsn ? 1U : 0U) | (peer_supports_reconfig ? 2U : 0U)));
+        std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count()));
+    data.writeInt(local_tag);
+    data.writeInt(peer_tag);
+    data.writeInt(local_initial_tsn);
+    data.writeInt(peer_initial_tsn);
+    data.writeInt(peer_a_rwnd);
+    data.writeShort(peer_outbound_streams);
+    data.writeShort(peer_inbound_streams);
+    data.writeLong(tie_tag);
+    data.writeByte(
+        static_cast<std::uint8_t>((peer_supports_forward_tsn ? 1U : 0U) | (peer_supports_reconfig ? 2U : 0U)));
     data.writeBytes(authenticate(key, data.nioBuffer()));
     return data;
 }

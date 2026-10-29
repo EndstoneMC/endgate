@@ -26,6 +26,7 @@ paths:
 Netty's `io.netty.buffer.ByteBuf`, 1:1: `readerIndex`, `writerIndex`, `capacity`, `readableBytes`, `writableBytes`, `isReadable`, `ensureWritable`, `skipBytes`, `discardReadBytes`, `clear`, the `read`, `get`, `set` and `write` families with their `LE` and `Unsigned` forms, `readSlice`, `slice`, `copy`, `nioBuffer`. Netty's growth rule (`calculateNewCapacity`) and `IndexOutOfBoundsException` (as `std::out_of_range`) come with it.
 
 - Netty's integers are big-endian; Bedrock's are mostly little-endian, so reach for the `LE` methods.
+- One `ByteBuf` call per statement. Netty's methods return the buffer for chaining; endgate never chains them.
 - Allocate with `Unpooled`, Netty's static factory.
 
 Deviations from Netty:

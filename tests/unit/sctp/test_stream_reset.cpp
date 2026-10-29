@@ -321,9 +321,9 @@ TEST(StreamReset, ReportsOnlyStreamsThatExist)
     const auto original = OutgoingResetRequest::parse(Tlv::parseAll(parsed->chunks.back().value)->front());
 
     auto fields = Unpooled::buffer();
-    fields.writeInt(original->request_sequence)
-        .writeInt(original->response_sequence)
-        .writeInt(original->last_assigned_tsn);
+    fields.writeInt(original->request_sequence);
+    fields.writeInt(original->response_sequence);
+    fields.writeInt(original->last_assigned_tsn);
     for (const auto stream : {5, 3, 9000, 5, 3}) {
         fields.writeShort(static_cast<std::uint16_t>(stream));
     }
@@ -374,7 +374,8 @@ TEST(StreamReset, GivesUpOnAPeerThatStaysInProgress)
     for (auto answer = 0; answer < 6 && network.endpoint_a.outgoing_resets.empty(); ++answer) {
         ASSERT_TRUE(network.runUntil([&] { return sequences.size() > static_cast<std::size_t>(answer); }, 120s));
         auto fields = Unpooled::buffer();
-        fields.writeInt(sequences.back()).writeInt(static_cast<std::uint32_t>(ReconfigResult::InProgress));
+        fields.writeInt(sequences.back());
+        fields.writeInt(static_cast<std::uint32_t>(ReconfigResult::InProgress));
         auto value = Unpooled::buffer();
         Tlv{.type = static_cast<std::uint16_t>(ParameterType::ReconfigurationResponse),
             .value = fields.slice(),

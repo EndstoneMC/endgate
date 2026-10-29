@@ -20,8 +20,15 @@ std::array<std::byte, 4> bytes(std::uint8_t a, std::uint8_t b, std::uint8_t c, s
 TEST(ByteBuf, WritesBigEndianByDefaultAndLittleEndianWithLe)
 {
     auto buf = Unpooled::buffer();
-    buf.writeByte(0x01).writeShort(0x0203).writeShortLE(0x0405).writeMedium(0x060708).writeMediumLE(0x090A0B);
-    buf.writeInt(0x0C0D0E0F).writeIntLE(0x10111213).writeLong(0x1415161718191A1B).writeLongLE(0x1C1D1E1F20212223);
+    buf.writeByte(0x01);
+    buf.writeShort(0x0203);
+    buf.writeShortLE(0x0405);
+    buf.writeMedium(0x060708);
+    buf.writeMediumLE(0x090A0B);
+    buf.writeInt(0x0C0D0E0F);
+    buf.writeIntLE(0x10111213);
+    buf.writeLong(0x1415161718191A1B);
+    buf.writeLongLE(0x1C1D1E1F20212223);
     EXPECT_EQ(ByteBufUtil::hexDump(buf), "01"
                                          "0203"
                                          "0504"
@@ -36,9 +43,20 @@ TEST(ByteBuf, WritesBigEndianByDefaultAndLittleEndianWithLe)
 TEST(ByteBuf, ReadsWhatItWrote)
 {
     auto buf = Unpooled::buffer();
-    buf.writeBoolean(true).writeByte(0xFF).writeShort(0xFFFE).writeShortLE(0x1234).writeMedium(0x800000);
-    buf.writeMediumLE(0x123456).writeInt(0xFFFFFFFF).writeIntLE(0x89ABCDEF).writeLong(0xFFFFFFFFFFFFFFFF);
-    buf.writeLongLE(0x0123456789ABCDEF).writeFloat(1.5F).writeFloatLE(-2.25F).writeDouble(3.5).writeDoubleLE(-0.125);
+    buf.writeBoolean(true);
+    buf.writeByte(0xFF);
+    buf.writeShort(0xFFFE);
+    buf.writeShortLE(0x1234);
+    buf.writeMedium(0x800000);
+    buf.writeMediumLE(0x123456);
+    buf.writeInt(0xFFFFFFFF);
+    buf.writeIntLE(0x89ABCDEF);
+    buf.writeLong(0xFFFFFFFFFFFFFFFF);
+    buf.writeLongLE(0x0123456789ABCDEF);
+    buf.writeFloat(1.5F);
+    buf.writeFloatLE(-2.25F);
+    buf.writeDouble(3.5);
+    buf.writeDoubleLE(-0.125);
 
     EXPECT_TRUE(buf.readBoolean());
     EXPECT_EQ(buf.readByte(), -1);
@@ -89,7 +107,8 @@ TEST(ByteBuf, GrowsByNettysRule)
 TEST(ByteBuf, GrowingKeepsTheBytesAlreadyWritten)
 {
     auto buf = Unpooled::buffer(2);
-    buf.writeShort(0xBEEF).writeInt(0x01020304);
+    buf.writeShort(0xBEEF);
+    buf.writeInt(0x01020304);
     EXPECT_EQ(ByteBufUtil::hexDump(buf), "beef01020304");
 }
 
@@ -200,7 +219,10 @@ TEST(ByteBufView, WriteBytesAdvancesTheSource)
 TEST(ByteBuf, UnsignedVarIntsUseSevenBitGroups)
 {
     auto buf = Unpooled::buffer();
-    buf.writeUnsignedVarInt(0).writeUnsignedVarInt(127).writeUnsignedVarInt(128).writeUnsignedVarInt(300);
+    buf.writeUnsignedVarInt(0);
+    buf.writeUnsignedVarInt(127);
+    buf.writeUnsignedVarInt(128);
+    buf.writeUnsignedVarInt(300);
     buf.writeUnsignedVarInt(0xFFFFFFFF);
     EXPECT_EQ(ByteBufUtil::hexDump(buf), "00"
                                          "7f"
@@ -218,7 +240,10 @@ TEST(ByteBuf, UnsignedVarIntsUseSevenBitGroups)
 TEST(ByteBuf, SignedVarIntsAreZigzag)
 {
     auto buf = Unpooled::buffer();
-    buf.writeVarInt(0).writeVarInt(-1).writeVarInt(1).writeVarInt(-2);
+    buf.writeVarInt(0);
+    buf.writeVarInt(-1);
+    buf.writeVarInt(1);
+    buf.writeVarInt(-2);
     EXPECT_EQ(ByteBufUtil::hexDump(buf), "00010203");
     for (const std::int32_t expected : {0, -1, 1, -2}) {
         EXPECT_EQ(buf.readVarInt(), expected);
@@ -280,7 +305,8 @@ TEST(ByteBuf, RejectsOverLongVarInts)
 TEST(ByteBuf, StringsCarryAnUnsignedVarIntLength)
 {
     auto buf = Unpooled::buffer();
-    buf.writeString("").writeString("endgate");
+    buf.writeString("");
+    buf.writeString("endgate");
     EXPECT_EQ(ByteBufUtil::hexDump(buf), "00"
                                          "07656e6467617465");
     EXPECT_EQ(buf.readString(16), "");
@@ -294,7 +320,8 @@ TEST(ByteBuf, StringsAreBoundedByTheCapAndTheBytesPresent)
     EXPECT_THROW((void)capped.readString(6), std::out_of_range);
 
     auto short_body = Unpooled::buffer();
-    short_body.writeUnsignedVarInt(10).writeByte('a');
+    short_body.writeUnsignedVarInt(10);
+    short_body.writeByte('a');
     EXPECT_THROW((void)short_body.readString(16), std::out_of_range);
 
     auto huge = Unpooled::buffer();
@@ -305,7 +332,8 @@ TEST(ByteBuf, StringsAreBoundedByTheCapAndTheBytesPresent)
 TEST(ByteBufView, ReadsVarIntsAndStrings)
 {
     auto buf = Unpooled::buffer();
-    buf.writeVarInt(-300).writeString("hi");
+    buf.writeVarInt(-300);
+    buf.writeString("hi");
     auto view = buf.slice();
     EXPECT_EQ(view.readVarInt(), -300);
     EXPECT_EQ(view.readString(2), "hi");

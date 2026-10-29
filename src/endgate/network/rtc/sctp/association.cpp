@@ -142,7 +142,8 @@ void Association::handleTimeout(Clock::time_point now)
         if (!tcb.heartbeat_timeout && state_ == State::Established) {
             tcb.heartbeat_nonce = random<std::uint64_t>();
             auto info = Unpooled::buffer(16);
-            info.writeLong(static_cast<std::uint64_t>(now.time_since_epoch().count())).writeLong(tcb.heartbeat_nonce);
+            info.writeLong(static_cast<std::uint64_t>(now.time_since_epoch().count()));
+            info.writeLong(tcb.heartbeat_nonce);
             auto value = Unpooled::buffer(Tlv::HEADER_SIZE + info.readableBytes());
             Tlv{.type = static_cast<std::uint16_t>(ParameterType::HeartbeatInfo), .value = info.slice(), .raw = {}}
                 .write(value);
@@ -652,7 +653,8 @@ void Association::handleData(const Chunk &chunk, std::vector<Message> &delivered
     if (header->stream >= tcb_->inbound_streams) {
         tcb_->receiver.acknowledge(*header);
         auto stream = Unpooled::buffer(4);
-        stream.writeShort(header->stream).writeShort(0);
+        stream.writeShort(header->stream);
+        stream.writeShort(0);
         queue(ChunkType::Error, 0, cause(CauseCode::InvalidStreamIdentifier, stream.slice()));
         return;
     }
@@ -773,7 +775,8 @@ void Association::handleReconfig(const Chunk &chunk, Clock::time_point now)
     auto request_seen = false;
     const auto respond = [&](std::uint32_t sequence, ReconfigResult result) {
         auto value = Unpooled::buffer(8);
-        value.writeInt(sequence).writeInt(static_cast<std::uint32_t>(result));
+        value.writeInt(sequence);
+        value.writeInt(static_cast<std::uint32_t>(result));
         Tlv{.type = static_cast<std::uint16_t>(ParameterType::ReconfigurationResponse),
             .value = value.slice(),
             .raw = {}}
@@ -875,10 +878,10 @@ bool Association::handleUnknown(const Chunk &chunk, ByteBuf &unrecognized) const
                                                 Chunk::HEADER_SIZE + chunk.value.readableBytes() <=
                                             config_.mtu) {
         auto original = Unpooled::buffer(Chunk::HEADER_SIZE + chunk.value.readableBytes());
-        original.writeByte(chunk.type)
-            .writeByte(chunk.flags)
-            .writeShort(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + chunk.value.readableBytes()))
-            .writeBytes(chunk.value.nioBuffer());
+        original.writeByte(chunk.type);
+        original.writeByte(chunk.flags);
+        original.writeShort(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + chunk.value.readableBytes()));
+        original.writeBytes(chunk.value.nioBuffer());
         Tlv{.type = static_cast<std::uint16_t>(CauseCode::UnrecognizedChunkType), .value = original.slice(), .raw = {}}
             .write(unrecognized);
     }
@@ -1001,9 +1004,9 @@ void Association::queueResetRequest()
         return;
     }
     auto request = Unpooled::buffer(12 + 2 * tcb_->request->streams.size());
-    request.writeInt(tcb_->request->sequence)
-        .writeInt(tcb_->last_peer_request)
-        .writeInt(tcb_->request->last_assigned_tsn);
+    request.writeInt(tcb_->request->sequence);
+    request.writeInt(tcb_->last_peer_request);
+    request.writeInt(tcb_->request->last_assigned_tsn);
     for (const auto stream : tcb_->request->streams) {
         request.writeShort(stream);
     }

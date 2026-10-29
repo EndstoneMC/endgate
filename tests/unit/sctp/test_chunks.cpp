@@ -296,7 +296,10 @@ TEST(ReconfigChunk, SerializesCapturedOutgoingResetRequest)
 {
     auto value = Unpooled::buffer();
     auto fields = Unpooled::buffer();
-    fields.writeInt(2270550051U).writeInt(1905748638U).writeInt(2270550066U).writeShort(6);
+    fields.writeInt(2270550051U);
+    fields.writeInt(1905748638U);
+    fields.writeInt(2270550066U);
+    fields.writeShort(6);
     Tlv{.type = static_cast<std::uint16_t>(ParameterType::OutgoingSsnResetRequest), .value = fields.slice(), .raw = {}}
         .write(value);
     EXPECT_EQ(
