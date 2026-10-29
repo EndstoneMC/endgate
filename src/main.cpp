@@ -1,7 +1,5 @@
 #include <chrono>
 
-#include <spdlog/spdlog.h>
-
 #include "endgate/logging/manager.h"
 #include "endgate/server.h"
 
@@ -17,7 +15,6 @@ int main()
 
     endgate::ProxyServer server;
     if (!server.start()) {
-        spdlog::shutdown();
         return 1;
     }
 
@@ -26,7 +23,5 @@ int main()
 
     server.getConsoleCommandSource().start();
     server.awaitProxyShutdown();
-
-    spdlog::shutdown();
     return 0;
 }
