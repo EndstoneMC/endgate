@@ -19,6 +19,17 @@ find_package(Snappy REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(GTest REQUIRED)
 
+set(BEDROCK_PROTOCOL_VERSION "0.4.4")
+include(FetchContent)
+FetchContent_Declare(bedrock_protocol
+        URL https://github.com/EndstoneMC/bedrock-protocol/releases/download/v${BEDROCK_PROTOCOL_VERSION}/bedrock-protocol-${BEDROCK_PROTOCOL_VERSION}-src.zip
+        URL_HASH SHA256=1036396da7edf8992f4ace4ccd858e61e36adb524a95dfaf149aa448749ef4f7
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        EXCLUDE_FROM_ALL
+        SYSTEM
+)
+FetchContent_MakeAvailable(bedrock_protocol)
+
 enable_testing()
 
 add_library(endgate_eventloop STATIC src/endgate/network/eventloop.cpp src/endgate/thread.cpp)
@@ -68,6 +79,7 @@ target_include_directories(endgate_proxy PUBLIC src ${CMAKE_CURRENT_BINARY_DIR}/
 target_compile_definitions(endgate_proxy PUBLIC ENDGATE_VERSION="${PROJECT_VERSION}")
 
 target_link_libraries(endgate_proxy PUBLIC
+        bedrock::protocol
         endgate::crypto
         endgate::eventloop
         endgate::nethernet

@@ -108,8 +108,9 @@ NetherNetConnection<Session>::NetherNetConnection(Endpoint &endpoint, const std:
                                                   const nethernet::NetworkSession::Config &config,
                                                   Clock::time_point now)
     requires(!DIALING)
-    : MinecraftConnection(endpoint, network_id), logger_(LogManager::getLogger("NetherNetConnection")),
-      socket_(endpoint.getSocket()), certificate_(certificate), timer_(eventLoop().getExecutor())
+    : MinecraftConnection(endpoint, network_id, Direction::Serverbound),
+      logger_(LogManager::getLogger("NetherNetConnection")), socket_(endpoint.getSocket()), certificate_(certificate),
+      timer_(eventLoop().getExecutor())
 {
     session_.emplace(static_cast<nethernet::NetworkSession::Listener &>(*this), offer, std::move(local),
                      std::move(certificate), config, now);
@@ -119,7 +120,8 @@ template <typename Session>
 NetherNetConnection<Session>::NetherNetConnection(Endpoint &endpoint, const asio::ip::udp::endpoint &address,
                                                   std::shared_ptr<const rtc::Certificate> certificate)
     requires DIALING
-    : MinecraftConnection(endpoint, toString(address)), logger_(LogManager::getLogger("NetherNetConnection")),
+    : MinecraftConnection(endpoint, toString(address), Direction::Clientbound),
+      logger_(LogManager::getLogger("NetherNetConnection")),
       socket_(std::make_shared<asio::ip::udp::socket>(eventLoop().getExecutor())), certificate_(std::move(certificate)),
       address_(address), timer_(eventLoop().getExecutor())
 {

@@ -18,6 +18,7 @@
 #include "endgate/network/frame.h"
 #include "endgate/network/packet.h"
 #include "endgate/network/pipeline.h"
+#include "endgate/protocol/state.h"
 
 namespace endgate {
 
@@ -28,19 +29,58 @@ class Endpoint;
     return address.address().to_string() + ":" + std::to_string(address.port());
 }
 
+template <typename List>
+class PacketHandlers;
+
+template <>
+class PacketHandlers<TypeList<>> {
+public:
+    PacketHandlers() = default;
+    PacketHandlers(const PacketHandlers &) = default;
+    PacketHandlers &operator=(const PacketHandlers &) = default;
+    PacketHandlers(PacketHandlers &&) = default;
+    PacketHandlers &operator=(PacketHandlers &&) = default;
+    virtual ~PacketHandlers() = default;
+};
+
+template <typename Packet, typename... Rest>
+class PacketHandlers<TypeList<Packet, Rest...>> : public PacketHandlers<TypeList<Rest...>> {
+public:
+    /**
+     * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler#handle
+     */
+    virtual bool handle(const Packet &) { return false; }
+};
+
+template <typename Packet, typename Next, typename... Rest>
+class PacketHandlers<TypeList<Packet, Next, Rest...>> : public PacketHandlers<TypeList<Next, Rest...>> {
+public:
+    using PacketHandlers<TypeList<Next, Rest...>>::handle;
+
+    /**
+     * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler#handle
+     */
+    virtual bool handle(const Packet &) { return false; }
+};
+
 /**
  * Hears what a connection does, always on the connection's event loop.
  *
  * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler
  */
-class MinecraftSessionHandler {
+class MinecraftSessionHandler : public PacketHandlers<RegisteredPackets> {
 public:
-    virtual ~MinecraftSessionHandler() = default;
-
     /**
      * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler#connected
      */
     virtual void connected() = 0;
+
+    /**
+     * Takes a registered packet no handle overload took, as the bytes it arrived in.
+     *
+     * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler#handleGeneric
+     */
+    virtual void handleGeneric(ByteBufView packet) { handleUnknown(packet); }
 
     /**
      * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler#handleUnknown
@@ -75,7 +115,7 @@ class MinecraftConnection : public std::enable_shared_from_this<MinecraftConnect
 public:
     using Clock = std::chrono::steady_clock;
 
-    MinecraftConnection(Endpoint &endpoint, std::string remote_address);
+    MinecraftConnection(Endpoint &endpoint, std::string remote_address, Direction direction);
     MinecraftConnection(const MinecraftConnection &) = delete;
     MinecraftConnection &operator=(const MinecraftConnection &) = delete;
     MinecraftConnection(MinecraftConnection &&) = delete;
@@ -178,6 +218,14 @@ private:
         void channelActive();
         void channelInactive();
         void channelRead(ByteBufView batch);
+
+        template <typename Packet>
+        void channelRead(const DecodedPacket<Packet> &decoded)
+        {
+            if (connection_.handler_ && !connection_.handler_->handle(decoded.packet)) {
+                connection_.handler_->handleGeneric(decoded.bytes);
+            }
+        }
         void channelReadComplete();
         void exceptionCaught(const std::exception &cause);
         void write(ByteBuf batch);
@@ -190,7 +238,7 @@ private:
 
     using Pipeline = ChannelPipeline<Sink, MinecraftCipherDecoder, MinecraftCipherEncoder, MinecraftCompressDecoder,
                                      MinecraftCompressEncoder, MinecraftVarintFrameDecoder,
-                                     MinecraftVarintLengthEncoder, MinecraftDecoder<>, MinecraftEncoder<>>;
+                                     MinecraftVarintLengthEncoder, MinecraftDecoder, MinecraftEncoder>;
 
     Endpoint &endpoint_;
     EventLoop &event_loop_;

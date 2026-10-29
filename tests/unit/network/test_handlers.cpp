@@ -20,19 +20,12 @@
 namespace endgate {
 namespace {
 
-struct Ping {
-    static constexpr std::uint32_t ID = 0x2A;
-
-    std::int32_t value{};
-
-    static Ping decode(ByteBufView &in) { return {in.readVarInt()}; }
-    void encode(ByteBuf &out) const { out.writeVarInt(value); }
-};
-
 struct Wire {
     std::vector<ByteBuf> sent;
     std::vector<std::string> unknown;
-    std::vector<std::int32_t> pings;
+    std::vector<std::int32_t> versions;
+    std::vector<std::string> decoded_bytes;
+    std::vector<std::string_view> other_packets;
     std::vector<std::string> errors;
     int flushes{0};
 
@@ -41,7 +34,17 @@ struct Wire {
         const auto bytes = packet.nioBuffer();
         unknown.emplace_back(reinterpret_cast<const char *>(bytes.data()), bytes.size());
     }
-    void channelRead(const Ping &ping) { pings.push_back(ping.value); }
+    void channelRead(const DecodedPacket<bp::RequestNetworkSettingsPacket> &decoded)
+    {
+        versions.push_back(decoded.packet.client_network_version);
+        const auto bytes = decoded.bytes.nioBuffer();
+        decoded_bytes.emplace_back(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+    }
+    template <typename Packet>
+    void channelRead(const DecodedPacket<Packet> &)
+    {
+        other_packets.push_back(bp::struct_name<Packet>());
+    }
     void exceptionCaught(const std::exception &cause) { errors.emplace_back(cause.what()); }
     void write(ByteBuf batch) { sent.push_back(std::move(batch)); }
     void flush() { ++flushes; }
@@ -49,7 +52,28 @@ struct Wire {
 
 using Chain = ChannelPipeline<Wire, MinecraftCipherDecoder, MinecraftCipherEncoder, MinecraftCompressDecoder,
                               MinecraftCompressEncoder, MinecraftVarintFrameDecoder, MinecraftVarintLengthEncoder,
-                              MinecraftDecoder<Ping>, MinecraftEncoder<Ping>>;
+                              MinecraftDecoder, MinecraftEncoder>;
+
+Chain chainOf(Wire &wire, Direction direction = Direction::Serverbound)
+{
+    return Chain{wire,
+                 MinecraftCipherDecoder{},
+                 MinecraftCipherEncoder{},
+                 MinecraftCompressDecoder{},
+                 MinecraftCompressEncoder{},
+                 MinecraftVarintFrameDecoder{},
+                 MinecraftVarintLengthEncoder{},
+                 MinecraftDecoder{direction},
+                 MinecraftEncoder{}};
+}
+
+std::string requestNetworkSettings(std::uint32_t header, std::int32_t version)
+{
+    auto packet = Unpooled::buffer();
+    packet.writeUnsignedVarInt(header).writeInt(version);
+    const auto bytes = packet.nioBuffer();
+    return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
+}
 
 ByteBuf copyOf(std::string_view text)
 {
@@ -70,7 +94,7 @@ void switchOn(Chain &chain)
 {
     chain.get<MinecraftVarintFrameDecoder>().setEnabled(true);
     chain.get<MinecraftVarintLengthEncoder>().setEnabled(true);
-    chain.get<MinecraftDecoder<Ping>>().setEnabled(true);
+    chain.get<MinecraftDecoder>().setEnabled(true);
 }
 
 void compressWith(Chain &chain, PacketCompressionAlgorithm algorithm, std::uint16_t threshold)
@@ -82,7 +106,7 @@ void compressWith(Chain &chain, PacketCompressionAlgorithm algorithm, std::uint1
 TEST(Forwarding, AnInboundBatchReachesTheSinkWholeAndUntouched)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     const auto batch = copyOf("\x03"
                               "abc"
                               "\x02"
@@ -100,7 +124,7 @@ TEST(Forwarding, AnInboundBatchReachesTheSinkWholeAndUntouched)
 TEST(Forwarding, AnOutboundBatchLeavesAsItIsWithoutWaitingForAFlush)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
 
     chain.write(copyOf("first"));
     chain.write(copyOf("second"));
@@ -113,7 +137,7 @@ TEST(Forwarding, AnOutboundBatchLeavesAsItIsWithoutWaitingForAFlush)
 TEST(Forwarding, CompressionStaysOffUntilTheHandshakeTurnsItOn)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     const auto batch = copyOf("\x01\x02\x03 opaque bytes the proxy cannot read");
 
     chain.fireChannelRead(batch.slice());
@@ -126,7 +150,7 @@ TEST(Forwarding, CompressionStaysOffUntilTheHandshakeTurnsItOn)
 TEST(MinecraftVarintFrameDecoder, SplitsABatchAtEachLength)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     chain.get<MinecraftVarintFrameDecoder>().setEnabled(true);
 
     chain.fireChannelRead(framed({"abc", "d", "efgh"}).slice());
@@ -138,7 +162,7 @@ TEST(MinecraftVarintFrameDecoder, SplitsABatchAtEachLength)
 TEST(MinecraftVarintFrameDecoder, ReadsLengthsLongerThanOneByte)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     chain.get<MinecraftVarintFrameDecoder>().setEnabled(true);
     const std::string big(300, 'x');
 
@@ -150,7 +174,7 @@ TEST(MinecraftVarintFrameDecoder, ReadsLengthsLongerThanOneByte)
 TEST(MinecraftVarintFrameDecoder, RejectsMalformedLengths)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     chain.get<MinecraftVarintFrameDecoder>().setEnabled(true);
 
     auto zero = Unpooled::buffer();
@@ -183,7 +207,7 @@ TEST(MinecraftVarintFrameDecoder, RejectsMalformedLengths)
 TEST(MinecraftVarintFrameDecoder, KeepsThePacketsAheadOfAMalformedLength)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     chain.get<MinecraftVarintFrameDecoder>().setEnabled(true);
     auto batch = framed({"ok"});
     batch.writeUnsignedVarInt(50).writeByte('z');
@@ -197,7 +221,7 @@ TEST(MinecraftVarintFrameDecoder, KeepsThePacketsAheadOfAMalformedLength)
 TEST(MinecraftVarintLengthEncoder, JoinsPacketsIntoOneBatchAtFlush)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     chain.get<MinecraftVarintLengthEncoder>().setEnabled(true);
 
     chain.write(copyOf("abc"));
@@ -216,90 +240,101 @@ TEST(MinecraftVarintLengthEncoder, JoinsPacketsIntoOneBatchAtFlush)
 TEST(MinecraftDecoder, DecodesRegisteredPacketsAndPassesTheRestOnWhole)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     switchOn(chain);
-    auto ping = Unpooled::buffer();
-    ping.writeUnsignedVarInt(Ping::ID).writeVarInt(-7);
-    auto other = Unpooled::buffer();
-    other.writeUnsignedVarInt(0x09).writeByte('q');
-    auto batch = Unpooled::buffer();
-    batch.writeUnsignedVarInt(static_cast<std::uint32_t>(ping.readableBytes())).writeBytes(ping.nioBuffer());
-    batch.writeUnsignedVarInt(static_cast<std::uint32_t>(other.readableBytes())).writeBytes(other.nioBuffer());
+    const auto request = requestNetworkSettings(193, 2168);
 
-    chain.fireChannelRead(batch.slice());
+    chain.fireChannelRead(framed({request, "\x09q"}).slice());
 
-    EXPECT_EQ(wire.pings, (std::vector<std::int32_t>{-7}));
-    EXPECT_EQ(wire.unknown, (std::vector<std::string>{std::string{"\x09"
-                                                                  "q"}}));
+    EXPECT_EQ(wire.versions, (std::vector<std::int32_t>{2168}));
+    EXPECT_EQ(wire.decoded_bytes, (std::vector<std::string>{request}));
+    EXPECT_EQ(wire.unknown, (std::vector<std::string>{"\x09q"}));
     EXPECT_TRUE(wire.errors.empty());
+}
+
+TEST(MinecraftDecoder, DecodesOnlyWhatItsStateRegistersInItsDirection)
+{
+    const auto request = requestNetworkSettings(193, 2168);
+    for (const auto direction : {Direction::Serverbound, Direction::Clientbound}) {
+        for (const auto state : {StateRegistry::Login, StateRegistry::Play}) {
+            Wire wire;
+            auto chain = chainOf(wire, direction);
+            switchOn(chain);
+            chain.get<MinecraftDecoder>().setState(state);
+
+            chain.fireChannelRead(framed({request}).slice());
+
+            const auto registered = direction == Direction::Serverbound && state == StateRegistry::Login;
+            EXPECT_EQ(wire.versions.size(), registered ? 1U : 0U);
+            EXPECT_EQ(wire.unknown.size(), registered ? 0U : 1U);
+        }
+    }
 }
 
 TEST(MinecraftDecoder, IgnoresTheSubIdsInTheHeader)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     switchOn(chain);
-    auto ping = Unpooled::buffer();
-    ping.writeUnsignedVarInt(Ping::ID | (1U << 10U) | (2U << 12U)).writeVarInt(3);
-    auto batch = Unpooled::buffer();
-    batch.writeUnsignedVarInt(static_cast<std::uint32_t>(ping.readableBytes())).writeBytes(ping.nioBuffer());
 
-    chain.fireChannelRead(batch.slice());
+    chain.fireChannelRead(framed({requestNetworkSettings(193U | (1U << 10U) | (2U << 12U), 3)}).slice());
 
-    EXPECT_EQ(wire.pings, (std::vector<std::int32_t>{3}));
+    EXPECT_EQ(wire.versions, (std::vector<std::int32_t>{3}));
 }
 
 TEST(MinecraftDecoder, RejectsARegisteredPacketThatLeavesBytesUnreadOrRunsShort)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     switchOn(chain);
+    const auto request = requestNetworkSettings(193, 2168);
 
-    auto trailing = Unpooled::buffer();
-    trailing.writeUnsignedVarInt(Ping::ID).writeVarInt(1).writeByte(0xEE);
-    auto short_packet = Unpooled::buffer();
-    short_packet.writeUnsignedVarInt(Ping::ID);
-    auto empty_header = Unpooled::buffer();
-    empty_header.writeByte(0x80);
-    for (const auto *packet : {&trailing, &short_packet, &empty_header}) {
-        auto batch = Unpooled::buffer();
-        batch.writeUnsignedVarInt(static_cast<std::uint32_t>(packet->readableBytes())).writeBytes(packet->nioBuffer());
-        chain.fireChannelRead(batch.slice());
+    for (const auto &packet : {request + "\xEE", request.substr(0, 4), std::string{"\x80"}}) {
+        chain.fireChannelRead(framed({packet}).slice());
     }
 
-    EXPECT_TRUE(wire.pings.empty());
-    EXPECT_EQ(wire.errors.size(), 3U);
-    EXPECT_EQ(wire.errors[0], "packet 42 left 1 bytes unread");
+    EXPECT_TRUE(wire.versions.empty());
+    ASSERT_EQ(wire.errors.size(), 3U);
+    EXPECT_EQ(wire.errors[0], "packet 193 left 1 bytes unread");
+    EXPECT_TRUE(wire.errors[1].starts_with("packet 193 failed to decode: ")) << wire.errors[1];
 }
 
-TEST(MinecraftEncoder, EncodesRegisteredPacketsBehindTheirHeaderAndPassesBytesOn)
+TEST(MinecraftEncoder, EncodesAPacketOfItsVersionBehindItsHeaderAndPassesBytesOn)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     switchOn(chain);
 
-    chain.write(Ping{.value = -7});
-    chain.write(copyOf("\x09"
-                       "q"));
+    chain.write(bp::RequestNetworkSettingsPacket{.client_network_version = 2168});
+    chain.write(copyOf("\x09q"));
     chain.flush();
 
     ASSERT_EQ(wire.sent.size(), 1U);
-    auto expected = Unpooled::buffer();
-    expected.writeUnsignedVarInt(2).writeUnsignedVarInt(Ping::ID).writeVarInt(-7);
-    expected.writeUnsignedVarInt(2).writeByte(0x09).writeByte('q');
-    EXPECT_EQ(wire.sent[0], expected);
+    EXPECT_EQ(wire.sent[0], framed({requestNetworkSettings(193, 2168), "\x09q"}));
+}
+
+TEST(MinecraftEncoder, RefusesAPacketOfAnotherVersion)
+{
+    Wire wire;
+    auto chain = chainOf(wire);
+    switchOn(chain);
+
+    chain.write(bp::DisconnectPacket_<800>{});
+
+    EXPECT_TRUE(wire.sent.empty());
+    EXPECT_EQ(wire.errors, (std::vector<std::string>{"DisconnectPacket is not a packet of protocol 2168"}));
 }
 
 TEST(Pipeline, AWrittenBatchComesBackAsTheSamePackets)
 {
     for (const auto algorithm : {PacketCompressionAlgorithm::ZLib, PacketCompressionAlgorithm::Snappy}) {
         Wire wire;
-        Chain chain{wire};
+        auto chain = chainOf(wire);
         switchOn(chain);
         compressWith(chain, algorithm, 16);
         const std::string repetitive(400, 'a');
 
-        chain.write(Ping{.value = 123456});
+        chain.write(bp::RequestNetworkSettingsPacket{.client_network_version = 123456});
         chain.write(copyOf(repetitive));
         chain.write(copyOf("tail"));
         chain.flush();
@@ -308,7 +343,7 @@ TEST(Pipeline, AWrittenBatchComesBackAsTheSamePackets)
         EXPECT_LT(wire.sent[0].readableBytes(), 100U);
 
         chain.fireChannelRead(wire.sent[0].slice());
-        EXPECT_EQ(wire.pings, (std::vector<std::int32_t>{123456}));
+        EXPECT_EQ(wire.versions, (std::vector<std::int32_t>{123456}));
         EXPECT_EQ(wire.unknown, (std::vector<std::string>{repetitive, "tail"}));
         EXPECT_TRUE(wire.errors.empty());
     }
@@ -317,7 +352,7 @@ TEST(Pipeline, AWrittenBatchComesBackAsTheSamePackets)
 TEST(MinecraftCompressEncoder, LeavesABatchUnderTheThresholdUncompressed)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     compressWith(chain, PacketCompressionAlgorithm::ZLib, 64);
 
     chain.write(copyOf("short"));
@@ -333,7 +368,7 @@ TEST(MinecraftCompressEncoder, LeavesABatchUnderTheThresholdUncompressed)
 TEST(MinecraftCompressEncoder, SendsABatchThatDoesNotShrinkUncompressed)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     compressWith(chain, PacketCompressionAlgorithm::ZLib, 1);
     std::string noise(64, '\0');
     std::uint32_t state = 12345;
@@ -353,7 +388,7 @@ TEST(MinecraftCompressEncoder, SendsABatchThatDoesNotShrinkUncompressed)
 TEST(MinecraftCompressEncoder, WithoutTheHeaderByteAlwaysCompresses)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     compressWith(chain, PacketCompressionAlgorithm::ZLib, 0);
     chain.get<MinecraftCompressDecoder>().setHybridCompressionEnabled(false);
     chain.get<MinecraftCompressEncoder>().setHybridCompressionEnabled(false);
@@ -372,7 +407,7 @@ TEST(MinecraftCompressEncoder, WithoutTheHeaderByteAlwaysCompresses)
 TEST(MinecraftCompressDecoder, RejectsABatchItCannotRead)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     compressWith(chain, PacketCompressionAlgorithm::ZLib, 16);
 
     chain.fireChannelRead(ByteBufView{});
@@ -396,7 +431,7 @@ TEST(MinecraftCompressDecoder, RejectsABatchItCannotRead)
 TEST(MinecraftCompressDecoder, StopsABatchThatExpandsBeyondThePermittedSize)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     compressWith(chain, PacketCompressionAlgorithm::ZLib, 16);
     chain.get<MinecraftCompressEncoder>().setCompressionEnabled(true, PacketCompressionAlgorithm::ZLib, 16);
 
@@ -413,7 +448,7 @@ TEST(MinecraftCompressDecoder, StopsABatchThatExpandsBeyondThePermittedSize)
 TEST(MinecraftCipher, FailsLoudlyOnceEnabledSinceEncryptionIsNotImplemented)
 {
     Wire wire;
-    Chain chain{wire};
+    auto chain = chainOf(wire);
     chain.get<MinecraftCipherDecoder>().setEnabled(true);
     chain.get<MinecraftCipherEncoder>().setEnabled(true);
 

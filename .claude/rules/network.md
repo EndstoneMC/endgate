@@ -43,7 +43,8 @@ Netty's channel pipeline, 1:1: `ChannelPipeline`, `ChannelHandlerContext`, `Chan
 
 - Handlers are Velocity's, in Bedrock's order. Inbound: strip `0xFE` (RakNet only), `MinecraftCipherDecoder`, `MinecraftCompressDecoder`, `MinecraftVarintFrameDecoder`, `MinecraftDecoder`, then `MinecraftConnection`, which hands packets to the `MinecraftSessionHandler`. Outbound: `MinecraftEncoder`, `MinecraftVarintLengthEncoder`, then on `flush` a compression encoder and `MinecraftCipherEncoder`.
 - Bedrock compresses the whole batch, so compression sits outside framing, the reverse of Java Edition.
-- `MinecraftDecoder` decodes only the packets the session handler registered for, and passes the rest on as a `ByteBufView` to `handleUnknown`, where Velocity passes `buf.retain()`.
+- Packets are registered as Velocity's `StateRegistry` registers them: each state lists what it decodes in each direction (`PacketRegistries<State>`), and each supported version resolves that list to bedrock-protocol's types (`ProtocolRegistry<Version>`). `MinecraftDecoder` takes Velocity's direction, `setState` and `setProtocolVersion`, and passes a packet its registry lacks on as a `ByteBufView` to `handleUnknown`, where Velocity passes `buf.retain()`.
+- A registered packet reaches the handler's `handle` overload for its type. One no overload takes reaches `handleGeneric` as the bytes it arrived in, which by default go to `handleUnknown`.
 - Decoded packets own their fields, as Velocity's do. Forwarding never decodes.
 - Flush at the end of each inbound batch, in `channelReadComplete`, so a forwarded batch leaves with the packets it arrived with.
 - Forward an unchanged batch whose two legs share a compression setting as the compressed bytes that arrived.
@@ -56,6 +57,8 @@ Deviations from Netty, all for performance:
 - A decoder calls `fireChannelRead` for each message it produces, instead of filling an `out` list.
 - `write` returns nothing, as if every write passed Netty's `voidPromise()`. Errors go to `exceptionCaught`.
 - Every chain ends in a typed sink, so an unterminated chain is a compile error rather than Netty's "discarded inbound message" warning.
+- `MinecraftDecoder` fires a `DecodedPacket` that keeps the bytes the packet arrived in, so a packet no handler changes is handed on as those bytes instead of being encoded again.
+- `MinecraftEncoder` has no state: a Bedrock packet's id is the same in every state, so it encodes any packet of the connection's version and refuses one of another.
 
 ## Transports
 
