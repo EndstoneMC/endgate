@@ -25,8 +25,7 @@ paths:
 Netty's `io.netty.buffer.ByteBuf`, 1:1: `readerIndex`, `writerIndex`, `capacity`, `readableBytes`, `writableBytes`, `isReadable`, `ensureWritable`, `skipBytes`, `discardReadBytes`, `clear`, the `read`, `get`, `set` and `write` families with their `LE` and `Unsigned` forms, `readSlice`, `slice`, `copy`, `nioBuffer`. Netty's growth rule (`calculateNewCapacity`) and `IndexOutOfBoundsException` (as `std::out_of_range`) come with it.
 
 - Netty's integers are big-endian; Bedrock's are mostly little-endian, so reach for the `LE` methods.
-- Allocate with `Unpooled`, Netty's static factory, until a pooled `ByteBufAllocator` exists; callers move to `ctx.alloc()` when it does.
-- `network/buffer.h`'s chained, shared `ByteBuf` predates these rules: replace it, don't extend it.
+- Allocate with `Unpooled`, Netty's static factory.
 
 Deviations from Netty:
 
@@ -59,8 +58,6 @@ Deviations from Netty, all for performance:
 - Every chain ends in a typed sink, so an unterminated chain is a compile error rather than Netty's "discarded inbound message" warning.
 
 ## Transports
-
-These are phase 2 and planned, not merged:
 
 - One UDP port carries RakNet and NetherNet. NetherNet's HTTP signalling listens on TCP at the same port number.
 - `0xFE` is added and stripped only at the RakNet edge.
