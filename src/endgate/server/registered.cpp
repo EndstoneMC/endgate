@@ -13,6 +13,7 @@
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 
+#include "endgate/awaitable.h"
 #include "endgate/logging/manager.h"
 #include "endgate/network/nethernet/client.h"
 #include "endgate/network/raknet/codec.h"
@@ -83,8 +84,8 @@ std::optional<ServerInfo> ServerInfo::parse(std::string name, std::string_view a
 
 RegisteredServer::RegisteredServer(ServerInfo info) : info_(std::move(info)), logger_(LogManager::getLogger()) {}
 
-asio::awaitable<std::optional<ServerInfo::Transport>> RegisteredServer::detectTransport(asio::io_context &io_context,
-                                                                                        asio::ip::udp::endpoint address)
+Awaitable<std::optional<ServerInfo::Transport>> RegisteredServer::detectTransport(asio::io_context &io_context,
+                                                                                  asio::ip::udp::endpoint address)
 {
     constexpr std::chrono::milliseconds signaling_timeout{2000};
     constexpr std::chrono::milliseconds ping_timeout{1000};
@@ -128,7 +129,7 @@ void RegisteredServer::forgetTransport()
     detected_.reset();
 }
 
-asio::awaitable<bool> RegisteredServer::ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout)
+Awaitable<bool> RegisteredServer::ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout)
 {
     constexpr int attempts = 4;
 

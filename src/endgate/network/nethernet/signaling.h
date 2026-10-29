@@ -11,13 +11,13 @@
 #include <utility>
 #include <variant>
 
-#include <asio/awaitable.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/tcp.hpp>
 #include <asio/ssl/context.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/strand.hpp>
 
+#include "endgate/awaitable.h"
 #include "endgate/network/ping.h"
 
 namespace endgate::nethernet {
@@ -129,13 +129,13 @@ private:
     HttpSignalingServer(asio::io_context &io_context, JoinHandler &handler, Config config,
                         std::shared_ptr<asio::ssl::context> tls);
 
-    static asio::awaitable<void> accept(std::shared_ptr<HttpSignalingServer> self);
-    static asio::awaitable<void> serve(std::shared_ptr<HttpSignalingServer> self, asio::ip::tcp::socket socket);
+    static Awaitable<void> accept(std::shared_ptr<HttpSignalingServer> self);
+    static Awaitable<void> serve(std::shared_ptr<HttpSignalingServer> self, asio::ip::tcp::socket socket);
 
     template <typename Stream>
-    asio::awaitable<void> exchange(Stream &stream, std::chrono::steady_clock::time_point deadline);
+    Awaitable<void> exchange(Stream &stream, std::chrono::steady_clock::time_point deadline);
 
-    asio::awaitable<Response> respond(Request request);
+    Awaitable<Response> respond(Request request);
 
     asio::strand<asio::io_context::executor_type> strand_;
     asio::ip::tcp::acceptor acceptor_;

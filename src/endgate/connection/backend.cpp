@@ -15,6 +15,7 @@
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 
+#include "endgate/awaitable.h"
 #include "endgate/connection/nethernet.h"
 #include "endgate/connection/player.h"
 #include "endgate/connection/raknet.h"
@@ -34,7 +35,7 @@ void ServerConnection::connect()
     asio::co_spawn(player_->getConnection().getExecutor(), open(shared_from_this()), asio::detached);
 }
 
-asio::awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> self)
+Awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> self)
 {
     constexpr std::chrono::seconds resolve_timeout{2};
 

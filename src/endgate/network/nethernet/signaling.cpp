@@ -20,6 +20,8 @@
 #include <asio/write.hpp>
 #include <glaze/json.hpp>
 
+#include "endgate/awaitable.h"
+
 namespace endgate::nethernet {
 
 namespace {
@@ -142,7 +144,7 @@ void HttpSignalingServer::close()
     });
 }
 
-asio::awaitable<void> HttpSignalingServer::accept(std::shared_ptr<HttpSignalingServer> self)
+Awaitable<void> HttpSignalingServer::accept(std::shared_ptr<HttpSignalingServer> self)
 {
     while (self->acceptor_.is_open()) {
         auto [error, socket] = co_await self->acceptor_.async_accept(AWAITABLE);
@@ -155,8 +157,7 @@ asio::awaitable<void> HttpSignalingServer::accept(std::shared_ptr<HttpSignalingS
     }
 }
 
-asio::awaitable<void> HttpSignalingServer::serve(std::shared_ptr<HttpSignalingServer> self,
-                                                 asio::ip::tcp::socket socket)
+Awaitable<void> HttpSignalingServer::serve(std::shared_ptr<HttpSignalingServer> self, asio::ip::tcp::socket socket)
 {
     const Registration registration(self->connections_, socket);
     const auto deadline = std::chrono::steady_clock::now() + self->config_.request_timeout;
@@ -196,7 +197,7 @@ asio::awaitable<void> HttpSignalingServer::serve(std::shared_ptr<HttpSignalingSe
 }
 
 template <typename Stream>
-asio::awaitable<void> HttpSignalingServer::exchange(Stream &stream, std::chrono::steady_clock::time_point deadline)
+Awaitable<void> HttpSignalingServer::exchange(Stream &stream, std::chrono::steady_clock::time_point deadline)
 {
     std::string buffer;
     std::optional<Request> request;
@@ -325,7 +326,7 @@ asio::awaitable<void> HttpSignalingServer::exchange(Stream &stream, std::chrono:
     co_await asio::async_write(stream, asio::buffer(serialized), asio::cancel_after(config_.write_timeout, AWAITABLE));
 }
 
-asio::awaitable<HttpSignalingServer::Response> HttpSignalingServer::respond(Request request)
+Awaitable<HttpSignalingServer::Response> HttpSignalingServer::respond(Request request)
 {
     const auto error = [](std::uint16_t status, std::string_view message) {
         return Response{.status = status,

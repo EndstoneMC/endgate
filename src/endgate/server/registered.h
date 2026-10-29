@@ -7,10 +7,11 @@
 #include <string>
 #include <string_view>
 
-#include <asio/awaitable.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/udp.hpp>
 #include <spdlog/logger.h>
+
+#include "endgate/awaitable.h"
 
 namespace endgate {
 
@@ -71,8 +72,8 @@ public:
 
     [[nodiscard]] const ServerInfo &getServerInfo() const { return info_; }
 
-    [[nodiscard]] asio::awaitable<std::optional<ServerInfo::Transport>> detectTransport(
-        asio::io_context &io_context, asio::ip::udp::endpoint address);
+    [[nodiscard]] Awaitable<std::optional<ServerInfo::Transport>> detectTransport(asio::io_context &io_context,
+                                                                                  asio::ip::udp::endpoint address);
 
     void forgetTransport();
 
@@ -82,7 +83,7 @@ public:
      * @see com.velocitypowered.proxy.server.VelocityRegisteredServer#ping
      * @see RakNet::RakPeer::Ping
      */
-    [[nodiscard]] static asio::awaitable<bool> ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout);
+    [[nodiscard]] static Awaitable<bool> ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout);
 
 private:
     ServerInfo info_;

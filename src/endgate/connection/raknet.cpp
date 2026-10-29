@@ -13,6 +13,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+#include "endgate/awaitable.h"
 #include "endgate/logging/manager.h"
 #include "endgate/network/endpoint.h"
 
@@ -71,7 +72,7 @@ void RakNetConnection::connect()
     });
 }
 
-asio::awaitable<void> RakNetConnection::read(std::shared_ptr<RakNetConnection> self)
+Awaitable<void> RakNetConnection::read(std::shared_ptr<RakNetConnection> self)
 {
     std::array<std::byte, raknet::MAXIMUM_MTU_SIZE> buffer{};
     for (;;) {

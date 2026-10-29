@@ -19,6 +19,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+#include "endgate/awaitable.h"
 #include "endgate/connection/nethernet.h"
 #include "endgate/connection/player.h"
 #include "endgate/connection/raknet.h"
@@ -58,7 +59,7 @@ void Endpoint::start()
     asio::co_spawn(strand_, receive(), asio::detached);
 }
 
-asio::awaitable<void> Endpoint::receive()
+Awaitable<void> Endpoint::receive()
 {
     std::array<std::byte, 65536> buffer{};
     asio::ip::udp::endpoint sender;
@@ -254,7 +255,7 @@ void Endpoint::onJoin(nethernet::JoinRequest request, nethernet::JoinResponse re
     asio::co_spawn(strand_, join(std::move(request), std::move(response)), asio::detached);
 }
 
-asio::awaitable<void> Endpoint::join(nethernet::JoinRequest request, nethernet::JoinResponse response)
+Awaitable<void> Endpoint::join(nethernet::JoinRequest request, nethernet::JoinResponse response)
 {
     constexpr std::chrono::seconds resolve_timeout{2};
 

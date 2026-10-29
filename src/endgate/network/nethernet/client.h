@@ -8,10 +8,10 @@
 #include <optional>
 #include <string>
 
-#include <asio/awaitable.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ssl/context.hpp>
 
+#include "endgate/awaitable.h"
 #include "endgate/network/nethernet/session.h"
 #include "endgate/network/ping.h"
 
@@ -69,8 +69,8 @@ struct SignalingClient {
      *
      * @see NetherNet::NetworkSessionManager::_discover
      */
-    [[nodiscard]] static asio::awaitable<Probe> probeNetherNet(asio::io_context &io_context, std::string host,
-                                                               std::uint16_t port, Config config);
+    [[nodiscard]] static Awaitable<Probe> probeNetherNet(asio::io_context &io_context, std::string host,
+                                                         std::uint16_t port, Config config);
 
     /**
      * Dial a NetherNet backend: `GET /v1/join` to confirm the capability, then `POST
@@ -79,7 +79,7 @@ struct SignalingClient {
      *
      * @see NetherNet::HttpSignalingServer::SendSignal
      */
-    [[nodiscard]] static asio::awaitable<std::expected<Answer, ESessionError>> requestAnswer(
+    [[nodiscard]] static Awaitable<std::expected<Answer, ESessionError>> requestAnswer(
         asio::io_context &io_context, std::string host, std::uint16_t port, std::string network_id, std::string offer,
         Config config);
 };

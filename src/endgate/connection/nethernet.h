@@ -15,7 +15,6 @@
 #include <vector>
 
 #include <asio/as_tuple.hpp>
-#include <asio/awaitable.hpp>
 #include <asio/buffer.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -25,6 +24,7 @@
 #include <asio/use_awaitable.hpp>
 #include <spdlog/logger.h>
 
+#include "endgate/awaitable.h"
 #include "endgate/connection/connection.h"
 #include "endgate/logging/manager.h"
 #include "endgate/network/endpoint.h"
@@ -92,10 +92,10 @@ private:
     void onPacket(LegacyByteBuf packet) override;
     void onClosed(nethernet::ESessionError reason) override;
 
-    static asio::awaitable<void> dial(std::shared_ptr<NetherNetConnection> self, std::string host, std::uint16_t port,
-                                      std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity)
+    static Awaitable<void> dial(std::shared_ptr<NetherNetConnection> self, std::string host, std::uint16_t port,
+                                std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity)
         requires DIALING;
-    static asio::awaitable<void> read(std::shared_ptr<NetherNetConnection> self)
+    static Awaitable<void> read(std::shared_ptr<NetherNetConnection> self)
         requires DIALING;
     void finish();
     void arm();
@@ -179,7 +179,7 @@ void NetherNetConnection<Session>::connect(std::string host, std::uint16_t port,
 }
 
 template <typename Session>
-asio::awaitable<void> NetherNetConnection<Session>::dial(
+Awaitable<void> NetherNetConnection<Session>::dial(
     std::shared_ptr<NetherNetConnection> self, std::string host, std::uint16_t port,
     std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity)
     requires DIALING
@@ -239,7 +239,7 @@ asio::awaitable<void> NetherNetConnection<Session>::dial(
 }
 
 template <typename Session>
-asio::awaitable<void> NetherNetConnection<Session>::read(std::shared_ptr<NetherNetConnection> self)
+Awaitable<void> NetherNetConnection<Session>::read(std::shared_ptr<NetherNetConnection> self)
     requires DIALING
 {
     std::array<std::byte, 65536> buffer{};

@@ -23,6 +23,7 @@
 #include <gtest/gtest.h>
 #include <openssl/pem.h>
 
+#include "endgate/awaitable.h"
 #include "endgate/network/nethernet/signaling.h"
 #include "endgate/network/rtc/certificate.h"
 
@@ -97,7 +98,7 @@ protected:
         std::string response;
         asio::co_spawn(
             client,
-            [&]() -> asio::awaitable<void> {
+            [&]() -> Awaitable<void> {
                 asio::ip::tcp::socket socket(client);
                 const auto [connect_error] = co_await socket.async_connect(endpoint_, AWAITABLE);
                 if (connect_error) {
@@ -276,7 +277,7 @@ TEST_F(HttpSignalingServerTest, ReadsARequestArrivingInPieces)
     std::string response;
     asio::co_spawn(
         client,
-        [&]() -> asio::awaitable<void> {
+        [&]() -> Awaitable<void> {
             asio::ip::tcp::socket socket(client);
             co_await socket.async_connect(endpoint_, AWAITABLE);
             const std::string head =
@@ -384,7 +385,7 @@ TEST_F(TlsSignalingServerTest, ServesHttpsAndHttpOnOnePort)
     std::string response;
     asio::co_spawn(
         client,
-        [&]() -> asio::awaitable<void> {
+        [&]() -> Awaitable<void> {
             asio::ssl::stream<asio::ip::tcp::socket> stream(client, context);
             co_await stream.next_layer().async_connect(endpoint_, AWAITABLE);
             const auto [handshake_error] = co_await stream.async_handshake(asio::ssl::stream_base::client, AWAITABLE);

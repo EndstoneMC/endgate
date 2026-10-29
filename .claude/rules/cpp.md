@@ -10,6 +10,8 @@ paths:
 - A `constexpr` used by one function belongs inside it. Lift it to namespace scope once a second function needs it.
 - Resolve shared services once and hold them. A class that logs takes a `spdlog::logger &` member initialised in its constructor, mirroring Velocity's `private static final Logger logger`. Never look a logger, or anything else, up by name in a method that runs more than once.
 - `#include <...>` for the standard library and third-party headers, `"endgate/..."` for ours.
+- Coroutines return `Awaitable<T>` (`endgate/awaitable.h`), never `asio::awaitable<T>` directly.
+- Spell atomics `std::atomic<T>`, not the `std::atomic_bool` family of aliases.
 - `.clang-tidy` owns naming and runs with warnings as errors. Run it rather than guess; don't silence it with `NOLINT`.
 - When a better pattern proves itself, adopt it and update this file.
 

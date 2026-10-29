@@ -26,6 +26,7 @@
 #include <openssl/sha.h>
 #include <openssl/ssl.h>
 
+#include "endgate/awaitable.h"
 #include "endgate/network/nethernet/identity.h"
 
 namespace endgate::nethernet {
@@ -74,8 +75,8 @@ bool isIpLiteral(const std::string &host)
 }
 
 template <typename Stream>
-asio::awaitable<std::optional<HttpResponse>> readExchange(Stream &stream, const std::string &request,
-                                                          const SignalingClient::Config &config)
+Awaitable<std::optional<HttpResponse>> readExchange(Stream &stream, const std::string &request,
+                                                    const SignalingClient::Config &config)
 {
     const auto [write_error, written] = co_await asio::async_write(
         stream, asio::buffer(request), asio::cancel_after(config.request_timeout, AWAITABLE));
@@ -167,9 +168,9 @@ asio::awaitable<std::optional<HttpResponse>> readExchange(Stream &stream, const 
     co_return response;
 }
 
-asio::awaitable<std::optional<HttpResponse>> httpExchange(asio::io_context &io_context, const std::string &host,
-                                                          std::uint16_t port, bool tls, const std::string &request,
-                                                          const SignalingClient::Config &config)
+Awaitable<std::optional<HttpResponse>> httpExchange(asio::io_context &io_context, const std::string &host,
+                                                    std::uint16_t port, bool tls, const std::string &request,
+                                                    const SignalingClient::Config &config)
 {
     asio::ip::tcp::resolver resolver(io_context);
     const auto [resolve_error, endpoints] = co_await resolver.async_resolve(host, std::to_string(port), AWAITABLE);
@@ -270,8 +271,8 @@ std::expected<SignalingClient::Answer, ESessionError> parseAnswer(const std::str
 
 }  // namespace
 
-asio::awaitable<SignalingClient::Probe> SignalingClient::probeNetherNet(asio::io_context &io_context, std::string host,
-                                                                        std::uint16_t port, Config config)
+Awaitable<SignalingClient::Probe> SignalingClient::probeNetherNet(asio::io_context &io_context, std::string host,
+                                                                  std::uint16_t port, Config config)
 {
     const auto request =
         std::format("GET /v1/join HTTP/1.1\r\nHost: {}:{}\r\nUser-Agent: libhttpclient/1.0.0.0\r\nAccept: "
@@ -291,7 +292,7 @@ asio::awaitable<SignalingClient::Probe> SignalingClient::probeNetherNet(asio::io
     co_return Probe{};
 }
 
-asio::awaitable<std::expected<SignalingClient::Answer, ESessionError>> SignalingClient::requestAnswer(
+Awaitable<std::expected<SignalingClient::Answer, ESessionError>> SignalingClient::requestAnswer(
     asio::io_context &io_context, std::string host, std::uint16_t port, std::string network_id, std::string offer,
     Config config)
 {

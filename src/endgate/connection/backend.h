@@ -4,9 +4,9 @@
 #include <deque>
 #include <memory>
 
-#include <asio/awaitable.hpp>
 #include <spdlog/logger.h>
 
+#include "endgate/awaitable.h"
 #include "endgate/connection/connection.h"
 
 namespace endgate {
@@ -53,7 +53,7 @@ public:
     [[nodiscard]] MinecraftConnection *getConnection() const { return connection_.get(); }
 
 private:
-    static asio::awaitable<void> open(std::shared_ptr<ServerConnection> self);
+    static Awaitable<void> open(std::shared_ptr<ServerConnection> self);
 
     RegisteredServer &server_;
     std::shared_ptr<Player> player_;

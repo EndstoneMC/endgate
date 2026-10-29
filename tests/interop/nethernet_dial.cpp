@@ -19,6 +19,7 @@
 #include <asio/steady_timer.hpp>
 #include <openssl/evp.h>
 
+#include "endgate/awaitable.h"
 #include "endgate/network/buffer.h"
 #include "endgate/network/nethernet/client.h"
 #include "endgate/network/nethernet/identity.h"
@@ -55,7 +56,7 @@ public:
 
     [[nodiscard]] bool succeeded() const { return succeeded_; }
 
-    asio::awaitable<void> run()
+    endgate::Awaitable<void> run()
     {
         deadline_.expires_after(std::chrono::seconds{20});
         deadline_.async_wait([this](const asio::error_code &error) {

@@ -50,8 +50,8 @@ private:
     ProxyConfig configuration_;
     ServerListPingHandler ping_handler_;
     std::map<std::string, RegisteredServer, std::less<>> servers_;
-    std::atomic_bool shutdown_in_progress_{false};
-    std::atomic_bool shutdown_{false};
+    std::atomic<bool> shutdown_in_progress_{false};
+    std::atomic<bool> shutdown_{false};
 };
 
 }  // namespace endgate

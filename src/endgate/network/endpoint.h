@@ -11,7 +11,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include <asio/awaitable.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/tcp.hpp>
 #include <asio/ip/udp.hpp>
@@ -19,6 +18,7 @@
 #include <asio/strand.hpp>
 #include <spdlog/logger.h>
 
+#include "endgate/awaitable.h"
 #include "endgate/connection/connection.h"
 #include "endgate/network/nethernet/dns.h"
 #include "endgate/network/nethernet/identity.h"
@@ -98,9 +98,9 @@ private:
 
     [[nodiscard]] ServerPing getServerPing(const nethernet::PingRequest &request) override;
     void onJoin(nethernet::JoinRequest request, nethernet::JoinResponse response) override;
-    asio::awaitable<void> join(nethernet::JoinRequest request, nethernet::JoinResponse response);
+    Awaitable<void> join(nethernet::JoinRequest request, nethernet::JoinResponse response);
 
-    asio::awaitable<void> receive();
+    Awaitable<void> receive();
     void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender);
     void accept(std::span<const std::byte> datagram, const raknet::SystemAddress &sender);
     void sendTo(const raknet::SystemAddress &address, ByteBufView datagram) override;

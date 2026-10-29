@@ -7,12 +7,12 @@
 #include <span>
 #include <string_view>
 
-#include <asio/awaitable.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/udp.hpp>
 #include <asio/steady_timer.hpp>
 #include <spdlog/logger.h>
 
+#include "endgate/awaitable.h"
 #include "endgate/connection/connection.h"
 #include "endgate/network/raknet/connection.h"
 
@@ -54,7 +54,7 @@ private:
     void onDisconnected(raknet::DisconnectReason reason) override;
     void onReliabilityLayerNotification(std::string_view message, bool is_error) override;
 
-    static asio::awaitable<void> read(std::shared_ptr<RakNetConnection> self);
+    static Awaitable<void> read(std::shared_ptr<RakNetConnection> self);
     void arm();
 
     spdlog::logger &logger_;
