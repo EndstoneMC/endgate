@@ -18,10 +18,25 @@ namespace endgate {
 namespace {
 struct Advanced {
     int compression_level{};
+    bool log_command_executions{};
+    bool log_player_connections{};
 
     struct glaze {
         using T = Advanced;
-        static constexpr auto value = glz::object("compression-level", &T::compression_level);
+        static constexpr auto value =
+            glz::object("compression-level", &T::compression_level, "log-command-executions",
+                        &T::log_command_executions, "log-player-connections", &T::log_player_connections);
+    };
+};
+
+struct Debug {
+    bool packet_decode_logging{};
+    bool log_server_backpressure{};
+
+    struct glaze {
+        using T = Debug;
+        static constexpr auto value = glz::object("packet-decode-logging", &T::packet_decode_logging,
+                                                  "log-server-backpressure", &T::log_server_backpressure);
     };
 };
 
@@ -35,13 +50,14 @@ struct Document {
     bool online_mode{};
     std::map<std::string, std::variant<std::string, std::vector<std::string>>> servers;
     Advanced advanced;
+    Debug debug;
 
     struct glaze {
         using T = Document;
         static constexpr auto value = glz::object(
             "config-version", &T::config_version, "bind", &T::bind, "tls-certificate", &T::tls_certificate,
             "tls-certificate-key", &T::tls_certificate_key, "motd", &T::motd, "show-max-players", &T::show_max_players,
-            "online-mode", &T::online_mode, "servers", &T::servers, "advanced", &T::advanced);
+            "online-mode", &T::online_mode, "servers", &T::servers, "advanced", &T::advanced, "debug", &T::debug);
     };
 };
 }  // namespace
@@ -93,6 +109,10 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
         }
     }
     config.compression_level_ = document.advanced.compression_level;
+    config.log_command_executions_ = document.advanced.log_command_executions;
+    config.log_player_connections_ = document.advanced.log_player_connections;
+    config.packet_decode_logging_ = document.debug.packet_decode_logging;
+    config.log_server_backpressure_ = document.debug.log_server_backpressure;
     config.tls_certificate_ = document.tls_certificate;
     config.tls_certificate_key_ = document.tls_certificate_key;
     return config;
@@ -100,9 +120,23 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
 
 bool ProxyConfig::validate() const
 {
-    static spdlog::logger &logger = LogManager::getLogger();
+    static spdlog::logger &logger = LogManager::getLogger("endgate::ProxyConfig");
 
     bool valid = true;
+    if (bind_.empty()) {
+        logger.error("'bind' option is empty.");
+        valid = false;
+    }
+
+    if (!online_mode_) {
+        logger.warn("The proxy is running in offline mode! This is a security risk and you will NOT receive any "
+                    "support!");
+    }
+
+    if (servers_.empty()) {
+        logger.warn("You don't have any servers configured.");
+    }
+
     if (compression_level_ < -1 || compression_level_ > 9) {
         logger.error("Invalid compression level {}", compression_level_);
         valid = false;
@@ -118,7 +152,7 @@ bool ProxyConfig::validate() const
 
     for (const auto &[name, address] : servers_) {
         if (!ServerInfo::parse(name, address)) {
-            logger.error("Server {} has an invalid address {}", name, address);
+            logger.error("Server {} does not have a valid IP address.", name);
             valid = false;
         }
     }
@@ -164,6 +198,26 @@ const std::vector<std::string> &ProxyConfig::getAttemptConnectionOrder() const
 int ProxyConfig::getCompressionLevel() const
 {
     return compression_level_;
+}
+
+bool ProxyConfig::isLogCommandExecutions() const
+{
+    return log_command_executions_;
+}
+
+bool ProxyConfig::isLogPlayerConnections() const
+{
+    return log_player_connections_;
+}
+
+bool ProxyConfig::isPacketDecodeLogging() const
+{
+    return packet_decode_logging_;
+}
+
+bool ProxyConfig::isLogServerBackpressure() const
+{
+    return log_server_backpressure_;
 }
 
 const std::filesystem::path &ProxyConfig::getTlsCertificate() const

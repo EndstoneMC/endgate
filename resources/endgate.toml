@@ -34,3 +34,17 @@ try = [
 # How much compression should be done (from 0-9). The default is -1, which uses the
 # default level of 6.
 compression-level = -1
+
+# Enables the logging of commands
+log-command-executions = false
+
+# Enables logging of player connections when connecting to the proxy, switching servers
+# and disconnecting from the proxy.
+log-player-connections = true
+
+[debug]
+# Logs a malformed packet's full decode error instead of a one-line notice.
+packet-decode-logging = false
+
+# Logs when a connection stops or resumes reading because the other side can't keep up.
+log-server-backpressure = false
