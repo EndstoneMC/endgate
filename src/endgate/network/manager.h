@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <memory>
@@ -44,6 +45,7 @@ private:
     EventLoopGroup group_;
     asio::signal_set signals_;
     std::deque<Endpoint> endpoints_;
+    std::atomic<bool> shut_down_{false};
 };
 
 }  // namespace endgate

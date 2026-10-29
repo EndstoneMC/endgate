@@ -111,6 +111,9 @@ void ConnectionManager::start()
 
 void ConnectionManager::shutdown()
 {
+    if (shut_down_.exchange(true)) {
+        return;
+    }
     for (auto &endpoint : endpoints_) {
         endpoint.getEventLoop().execute([&endpoint] { endpoint.close(); });
     }

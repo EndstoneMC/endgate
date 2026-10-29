@@ -1,16 +1,44 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <deque>
+#include <memory>
 #include <thread>
 #include <utility>
 
 #include <asio/executor_work_guard.hpp>
 #include <asio/io_context.hpp>
 #include <asio/post.hpp>
+#include <asio/steady_timer.hpp>
 
 namespace endgate {
+
+class EventLoop;
+
+/**
+ * The result of an asynchronous task scheduled on an event loop, which can be cancelled.
+ *
+ * @see io.netty.util.concurrent.ScheduledFuture
+ */
+class ScheduledFuture : public std::enable_shared_from_this<ScheduledFuture> {
+public:
+    explicit ScheduledFuture(EventLoop &event_loop);
+
+    /**
+     * Stops the task from running if it has not run yet. Safe from any thread.
+     *
+     * @see java.util.concurrent.Future#cancel
+     */
+    void cancel();
+
+private:
+    friend class EventLoop;
+
+    EventLoop &event_loop_;
+    asio::steady_timer timer_;
+};
 
 /**
  * Handles all the I/O operations of the channels registered to it with one thread.
@@ -45,6 +73,26 @@ public:
     void execute(F &&task)
     {
         asio::post(io_context_, std::forward<F>(task));
+    }
+
+    /**
+     * Runs the task on the loop's thread once the delay has passed.
+     *
+     * @see io.netty.util.concurrent.EventExecutorGroup#schedule
+     */
+    template <typename F>
+    std::shared_ptr<ScheduledFuture> schedule(F &&task, std::chrono::steady_clock::duration delay)
+    {
+        auto future = std::make_shared<ScheduledFuture>(*this);
+        execute([future, task = std::forward<F>(task), delay]() mutable {
+            future->timer_.expires_after(delay);
+            future->timer_.async_wait([future, task = std::move(task)](const asio::error_code &ec) mutable {
+                if (!ec) {
+                    task();
+                }
+            });
+        });
+        return future;
     }
 
     [[nodiscard]] Executor getExecutor() const { return io_context_.get_executor(); }

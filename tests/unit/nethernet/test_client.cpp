@@ -84,11 +84,11 @@ protected:
     }
 
     SignalingClient::Config config_{.connect_timeout = 2s, .request_timeout = 2s, .tls_handshake_timeout = 500ms};
-    EventLoop loop_;
     asio::io_context io_;
     StubHandler handler_;
     std::shared_ptr<HttpSignalingServer> server_;
     std::uint16_t port_{0};
+    EventLoop loop_;
 };
 
 TEST_F(SignalingClientTest, ProbeReportsTheServerAndItsPing)

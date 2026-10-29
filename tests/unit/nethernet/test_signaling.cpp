@@ -111,10 +111,10 @@ protected:
         return response;
     }
 
-    EventLoop loop_;
     RecordingHandler handler_;
     std::shared_ptr<HttpSignalingServer> server_;
     asio::ip::tcp::endpoint endpoint_;
+    EventLoop loop_;
 };
 
 TEST_F(HttpSignalingServerTest, PassesOnTheAddressTheClientReachedUsAt)

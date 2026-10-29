@@ -7,9 +7,20 @@ EventLoop::EventLoop()
 {
 }
 
+ScheduledFuture::ScheduledFuture(EventLoop &event_loop) : event_loop_(event_loop), timer_(event_loop.getExecutor()) {}
+
+void ScheduledFuture::cancel()
+{
+    event_loop_.execute([self = shared_from_this()] { self->timer_.cancel(); });
+}
+
 EventLoop::~EventLoop()
 {
     shutdownGracefully();
+    if (inEventLoop()) {
+        thread_.detach();
+        return;
+    }
     awaitTermination();
 }
 

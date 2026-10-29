@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <future>
 #include <latch>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -77,6 +79,40 @@ TEST(EventLoop, AwaitTerminationJoinsAfterShutdown)
     loop.shutdownGracefully();
     loop.awaitTermination();
     EXPECT_TRUE(ran);
+}
+
+TEST(EventLoop, ScheduleRunsTheTaskOnTheLoopAfterTheDelay)
+{
+    EventLoop loop;
+    std::promise<bool> ran;
+    const auto started = std::chrono::steady_clock::now();
+    const auto future = loop.schedule([&] { ran.set_value(loop.inEventLoop()); }, std::chrono::milliseconds{50});
+    EXPECT_TRUE(ran.get_future().get());
+    EXPECT_GE(std::chrono::steady_clock::now() - started, std::chrono::milliseconds{50});
+}
+
+TEST(EventLoop, CancelledScheduleNeverRuns)
+{
+    EventLoop loop;
+    std::atomic<bool> ran{false};
+    const auto future = loop.schedule([&] { ran = true; }, std::chrono::milliseconds{100});
+    future->cancel();
+    std::promise<void> later;
+    loop.schedule([&] { later.set_value(); }, std::chrono::milliseconds{300});
+    later.get_future().wait();
+    EXPECT_FALSE(ran);
+}
+
+TEST(EventLoop, DestroyedFromItsOwnThreadDoesNotJoinItself)
+{
+    std::promise<void> destroyed;
+    auto loop = std::make_unique<EventLoop>();
+    auto *const raw = loop.get();
+    raw->execute([&destroyed, owned = std::move(loop)]() mutable {
+        owned.reset();
+        destroyed.set_value();
+    });
+    destroyed.get_future().wait();
 }
 
 TEST(EventLoopGroup, NextCyclesThroughEveryLoop)
