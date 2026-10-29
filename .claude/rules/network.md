@@ -1,6 +1,7 @@
 ---
 paths:
   - "src/endgate/network/**"
+  - "src/endgate/protocol/**"
   - "src/endgate/connection/**"
 ---
 

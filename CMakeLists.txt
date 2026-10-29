@@ -65,7 +65,7 @@ add_library(endgate_proxy STATIC
         src/endgate/logging/appender.cpp
         src/endgate/logging/formatter.cpp
         src/endgate/logging/manager.cpp
-        src/endgate/network/compress.cpp
+        src/endgate/protocol/compress.cpp
         src/endgate/network/endpoint.cpp
         src/endgate/network/http.cpp
         src/endgate/network/manager.cpp

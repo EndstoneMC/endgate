@@ -1,4 +1,4 @@
-#include "endgate/network/compress.h"
+#include "endgate/protocol/compress.h"
 
 #include <libdeflate.h>
 #include <snappy.h>

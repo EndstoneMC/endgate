@@ -11,11 +11,11 @@
 #include <gtest/gtest.h>
 
 #include "endgate/buffer/bytebuf.h"
-#include "endgate/network/cipher.h"
-#include "endgate/network/compress.h"
-#include "endgate/network/frame.h"
-#include "endgate/network/packet.h"
 #include "endgate/network/pipeline.h"
+#include "endgate/protocol/cipher.h"
+#include "endgate/protocol/compress.h"
+#include "endgate/protocol/frame.h"
+#include "endgate/protocol/packet.h"
 
 namespace endgate {
 namespace {
