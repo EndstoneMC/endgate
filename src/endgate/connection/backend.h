@@ -38,7 +38,7 @@ public:
      */
     void disconnect();
 
-    void write(LegacyByteBuf batch);
+    void write(ByteBuf batch);
     void connected();
 
     [[nodiscard]] BackendServer &getServer() const { return server_; }
@@ -59,7 +59,7 @@ private:
     std::shared_ptr<Player> player_;
     spdlog::logger &logger_;
     std::shared_ptr<MinecraftConnection> connection_;
-    std::deque<LegacyByteBuf> pending_;
+    std::deque<ByteBuf> pending_;
     std::size_t pending_bytes_{0};
     bool connected_{false};
 };
@@ -74,7 +74,7 @@ public:
     explicit BackendPlaySessionHandler(std::shared_ptr<ServerConnection> server_connection);
 
     void connected() override;
-    void handleUnknown(LegacyByteBuf batch) override;
+    void handleUnknown(ByteBuf batch) override;
     void disconnected() override;
 
 private:

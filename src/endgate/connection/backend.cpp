@@ -100,7 +100,7 @@ void ServerConnection::disconnect()
     }
 }
 
-void ServerConnection::write(LegacyByteBuf batch)
+void ServerConnection::write(ByteBuf batch)
 {
     constexpr std::size_t max_pending_bytes = 64 * 1024;
 
@@ -111,7 +111,7 @@ void ServerConnection::write(LegacyByteBuf batch)
     if (pending_bytes_ > max_pending_bytes) {
         return;
     }
-    pending_bytes_ += batch.length();
+    pending_bytes_ += batch.readableBytes();
     if (pending_bytes_ > max_pending_bytes) {
         logger_.warn("{} sent more than {} bytes before backend {} was up; disconnecting",
                      player_->getConnection().getRemoteAddress(), max_pending_bytes,
@@ -149,7 +149,7 @@ void BackendPlaySessionHandler::connected()
     asio::post(player.getExecutor(), [server_connection = server_connection_] { server_connection->connected(); });
 }
 
-void BackendPlaySessionHandler::handleUnknown(LegacyByteBuf batch)
+void BackendPlaySessionHandler::handleUnknown(ByteBuf batch)
 {
     server_connection_->getPlayer().getConnection().write(std::move(batch));
 }

@@ -7,7 +7,7 @@
 #include <string_view>
 #include <utility>
 
-#include "endgate/network/buffer.h"
+#include "endgate/buffer/bytebuf.h"
 
 struct libdeflate_compressor;
 struct libdeflate_decompressor;
@@ -82,18 +82,15 @@ private:
 class BatchHandler {
 public:
     template <typename Context>
-    void read(Context &context, const LegacyByteBuf &batch)
+    void read(Context &context, ByteBufView batch)
     {
-        std::size_t offset = 0;
-        while (offset < batch.length()) {
-            const auto length = batch.length() - offset;
-            context.fireRead(batch.retainedSlice(offset, length));
-            offset += length;
+        while (batch.isReadable()) {
+            context.fireRead(batch.readSlice(batch.readableBytes()));
         }
     }
 
     template <typename Context>
-    void write(Context &context, LegacyByteBuf packet)
+    void write(Context &context, ByteBuf packet)
     {
         context.write(std::move(packet));
     }
@@ -117,13 +114,13 @@ public:
     void setHybridCompressionEnabled(bool enabled);
 
     template <typename Context>
-    void read(Context &context, LegacyByteBuf batch)
+    void read(Context &context, ByteBuf batch)
     {
         if (!enabled_) {
             context.fireRead(std::move(batch));
             return;
         }
-        auto decompressed = decompress(batch);
+        auto decompressed = decompress(batch.slice());
         if (!decompressed) {
             context.fireExceptionCaught(decompressed.error());
             return;
@@ -132,13 +129,13 @@ public:
     }
 
     template <typename Context>
-    void write(Context &context, LegacyByteBuf batch)
+    void write(Context &context, ByteBuf batch)
     {
         if (!enabled_) {
             context.write(std::move(batch));
             return;
         }
-        auto compressed = compress(batch);
+        auto compressed = compress(batch.slice());
         if (!compressed) {
             context.fireExceptionCaught(compressed.error());
             return;
@@ -147,8 +144,8 @@ public:
     }
 
 private:
-    [[nodiscard]] std::expected<LegacyByteBuf, DecodeError> decompress(const LegacyByteBuf &batch);
-    [[nodiscard]] std::expected<LegacyByteBuf, DecodeError> compress(const LegacyByteBuf &batch);
+    [[nodiscard]] std::expected<ByteBuf, DecodeError> decompress(const ByteBufView &batch);
+    [[nodiscard]] std::expected<ByteBuf, DecodeError> compress(const ByteBufView &batch);
 
     bool enabled_{false};
     PacketCompressionAlgorithm algorithm_{PacketCompressionAlgorithm::None};
@@ -168,7 +165,7 @@ public:
     void setEncryptionEnabled(bool enabled) { enabled_ = enabled; }
 
     template <typename Context>
-    void read(Context &context, LegacyByteBuf batch)
+    void read(Context &context, ByteBuf batch)
     {
         if (!enabled_) {
             context.fireRead(std::move(batch));
@@ -178,7 +175,7 @@ public:
     }
 
     template <typename Context>
-    void write(Context &context, LegacyByteBuf batch)
+    void write(Context &context, ByteBuf batch)
     {
         context.write(std::move(batch));
     }

@@ -43,7 +43,7 @@ public:
 
 protected:
     void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender) override;
-    void send(LegacyByteBuf batch) override;
+    void send(ByteBuf batch) override;
     void disconnect(bool wait_for_peer) override;
 
 private:

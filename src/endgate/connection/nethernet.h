@@ -81,7 +81,7 @@ public:
 
 protected:
     void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender) override;
-    void send(LegacyByteBuf batch) override;
+    void send(ByteBuf batch) override;
     void disconnect(bool wait_for_peer) override;
 
 private:
@@ -269,15 +269,13 @@ void NetherNetConnection<Session>::handleDatagram(std::span<const std::byte> dat
 }
 
 template <typename Session>
-void NetherNetConnection<Session>::send(LegacyByteBuf batch)
+void NetherNetConnection<Session>::send(ByteBuf batch)
 {
     if (!active_ || !session_) {
-        logger_.debug("Dropping {} bytes for {}: not connected", batch.length(), getRemoteAddress());
+        logger_.debug("Dropping {} bytes for {}: not connected", batch.readableBytes(), getRemoteAddress());
         return;
     }
-    std::vector<std::byte> bytes(batch.length());
-    batch.copyTo(bytes);
-    session_->send(Unpooled::wrappedBuffer(bytes), nethernet::ESendType::Reliable, Clock::now());
+    session_->send(batch.slice(), nethernet::ESendType::Reliable, Clock::now());
     arm();
 }
 
@@ -331,7 +329,7 @@ void NetherNetConnection<Session>::onOpen()
 template <typename Session>
 void NetherNetConnection<Session>::onPacket(ByteBufView packet)
 {
-    channelRead(LegacyByteBuf::copyBuffer(packet.nioBuffer()));
+    channelRead(Unpooled::copiedBuffer(packet.nioBuffer()));
 }
 
 template <typename Session>

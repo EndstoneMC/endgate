@@ -66,11 +66,11 @@ void ClientPlaySessionHandler::connected()
     player_->createConnectionRequest(*server);
 }
 
-void ClientPlaySessionHandler::handleUnknown(LegacyByteBuf batch)
+void ClientPlaySessionHandler::handleUnknown(ByteBuf batch)
 {
     const auto &server = player_->getConnectedServer();
     if (!server) {
-        logger_.debug("Dropping {} bytes from {}: no backend", batch.length(),
+        logger_.debug("Dropping {} bytes from {}: no backend", batch.readableBytes(),
                       player_->getConnection().getRemoteAddress());
         return;
     }

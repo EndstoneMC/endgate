@@ -97,16 +97,15 @@ void RakNetConnection::handleDatagram(std::span<const std::byte> datagram, const
     arm();
 }
 
-void RakNetConnection::send(LegacyByteBuf batch)
+void RakNetConnection::send(ByteBuf batch)
 {
     if (!active_) {
-        logger_.debug("Dropping {} bytes for {}: not connected", batch.length(), getRemoteAddress());
+        logger_.debug("Dropping {} bytes for {}: not connected", batch.readableBytes(), getRemoteAddress());
         return;
     }
-    auto message = Unpooled::buffer(1 + batch.length());
+    auto message = Unpooled::buffer(1 + batch.readableBytes());
     message.writeByte(std::to_integer<std::uint8_t>(BATCH_HEADER));
-    message.writeZero(batch.length());
-    batch.copyTo(message.nioBuffer(1, batch.length()));
+    message.writeBytes(batch.nioBuffer());
     connection_.send(std::move(message), raknet::PacketPriority::High, raknet::PacketReliability::ReliableOrdered, 0,
                      raknet::Clock::now());
     arm();
@@ -158,7 +157,7 @@ void RakNetConnection::onMessage(ByteBufView message)
         logger_.debug("Dropping {} bytes from {}: not a batch", message.readableBytes(), getRemoteAddress());
         return;
     }
-    channelRead(LegacyByteBuf::copyBuffer(message.nioBuffer().subspan(1)));
+    channelRead(Unpooled::copiedBuffer(message.nioBuffer().subspan(1)));
 }
 
 void RakNetConnection::onDisconnected(raknet::DisconnectReason reason)
