@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
+#include <optional>
 #include <string_view>
 
 namespace endgate {
@@ -30,5 +32,17 @@ inline constexpr std::array SUPPORTED_VERSIONS{
 
 inline constexpr ProtocolVersion MINIMUM_VERSION = SUPPORTED_VERSIONS.front();
 inline constexpr ProtocolVersion MAXIMUM_VERSION = SUPPORTED_VERSIONS.back();
+
+/**
+ * @see com.velocitypowered.api.network.ProtocolVersion#getProtocolVersion
+ */
+[[nodiscard]] constexpr std::optional<ProtocolVersion> getProtocolVersion(int protocol)
+{
+    const auto *const found = std::ranges::find(SUPPORTED_VERSIONS, protocol, &ProtocolVersion::getProtocol);
+    if (found == SUPPORTED_VERSIONS.end()) {
+        return std::nullopt;
+    }
+    return *found;
+}
 
 }  // namespace endgate

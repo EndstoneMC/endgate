@@ -1,6 +1,7 @@
 #include "endgate/network/offline.h"
 
 #include <format>
+#include <optional>
 #include <random>
 #include <string>
 
@@ -19,7 +20,7 @@ void OfflineMessageHandler::setPingResponder(std::uint16_t port)
     constexpr int joinable_through_server_screen = 1;
     constexpr int editor_world = 0;
 
-    const auto ping = server_.getServerListPingHandler().getInitialPing();
+    const auto ping = server_.getServerListPingHandler().getInitialPing(std::nullopt);
     const auto announcement = std::format(
         "MCPE;{};{};{};{};{};{};{};{};{};{};{};{};", ping.getDescription(), ping.getVersion().getProtocol(),
         ping.getVersion().getName(), ping.getPlayers().getOnline(), ping.getPlayers().getMax(), guid_,

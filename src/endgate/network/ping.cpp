@@ -8,10 +8,11 @@
 
 namespace endgate {
 
-ServerPing ServerListPingHandler::getInitialPing() const
+ServerPing ServerListPingHandler::getInitialPing(std::optional<int> protocol) const
 {
     const auto &configuration = server_.getConfiguration();
-    return {ServerPing::Version{MAXIMUM_VERSION.getProtocol(), std::string{MAXIMUM_VERSION.getName()}},
+    const auto shown = protocol.and_then(getProtocolVersion).value_or(MAXIMUM_VERSION);
+    return {ServerPing::Version{shown.getProtocol(), std::string{shown.getName()}},
             ServerPing::Players{0, configuration.getShowMaxPlayers()}, configuration.getMotd(),
             ProxyServer::getVersion().getName(), GameType::Survival};
 }

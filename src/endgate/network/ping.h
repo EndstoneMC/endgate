@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -114,7 +115,12 @@ class ServerListPingHandler {
 public:
     explicit ServerListPingHandler(ProxyServer &server) : server_(server) {}
 
-    [[nodiscard]] ServerPing getInitialPing() const;
+    /**
+     * Shows the client its own protocol when the proxy speaks it, and the newest one otherwise.
+     *
+     * @see com.velocitypowered.proxy.connection.util.ServerListPingHandler#getInitialPing
+     */
+    [[nodiscard]] ServerPing getInitialPing(std::optional<int> protocol) const;
 
 private:
     ProxyServer &server_;
