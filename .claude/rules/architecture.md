@@ -7,7 +7,8 @@
 - Don't take wangle's or folly's design unless it buys performance that Netty's design can't.
 - No api/core split. One class is both the interface and the implementation.
 - Keep Velocity's class and method names wherever we reasonably can, so every piece of endgate traces back to its Velocity counterpart and to Velocity's own dependencies.
-- Server switching is seamless. Never use the dimension change or transfer packet; both put a loading screen in front of the player. Fade the screen out and back in with camera packets instead.
+- Server switching is seamless: fade the screen out and back in with camera packets, so the player feels they stay in the game. Never switch with the transfer packet or the dimension change; both show a loading screen that feels like going back to the menu.
+- The dimension change is banned only as a switching trick. Use it wherever the player really changes dimension.
 - While the screen is dark, resend everything the client holds per server: chunks, actors and the rest of the world state.
 
 ## Approach
