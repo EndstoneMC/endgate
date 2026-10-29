@@ -12,6 +12,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 
 namespace endgate {
@@ -345,6 +346,67 @@ public:
     }
 
     template <typename Self>
+    [[nodiscard]] std::uint32_t readUnsignedVarInt(this Self &self)
+    {
+        std::uint32_t value = 0;
+        for (unsigned shift = 0; shift < 35; shift += 7) {
+            const auto byte = self.readUnsignedByte();
+            if (shift == 28 && byte > 0x0F) {
+                throw std::out_of_range("varint is too long (expected: at most 5 bytes)");
+            }
+            value |= static_cast<std::uint32_t>(byte & 0x7FU) << shift;
+            if ((byte & 0x80U) == 0) {
+                return value;
+            }
+        }
+        throw std::out_of_range("varint is too long (expected: at most 5 bytes)");
+    }
+
+    template <typename Self>
+    [[nodiscard]] std::int32_t readVarInt(this Self &self)
+    {
+        const auto value = self.readUnsignedVarInt();
+        return static_cast<std::int32_t>(value >> 1U) ^ -static_cast<std::int32_t>(value & 1U);
+    }
+
+    template <typename Self>
+    [[nodiscard]] std::uint64_t readUnsignedVarInt64(this Self &self)
+    {
+        std::uint64_t value = 0;
+        for (unsigned shift = 0; shift < 70; shift += 7) {
+            const auto byte = self.readUnsignedByte();
+            if (shift == 63 && byte > 0x01) {
+                throw std::out_of_range("varint64 is too long (expected: at most 10 bytes)");
+            }
+            value |= static_cast<std::uint64_t>(byte & 0x7FU) << shift;
+            if ((byte & 0x80U) == 0) {
+                return value;
+            }
+        }
+        throw std::out_of_range("varint64 is too long (expected: at most 10 bytes)");
+    }
+
+    template <typename Self>
+    [[nodiscard]] std::int64_t readVarInt64(this Self &self)
+    {
+        const auto value = self.readUnsignedVarInt64();
+        return static_cast<std::int64_t>(value >> 1U) ^ -static_cast<std::int64_t>(value & 1U);
+    }
+
+    template <typename Self>
+    [[nodiscard]] std::string readString(this Self &self, std::size_t max_length)
+    {
+        const auto length = self.readUnsignedVarInt();
+        if (length > max_length) {
+            throw std::out_of_range(std::format("string length: {} (expected: <= {})", length, max_length));
+        }
+        self.checkReadableBytes(length);
+        std::string value(length, '\0');
+        self.readBytes(std::as_writable_bytes(std::span{value}));
+        return value;
+    }
+
+    template <typename Self>
     [[nodiscard]] ByteBufView readSlice(this Self &self, std::size_t length);
 
     template <typename Self>
@@ -505,6 +567,31 @@ public:
     ByteBuf &writeBytes(ByteBufView &src);
     ByteBuf &writeBytes(const ByteBufView &src, std::size_t src_index, std::size_t length);
     ByteBuf &writeZero(std::size_t length);
+    ByteBuf &writeUnsignedVarInt(std::uint32_t value) { return writeUnsignedVarInt64(value); }
+    ByteBuf &writeVarInt(std::int32_t value)
+    {
+        return writeUnsignedVarInt(static_cast<std::uint32_t>(value) << 1U ^ static_cast<std::uint32_t>(value >> 31));
+    }
+    ByteBuf &writeUnsignedVarInt64(std::uint64_t value)
+    {
+        while (value >= 0x80U) {
+            writeByte(static_cast<std::uint8_t>(value | 0x80U));
+            value >>= 7U;
+        }
+        return writeByte(static_cast<std::uint8_t>(value));
+    }
+    ByteBuf &writeVarInt64(std::int64_t value)
+    {
+        return writeUnsignedVarInt64(static_cast<std::uint64_t>(value) << 1U ^ static_cast<std::uint64_t>(value >> 63));
+    }
+    ByteBuf &writeString(std::string_view value)
+    {
+        if (value.size() > std::numeric_limits<std::uint32_t>::max()) {
+            throw std::out_of_range(std::format("string length: {} (expected: <= 4294967295)", value.size()));
+        }
+        writeUnsignedVarInt(static_cast<std::uint32_t>(value.size()));
+        return writeBytes(std::as_bytes(std::span{value}));
+    }
 
     [[nodiscard]] std::span<std::byte> nioBuffer() { return {memory() + reader_index_, readableBytes()}; }
     [[nodiscard]] std::span<const std::byte> nioBuffer() const { return {memory() + reader_index_, readableBytes()}; }

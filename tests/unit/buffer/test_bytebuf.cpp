@@ -1,6 +1,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -194,6 +195,121 @@ TEST(ByteBufView, WriteBytesAdvancesTheSource)
     EXPECT_FALSE(view.isReadable());
     buf.writeBytes(Unpooled::wrappedBuffer(array), 1, 2);
     EXPECT_EQ(ByteBufUtil::hexDump(buf), "010203040203");
+}
+
+TEST(ByteBuf, UnsignedVarIntsUseSevenBitGroups)
+{
+    auto buf = Unpooled::buffer();
+    buf.writeUnsignedVarInt(0).writeUnsignedVarInt(127).writeUnsignedVarInt(128).writeUnsignedVarInt(300);
+    buf.writeUnsignedVarInt(0xFFFFFFFF);
+    EXPECT_EQ(ByteBufUtil::hexDump(buf), "00"
+                                         "7f"
+                                         "8001"
+                                         "ac02"
+                                         "ffffffff0f");
+    EXPECT_EQ(buf.readUnsignedVarInt(), 0U);
+    EXPECT_EQ(buf.readUnsignedVarInt(), 127U);
+    EXPECT_EQ(buf.readUnsignedVarInt(), 128U);
+    EXPECT_EQ(buf.readUnsignedVarInt(), 300U);
+    EXPECT_EQ(buf.readUnsignedVarInt(), 0xFFFFFFFFU);
+    EXPECT_FALSE(buf.isReadable());
+}
+
+TEST(ByteBuf, SignedVarIntsAreZigzag)
+{
+    auto buf = Unpooled::buffer();
+    buf.writeVarInt(0).writeVarInt(-1).writeVarInt(1).writeVarInt(-2);
+    EXPECT_EQ(ByteBufUtil::hexDump(buf), "00010203");
+    for (const std::int32_t expected : {0, -1, 1, -2}) {
+        EXPECT_EQ(buf.readVarInt(), expected);
+    }
+
+    for (const std::int32_t value :
+         {std::numeric_limits<std::int32_t>::min(), std::numeric_limits<std::int32_t>::max()}) {
+        auto round = Unpooled::buffer();
+        round.writeVarInt(value);
+        EXPECT_EQ(round.readVarInt(), value);
+    }
+}
+
+TEST(ByteBuf, VarInt64RoundTripsTheFullRange)
+{
+    for (const std::uint64_t value :
+         {std::uint64_t{0}, std::uint64_t{1} << 35, std::numeric_limits<std::uint64_t>::max()}) {
+        auto buf = Unpooled::buffer();
+        buf.writeUnsignedVarInt64(value);
+        EXPECT_EQ(buf.readUnsignedVarInt64(), value);
+        EXPECT_FALSE(buf.isReadable());
+    }
+    for (const std::int64_t value :
+         {std::int64_t{-1}, std::numeric_limits<std::int64_t>::min(), std::numeric_limits<std::int64_t>::max()}) {
+        auto buf = Unpooled::buffer();
+        buf.writeVarInt64(value);
+        EXPECT_EQ(buf.readVarInt64(), value);
+    }
+    auto buf = Unpooled::buffer();
+    buf.writeUnsignedVarInt64(std::numeric_limits<std::uint64_t>::max());
+    EXPECT_EQ(buf.readableBytes(), 10U);
+}
+
+TEST(ByteBuf, RejectsOverLongVarInts)
+{
+    auto six = Unpooled::buffer();
+    six.writeBytes(std::array<std::byte, 6>{std::byte{0x80}, std::byte{0x80}, std::byte{0x80}, std::byte{0x80},
+                                            std::byte{0x80}, std::byte{0x00}});
+    EXPECT_THROW((void)six.readUnsignedVarInt(), std::out_of_range);
+
+    auto overflow = Unpooled::buffer();
+    overflow.writeBytes(
+        std::array<std::byte, 5>{std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0x1F}});
+    EXPECT_THROW((void)overflow.readUnsignedVarInt(), std::out_of_range);
+
+    auto eleven = Unpooled::buffer();
+    eleven.writeZero(10);
+    eleven.setIndex(0, 10);
+    for (std::size_t i = 0; i < 10; ++i) {
+        eleven.setByte(i, 0x80);
+    }
+    EXPECT_THROW((void)eleven.readUnsignedVarInt64(), std::out_of_range);
+
+    auto truncated = Unpooled::buffer();
+    truncated.writeByte(0x80);
+    EXPECT_THROW((void)truncated.readUnsignedVarInt(), std::out_of_range);
+}
+
+TEST(ByteBuf, StringsCarryAnUnsignedVarIntLength)
+{
+    auto buf = Unpooled::buffer();
+    buf.writeString("").writeString("endgate");
+    EXPECT_EQ(ByteBufUtil::hexDump(buf), "00"
+                                         "07656e6467617465");
+    EXPECT_EQ(buf.readString(16), "");
+    EXPECT_EQ(buf.readString(7), "endgate");
+}
+
+TEST(ByteBuf, StringsAreBoundedByTheCapAndTheBytesPresent)
+{
+    auto capped = Unpooled::buffer();
+    capped.writeString("endgate");
+    EXPECT_THROW((void)capped.readString(6), std::out_of_range);
+
+    auto short_body = Unpooled::buffer();
+    short_body.writeUnsignedVarInt(10).writeByte('a');
+    EXPECT_THROW((void)short_body.readString(16), std::out_of_range);
+
+    auto huge = Unpooled::buffer();
+    huge.writeUnsignedVarInt(0xFFFFFFFF);
+    EXPECT_THROW((void)huge.readString(1U << 20), std::out_of_range);
+}
+
+TEST(ByteBufView, ReadsVarIntsAndStrings)
+{
+    auto buf = Unpooled::buffer();
+    buf.writeVarInt(-300).writeString("hi");
+    auto view = buf.slice();
+    EXPECT_EQ(view.readVarInt(), -300);
+    EXPECT_EQ(view.readString(2), "hi");
+    EXPECT_EQ(buf.readerIndex(), 0U);
 }
 
 }  // namespace
