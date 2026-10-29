@@ -17,6 +17,7 @@ paths:
 - OpenSSL (DTLS, HMAC) is the only protocol dependency. SCTP is ours.
 - No hard connection limit. `show-max-players` is only what the ping announces; bound only half-open handshakes and ICE negotiation.
 - NetherNet carries no `0xFE` batch prefix. RakNet does.
+- A NetherNet client's offer must carry an `a=identity` that passes the same self-integrity check BDS applies, whatever `online-mode` says, and an offer that fails is refused the way BDS refuses it. With `online-mode = true`, the identity it asserts is validated as well.
 
 ## ByteBuf
 
