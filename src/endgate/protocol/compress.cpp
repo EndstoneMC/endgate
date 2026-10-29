@@ -108,7 +108,8 @@ void MinecraftCompressEncoder::compress(const ByteBufView &batch, ByteBuf &out) 
     const auto input = batch.nioBuffer();
     const std::size_t prefix = hybrid_ ? CompressionHeader::SIZE : 0;
 
-    const bool worth_compressing = !hybrid_ || (threshold_ > 0 && input.size() >= threshold_);
+    const bool worth_compressing =
+        algorithm_ != PacketCompressionAlgorithm::None && (!hybrid_ || input.size() >= threshold_);
     if (worth_compressing) {
         const auto bound = algorithm_ == PacketCompressionAlgorithm::Snappy
                              ? snappy::MaxCompressedLength(input.size())

@@ -28,6 +28,7 @@ public:
     [[nodiscard]] bool isOnlineMode() const;
     [[nodiscard]] const std::map<std::string, std::string> &getServers() const;
     [[nodiscard]] const std::vector<std::string> &getAttemptConnectionOrder() const;
+    [[nodiscard]] int getCompressionThreshold() const;
     [[nodiscard]] int getCompressionLevel() const;
     [[nodiscard]] bool isLogCommandExecutions() const;
     [[nodiscard]] bool isLogPlayerConnections() const;
@@ -45,6 +46,7 @@ private:
     bool online_mode_{};
     std::map<std::string, std::string> servers_;
     std::vector<std::string> attempt_connection_order_;
+    int compression_threshold_{};
     int compression_level_{};
     bool log_command_executions_{};
     bool log_player_connections_{};

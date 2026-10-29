@@ -2,8 +2,10 @@
 
 #include <format>
 #include <fstream>
+#include <limits>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <variant>
 
 #include <glaze/toml.hpp>
@@ -17,15 +19,16 @@ namespace endgate {
 
 namespace {
 struct Advanced {
+    int compression_threshold{};
     int compression_level{};
     bool log_command_executions{};
     bool log_player_connections{};
 
     struct glaze {
         using T = Advanced;
-        static constexpr auto value =
-            glz::object("compression-level", &T::compression_level, "log-command-executions",
-                        &T::log_command_executions, "log-player-connections", &T::log_player_connections);
+        static constexpr auto value = glz::object(
+            "compression-threshold", &T::compression_threshold, "compression-level", &T::compression_level,
+            "log-command-executions", &T::log_command_executions, "log-player-connections", &T::log_player_connections);
     };
 };
 
@@ -108,6 +111,7 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
             config.attempt_connection_order_ = std::get<std::vector<std::string>>(entry);
         }
     }
+    config.compression_threshold_ = document.advanced.compression_threshold;
     config.compression_level_ = document.advanced.compression_level;
     config.log_command_executions_ = document.advanced.log_command_executions;
     config.log_player_connections_ = document.advanced.log_player_connections;
@@ -140,6 +144,16 @@ bool ProxyConfig::validate() const
 
     if (servers_.empty()) {
         logger().warn("You don't have any servers configured.");
+    }
+
+    if (compression_threshold_ < -1 ||
+        std::cmp_greater(compression_threshold_, std::numeric_limits<std::uint16_t>::max())) {
+        logger().error("Invalid compression threshold {}", compression_threshold_);
+        valid = false;
+    }
+    else if (compression_threshold_ == 0) {
+        logger().warn("ALL packets going through the proxy will be compressed. This will compromise throughput and "
+                      "increase CPU usage!");
     }
 
     if (compression_level_ < -1 || compression_level_ > 9) {
@@ -198,6 +212,11 @@ const std::map<std::string, std::string> &ProxyConfig::getServers() const
 const std::vector<std::string> &ProxyConfig::getAttemptConnectionOrder() const
 {
     return attempt_connection_order_;
+}
+
+int ProxyConfig::getCompressionThreshold() const
+{
+    return compression_threshold_;
 }
 
 int ProxyConfig::getCompressionLevel() const

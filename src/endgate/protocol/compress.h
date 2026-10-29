@@ -5,6 +5,8 @@
 #include <memory>
 #include <utility>
 
+#include <bedrock/protocol/network.h>
+
 #include "endgate/buffer/bytebuf.h"
 #include "endgate/network/codec.h"
 
@@ -13,11 +15,7 @@ struct libdeflate_decompressor;
 
 namespace endgate {
 
-enum class PacketCompressionAlgorithm : std::uint16_t {
-    ZLib = 0,
-    Snappy = 1,
-    None = 65535,
-};
+using PacketCompressionAlgorithm = bedrock::protocol::PacketCompressionAlgorithm;
 
 /**
  * The byte in front of a batch naming how it was compressed. Only the algorithm's low byte reaches the
