@@ -1,4 +1,4 @@
-#include "endgate/server/registered.h"
+#include "endgate/backend.h"
 
 #include <array>
 #include <charconv>
@@ -82,10 +82,10 @@ std::optional<ServerInfo> ServerInfo::parse(std::string name, std::string_view a
     return ServerInfo{std::move(name), std::string(address), std::string(host), number, transport};
 }
 
-RegisteredServer::RegisteredServer(ServerInfo info) : info_(std::move(info)), logger_(LogManager::getLogger()) {}
+BackendServer::BackendServer(ServerInfo info) : info_(std::move(info)), logger_(LogManager::getLogger()) {}
 
-Awaitable<std::optional<ServerInfo::Transport>> RegisteredServer::detectTransport(asio::io_context &io_context,
-                                                                                  asio::ip::udp::endpoint address)
+Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(asio::io_context &io_context,
+                                                                               asio::ip::udp::endpoint address)
 {
     constexpr std::chrono::milliseconds signaling_timeout{2000};
     constexpr std::chrono::milliseconds ping_timeout{1000};
@@ -123,13 +123,13 @@ Awaitable<std::optional<ServerInfo::Transport>> RegisteredServer::detectTranspor
     co_return detected;
 }
 
-void RegisteredServer::forgetTransport()
+void BackendServer::forgetTransport()
 {
     const std::scoped_lock lock(mutex_);
     detected_.reset();
 }
 
-Awaitable<bool> RegisteredServer::ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout)
+Awaitable<bool> BackendServer::ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout)
 {
     constexpr int attempts = 4;
 

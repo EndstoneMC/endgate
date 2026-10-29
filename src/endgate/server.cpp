@@ -108,7 +108,7 @@ const ProxyConfig &ProxyServer::getConfiguration() const
     return configuration_;
 }
 
-RegisteredServer *ProxyServer::getServer(std::string_view name)
+BackendServer *ProxyServer::getServer(std::string_view name)
 {
     const auto server = servers_.find(name);
     return server == servers_.end() ? nullptr : &server->second;

@@ -16,16 +16,16 @@
 #include <asio/use_awaitable.hpp>
 
 #include "endgate/awaitable.h"
+#include "endgate/backend.h"
 #include "endgate/connection/nethernet.h"
 #include "endgate/connection/player.h"
 #include "endgate/connection/raknet.h"
 #include "endgate/logging/manager.h"
 #include "endgate/network/endpoint.h"
-#include "endgate/server/registered.h"
 
 namespace endgate {
 
-ServerConnection::ServerConnection(RegisteredServer &server, std::shared_ptr<Player> player)
+ServerConnection::ServerConnection(BackendServer &server, std::shared_ptr<Player> player)
     : server_(server), player_(std::move(player)), logger_(LogManager::getLogger())
 {
 }

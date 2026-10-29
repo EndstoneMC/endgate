@@ -9,7 +9,7 @@
 namespace endgate {
 
 class ProxyServer;
-class RegisteredServer;
+class BackendServer;
 class ServerConnection;
 
 /**
@@ -33,12 +33,12 @@ public:
     /**
      * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer#getNextServerToTry
      */
-    [[nodiscard]] RegisteredServer *getNextServerToTry() const;
+    [[nodiscard]] BackendServer *getNextServerToTry() const;
 
     /**
      * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer#createConnectionRequest
      */
-    void createConnectionRequest(RegisteredServer &server);
+    void createConnectionRequest(BackendServer &server);
 
     /**
      * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer#disconnect

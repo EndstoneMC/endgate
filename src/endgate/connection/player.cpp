@@ -14,7 +14,7 @@ Player::Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connect
 {
 }
 
-RegisteredServer *Player::getNextServerToTry() const
+BackendServer *Player::getNextServerToTry() const
 {
     const auto &order = server_.getConfiguration().getAttemptConnectionOrder();
     if (order.empty()) {
@@ -30,7 +30,7 @@ RegisteredServer *Player::getNextServerToTry() const
     return nullptr;
 }
 
-void Player::createConnectionRequest(RegisteredServer &server)
+void Player::createConnectionRequest(BackendServer &server)
 {
     connected_server_ = std::make_shared<ServerConnection>(server, shared_from_this());
     connected_server_->connect();

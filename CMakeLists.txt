@@ -51,7 +51,7 @@ add_executable(endgate
         src/endgate/network/manager.cpp
         src/endgate/network/offline.cpp
         src/endgate/network/ping.cpp
-        src/endgate/server/registered.cpp
+        src/endgate/backend.cpp
 )
 
 target_include_directories(endgate PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}/generated)

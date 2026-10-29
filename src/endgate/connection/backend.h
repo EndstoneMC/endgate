@@ -12,7 +12,7 @@
 namespace endgate {
 
 class Player;
-class RegisteredServer;
+class BackendServer;
 
 /**
  * The proxy's connection to a backend on behalf of one player. Its methods run on the player's
@@ -24,7 +24,7 @@ class RegisteredServer;
  */
 class ServerConnection : public std::enable_shared_from_this<ServerConnection> {
 public:
-    ServerConnection(RegisteredServer &server, std::shared_ptr<Player> player);
+    ServerConnection(BackendServer &server, std::shared_ptr<Player> player);
 
     /**
      * Finds out which transport the backend speaks and opens a leg to it over that transport.
@@ -41,7 +41,7 @@ public:
     void write(LegacyByteBuf batch);
     void connected();
 
-    [[nodiscard]] RegisteredServer &getServer() const { return server_; }
+    [[nodiscard]] BackendServer &getServer() const { return server_; }
     [[nodiscard]] Player &getPlayer() const { return *player_; }
 
     /**
@@ -55,7 +55,7 @@ public:
 private:
     static Awaitable<void> open(std::shared_ptr<ServerConnection> self);
 
-    RegisteredServer &server_;
+    BackendServer &server_;
     std::shared_ptr<Player> player_;
     spdlog::logger &logger_;
     std::shared_ptr<MinecraftConnection> connection_;

@@ -8,11 +8,11 @@
 
 #include <spdlog/logger.h>
 
+#include "endgate/backend.h"
 #include "endgate/config.h"
 #include "endgate/console.h"
 #include "endgate/network/manager.h"
 #include "endgate/network/ping.h"
-#include "endgate/server/registered.h"
 #include "endgate/version.h"
 
 namespace endgate {
@@ -41,7 +41,7 @@ public:
     /**
      * @see com.velocitypowered.api.proxy.ProxyServer#getServer
      */
-    [[nodiscard]] RegisteredServer *getServer(std::string_view name);
+    [[nodiscard]] BackendServer *getServer(std::string_view name);
 
 private:
     spdlog::logger &logger_;
@@ -49,7 +49,7 @@ private:
     Console console_;
     ProxyConfig configuration_;
     ServerListPingHandler ping_handler_;
-    std::map<std::string, RegisteredServer, std::less<>> servers_;
+    std::map<std::string, BackendServer, std::less<>> servers_;
     std::atomic<bool> shutdown_in_progress_{false};
     std::atomic<bool> shutdown_{false};
 };

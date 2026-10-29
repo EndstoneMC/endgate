@@ -66,9 +66,9 @@ private:
  * @see com.velocitypowered.api.proxy.server.RegisteredServer
  * @see com.velocitypowered.proxy.server.VelocityRegisteredServer
  */
-class RegisteredServer {
+class BackendServer {
 public:
-    explicit RegisteredServer(ServerInfo info);
+    explicit BackendServer(ServerInfo info);
 
     [[nodiscard]] const ServerInfo &getServerInfo() const { return info_; }
 

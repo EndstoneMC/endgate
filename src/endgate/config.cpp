@@ -9,9 +9,9 @@
 #include <glaze/toml.hpp>
 #include <spdlog/logger.h>
 
+#include "endgate/backend.h"
 #include "endgate/default_config.h"
 #include "endgate/logging/manager.h"
-#include "endgate/server/registered.h"
 
 namespace endgate {
 
