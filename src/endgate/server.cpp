@@ -29,6 +29,12 @@ bool ProxyServer::start()
         return false;
     }
 
+    for (const auto &[name, address] : configuration_.getServers()) {
+        if (auto info = ServerInfo::parse(name, address)) {
+            servers_.try_emplace(name, std::move(*info));
+        }
+    }
+
     cm_.logChannelInformation();
 
     const auto &bind = configuration_.getBind();
@@ -100,6 +106,12 @@ const ServerListPingHandler &ProxyServer::getServerListPingHandler() const
 const ProxyConfig &ProxyServer::getConfiguration() const
 {
     return configuration_;
+}
+
+RegisteredServer *ProxyServer::getServer(std::string_view name)
+{
+    const auto server = servers_.find(name);
+    return server == servers_.end() ? nullptr : &server->second;
 }
 
 }  // namespace endgate

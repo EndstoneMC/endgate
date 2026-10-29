@@ -11,6 +11,7 @@
 
 #include "endgate/default_config.h"
 #include "endgate/logging/manager.h"
+#include "endgate/server/registered.h"
 
 namespace endgate {
 
@@ -113,6 +114,19 @@ bool ProxyConfig::validate() const
     if (tls_certificate_.empty() != tls_certificate_key_.empty()) {
         logger.error("HTTPS needs both tls-certificate and tls-certificate-key");
         valid = false;
+    }
+
+    for (const auto &[name, address] : servers_) {
+        if (!ServerInfo::parse(name, address)) {
+            logger.error("Server {} has an invalid address {}", name, address);
+            valid = false;
+        }
+    }
+    for (const auto &name : attempt_connection_order_) {
+        if (!servers_.contains(name)) {
+            logger.error("Fallback server {} is not registered in your configuration!", name);
+            valid = false;
+        }
     }
     return valid;
 }

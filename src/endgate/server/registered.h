@@ -1,0 +1,97 @@
+#pragma once
+
+#include <chrono>
+#include <cstdint>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <string_view>
+
+#include <asio/awaitable.hpp>
+#include <asio/ip/udp.hpp>
+
+namespace endgate {
+
+/**
+ * A backend as configured: a name, where it is, and the transport it is pinned to with a
+ * nethernet:// or raknet:// prefix, if any.
+ *
+ * @see com.velocitypowered.api.proxy.server.ServerInfo
+ */
+class ServerInfo {
+public:
+    enum class Transport {
+        RakNet,
+        NetherNet,
+    };
+
+    [[nodiscard]] static std::optional<ServerInfo> parse(std::string name, std::string_view address);
+
+    [[nodiscard]] const std::string &getName() const { return name_; }
+    [[nodiscard]] const std::string &getAddress() const { return address_; }
+    [[nodiscard]] const std::string &getHost() const { return host_; }
+    [[nodiscard]] std::uint16_t getPort() const { return port_; }
+    [[nodiscard]] std::optional<Transport> getTransport() const { return transport_; }
+
+private:
+    ServerInfo(std::string name, std::string address, std::string host, std::uint16_t port,
+               std::optional<Transport> transport);
+
+    std::string name_;
+    std::string address_;
+    std::string host_;
+    std::uint16_t port_;
+    std::optional<Transport> transport_;
+};
+
+[[nodiscard]] constexpr std::string_view toString(ServerInfo::Transport transport)
+{
+    switch (transport) {
+    case ServerInfo::Transport::RakNet:
+        return "RakNet";
+    case ServerInfo::Transport::NetherNet:
+        return "NetherNet";
+    }
+    return "unknown";
+}
+
+/**
+ * A backend the proxy can send players to. Unless the configuration pins its transport, the first
+ * connection to it finds out which one it speaks, and every connection after uses that answer until a
+ * connection to it fails.
+ *
+ * @see com.velocitypowered.api.proxy.server.RegisteredServer
+ * @see com.velocitypowered.proxy.server.VelocityRegisteredServer
+ */
+class RegisteredServer {
+public:
+    explicit RegisteredServer(ServerInfo info) : info_(std::move(info)) {}
+
+    [[nodiscard]] const ServerInfo &getServerInfo() const { return info_; }
+
+    [[nodiscard]] asio::awaitable<std::optional<ServerInfo::Transport>> detectTransport(
+        asio::ip::udp::endpoint address);
+
+    void forgetTransport();
+
+    /**
+     * Sends RakNet unconnected pings until one is answered.
+     *
+     * @see com.velocitypowered.proxy.server.VelocityRegisteredServer#ping
+     * @see RakNet::RakPeer::Ping
+     */
+    [[nodiscard]] static asio::awaitable<bool> ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout);
+
+    /**
+     * Asks for the NetherNet capability check, GET /v1/join, as a client sends it.
+     */
+    [[nodiscard]] static asio::awaitable<bool> isNetherNet(std::string host, std::uint16_t port,
+                                                           std::chrono::milliseconds timeout);
+
+private:
+    ServerInfo info_;
+    std::mutex mutex_;
+    std::optional<ServerInfo::Transport> detected_;
+};
+
+}  // namespace endgate

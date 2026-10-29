@@ -1,9 +1,11 @@
 #include "endgate/network/manager.h"
 
 #include <algorithm>
-#include <utility>
+#include <memory>
 
 #include <asio/dispatch.hpp>
+#include <asio/ip/udp.hpp>
+#include <asio/ip/v6_only.hpp>
 
 #include "endgate/config.h"
 #include "endgate/logging/manager.h"
@@ -33,16 +35,18 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
 {
     asio::error_code ec;
 
-    asio::ip::udp::socket socket(io_context_);
+    auto socket = std::make_shared<asio::ip::udp::socket>(io_context_);
     const asio::ip::udp::endpoint game{address, port};
-    if (socket.open(game.protocol(), ec) || socket.bind(game, ec) || socket.non_blocking(true, ec)) {
+    const bool dual_stack = address.is_v6() && address.is_unspecified();
+    if (socket->open(game.protocol(), ec) || (dual_stack && socket->set_option(asio::ip::v6_only(false), ec)) ||
+        socket->bind(game, ec) || socket->non_blocking(true, ec)) {
         logger_.error("Can't bind to {}:{}: {}", address.to_string(), port, ec.message());
         return false;
     }
 
-    offline_.setPingResponder(port);
-    auto &endpoint = endpoints_.emplace_back(server_, io_context_, std::move(socket), offline_.getGuid(),
-                                             offline_.getOfflinePingResponse());
+    offline_.setPingResponder(socket->local_endpoint().port());
+    auto &endpoint =
+        endpoints_.emplace_back(server_, io_context_, socket, offline_.getGuid(), offline_.getOfflinePingResponse());
 
     logger_.info("Listening on {}", endpoint.getLocalAddress());
     asio::dispatch(endpoint.getExecutor(), [&endpoint] { endpoint.start(); });

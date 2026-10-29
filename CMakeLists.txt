@@ -37,6 +37,10 @@ add_executable(endgate
         src/endgate/config.cpp
         src/endgate/console.cpp
         src/endgate/server.cpp
+        src/endgate/connection/backend.cpp
+        src/endgate/connection/connection.cpp
+        src/endgate/connection/player.cpp
+        src/endgate/connection/raknet.cpp
         src/endgate/logging/appender.cpp
         src/endgate/logging/formatter.cpp
         src/endgate/logging/manager.cpp
@@ -45,6 +49,7 @@ add_executable(endgate
         src/endgate/network/manager.cpp
         src/endgate/network/offline.cpp
         src/endgate/network/ping.cpp
+        src/endgate/server/registered.cpp
 )
 
 target_include_directories(endgate PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}/generated)

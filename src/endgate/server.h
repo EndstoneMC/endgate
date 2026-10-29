@@ -1,6 +1,10 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
+#include <map>
+#include <string>
+#include <string_view>
 
 #include <spdlog/logger.h>
 
@@ -8,6 +12,7 @@
 #include "endgate/console.h"
 #include "endgate/network/manager.h"
 #include "endgate/network/ping.h"
+#include "endgate/server/registered.h"
 #include "endgate/version.h"
 
 namespace endgate {
@@ -33,12 +38,18 @@ public:
     [[nodiscard]] const ServerListPingHandler &getServerListPingHandler() const;
     [[nodiscard]] const ProxyConfig &getConfiguration() const;
 
+    /**
+     * @see com.velocitypowered.api.proxy.ProxyServer#getServer
+     */
+    [[nodiscard]] RegisteredServer *getServer(std::string_view name);
+
 private:
     spdlog::logger &logger_;
     ConnectionManager cm_;
     Console console_;
     ProxyConfig configuration_;
     ServerListPingHandler ping_handler_;
+    std::map<std::string, RegisteredServer, std::less<>> servers_;
     std::atomic_bool shutdown_in_progress_{false};
     std::atomic_bool shutdown_{false};
 };
