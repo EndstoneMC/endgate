@@ -40,6 +40,18 @@ def test_a_nethernet_player_s_first_batch_waits_for_the_backend(make_proxy, echo
     assert received == sent
 
 
+def test_a_first_batch_waits_for_a_nethernet_backend(make_proxy, nethernet_backend):
+    proxy = make_proxy(nethernet_backend.port)
+    player = raknet.create_connection(proxy.address, timeout=5)
+    try:
+        sent = [BATCH + batch for batch in batches(20)]
+        for message in sent:
+            player.send(message)
+        assert [player.recv(timeout=20) for _ in sent] == sent
+    finally:
+        player.close()
+
+
 @pytest.fixture
 def silent_backend():
     """A UDP port that takes datagrams and never answers, so a leg to it stays connecting."""
