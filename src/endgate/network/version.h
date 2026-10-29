@@ -28,6 +28,8 @@ private:
 inline constexpr std::array SUPPORTED_VERSIONS{
     ProtocolVersion{2168, "1.26.40"},
     ProtocolVersion{2169, "1.26.45"},
+    ProtocolVersion{2193, "1.26.50"},
+    ProtocolVersion{2225, "1.26.60"},
 };
 
 inline constexpr ProtocolVersion MINIMUM_VERSION = SUPPORTED_VERSIONS.front();
