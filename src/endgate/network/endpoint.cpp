@@ -54,7 +54,7 @@ public:
     Session(Endpoint &endpoint, const raknet::SystemAddress &address, const raknet::OpenConnectionRequest2 &request,
             std::uint16_t system_index, raknet::TimePoint now)
         : endpoint_(endpoint), address_(address), key_(toString(address)), timer_(endpoint.strand_),
-          creation_time_(now), connection_(*this, endpoint.getConnectionConfiguration(endpoint.offline_.getGuid()),
+          creation_time_(now), connection_(*this, Endpoint::getConnectionConfiguration(endpoint.offline_.getGuid()),
                                            address, request, system_index, now)
     {
     }
@@ -63,7 +63,7 @@ public:
             raknet::TimePoint now)
         : endpoint_(endpoint), address_(address), key_(toString(address)), socket_(std::move(socket)),
           timer_(endpoint.strand_), creation_time_(now),
-          connection_(*this, endpoint.getConnectionConfiguration(std::mt19937_64{std::random_device{}()}()), address,
+          connection_(*this, Endpoint::getConnectionConfiguration(std::mt19937_64{std::random_device{}()}()), address,
                       now)
     {
     }

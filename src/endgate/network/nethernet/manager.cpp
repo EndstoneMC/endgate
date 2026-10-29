@@ -171,7 +171,7 @@ void NetworkSessionManager::reap()
     for (auto entry = std::ranges::find_if(sessions_, is_closed); entry != sessions_.end();
          entry = std::ranges::find_if(sessions_, is_closed)) {
         const auto id = entry->first;
-        const auto reason = *entry->second->closed;
+        const auto reason = entry->second->closed.value_or(ESessionError::None);
         std::erase_if(routes_, [id](const auto &route) { return route.second == id; });
         ufrags_.erase(entry->second->ufrag);
         sessions_.erase(entry);

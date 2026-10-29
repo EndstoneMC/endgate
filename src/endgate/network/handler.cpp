@@ -147,7 +147,7 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::compress(const ByteBuf &
     if (hybrid_) {
         writable[0] = static_cast<std::byte>(CompressionHeader{PacketCompressionAlgorithm::None}.getRaw());
     }
-    std::copy(input.begin(), input.end(), writable.begin() + prefix);
+    std::ranges::copy(input, writable.begin() + static_cast<std::ptrdiff_t>(prefix));
     out.append(input.size() + prefix);
     return out;
 }

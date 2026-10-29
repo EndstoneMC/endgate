@@ -55,7 +55,7 @@ bool ProxyServer::start()
     return true;
 }
 
-void ProxyServer::shutdown(bool explicit_exit)
+void ProxyServer::shutdown([[maybe_unused]] bool explicit_exit)
 {
     bool in_progress = false;
     if (!shutdown_in_progress_.compare_exchange_strong(in_progress, true)) {
@@ -82,7 +82,7 @@ bool ProxyServer::isShuttingDown() const
     return shutdown_in_progress_.load();
 }
 
-ProxyVersion ProxyServer::getVersion() const
+ProxyVersion ProxyServer::getVersion()
 {
     return {"Endgate", "EndstoneMC", ENDGATE_VERSION};
 }

@@ -86,6 +86,18 @@ public:
         }
     }
 
+    rtc::DtlsTransport dtls;
+    rtc::SctpTransport sctp;
+    PacketQueue queue;
+    Clock::time_point now;
+    bool sctp_started{false};
+    std::optional<std::uint16_t> reliable;
+    std::optional<std::uint16_t> unreliable;
+    std::vector<std::vector<std::byte>> sctp_outbox;
+    std::deque<std::vector<std::byte>> outgoing;
+    std::vector<std::vector<std::byte>> packets;
+
+private:
     void sendDtlsDatagram(std::span<const std::byte> datagram) override
     {
         outgoing.emplace_back(datagram.begin(), datagram.end());
@@ -116,17 +128,6 @@ public:
     }
     void onPacket(ByteBuf packet) override { packets.push_back(bytesOf(packet)); }
     void closeChannel(ESendType) override {}
-
-    rtc::DtlsTransport dtls;
-    rtc::SctpTransport sctp;
-    PacketQueue queue;
-    Clock::time_point now{};
-    bool sctp_started{false};
-    std::optional<std::uint16_t> reliable;
-    std::optional<std::uint16_t> unreliable;
-    std::vector<std::vector<std::byte>> sctp_outbox;
-    std::deque<std::vector<std::byte>> outgoing;
-    std::vector<std::vector<std::byte>> packets;
 };
 
 class NetworkSessionTest : public testing::Test {

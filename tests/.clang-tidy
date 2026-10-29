@@ -2,4 +2,5 @@
 InheritParentConfig: true
 Checks: >
   -bugprone-unchecked-optional-access,
-  -bugprone-throwing-static-initialization
+  -bugprone-throwing-static-initialization,
+  -performance-inefficient-string-concatenation

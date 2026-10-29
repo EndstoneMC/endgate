@@ -32,7 +32,8 @@ public:
     static ByteBuf create(std::size_t capacity)
     {
         ByteBuf buf;
-        buf.elements_.push_back({std::make_shared<std::vector<std::byte>>(capacity), 0, 0});
+        buf.elements_.push_back(
+            {.storage = std::make_shared<std::vector<std::byte>>(capacity), .offset = 0, .length = 0});
         return buf;
     }
 
@@ -42,7 +43,9 @@ public:
     static ByteBuf copyBuffer(std::span<const std::byte> data)
     {
         ByteBuf buf;
-        buf.elements_.push_back({std::make_shared<std::vector<std::byte>>(data.begin(), data.end()), 0, data.size()});
+        buf.elements_.push_back({.storage = std::make_shared<std::vector<std::byte>>(data.begin(), data.end()),
+                                 .offset = 0,
+                                 .length = data.size()});
         buf.length_ = data.size();
         return buf;
     }
@@ -124,7 +127,7 @@ public:
             }
             const auto offset = index > skipped ? index - skipped : 0;
             const auto take = std::min(element.length - offset, length - slice.length_);
-            slice.elements_.push_back({element.storage, element.offset + offset, take});
+            slice.elements_.push_back({.storage = element.storage, .offset = element.offset + offset, .length = take});
             slice.length_ += take;
             if (slice.length_ == length) {
                 break;
@@ -151,7 +154,8 @@ public:
         std::size_t written = 0;
         for (const auto &element : elements_) {
             const auto take = std::min(element.length, out.size() - written);
-            std::copy_n(element.storage->data() + element.offset, take, out.begin() + written);
+            std::copy_n(element.storage->data() + element.offset, take,
+                        out.begin() + static_cast<std::ptrdiff_t>(written));
             written += take;
         }
     }

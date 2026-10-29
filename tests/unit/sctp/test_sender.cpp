@@ -53,7 +53,11 @@ protected:
             EXPECT_TRUE(packet);
             for (const auto &chunk : packet->chunks) {
                 const auto data = DataChunk::parse(chunk);
-                sent.push_back({data->tsn, data->stream, data->ssn, data->flags, data->payload.size()});
+                sent.push_back({.tsn = data->tsn,
+                                .stream = data->stream,
+                                .ssn = data->ssn,
+                                .flags = data->flags,
+                                .length = data->payload.size()});
             }
             ++packets_;
         }

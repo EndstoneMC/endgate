@@ -37,7 +37,10 @@ struct Fragment {
 
 class Recorder : public PacketQueue::Listener {
 public:
-    void sendFragment(ESendType type, ByteBuf fragment) override { fragments.push_back({type, bytesOf(fragment)}); }
+    void sendFragment(ESendType type, ByteBuf fragment) override
+    {
+        fragments.push_back({.type = type, .bytes = bytesOf(fragment)});
+    }
     void onPacket(ByteBuf packet) override { packets.push_back(bytesOf(packet)); }
     void closeChannel(ESendType type) override { closed.push_back(type); }
 

@@ -40,6 +40,7 @@ protected:
     std::vector<std::string> take()
     {
         std::vector<std::string> result;
+        result.reserve(delivered_.size());
         for (const auto &message : delivered_) {
             result.push_back(text(message.payload));
         }

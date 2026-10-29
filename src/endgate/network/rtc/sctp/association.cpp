@@ -1096,11 +1096,12 @@ void Association::sendShutdown(Clock::time_point now)
     if (!tcb_) {
         return;
     }
+    const auto rto = tcb_->sender.rto();
     std::vector<std::byte> value;
     ByteWriter(value).write32(tcb_->receiver.cumulativeTsn());
     queue(ChunkType::Shutdown, 0, std::move(value));
     state_ = State::ShutdownSent;
-    t2_ = Retry{.at = now + tcb_->sender.rto(), .backoff = tcb_->sender.rto(), .count = t2_ ? t2_->count : 0};
+    t2_ = Retry{.at = now + rto, .backoff = rto, .count = t2_ ? t2_->count : 0};
 }
 
 void Association::sendShutdownAck(Clock::time_point now)
@@ -1108,9 +1109,10 @@ void Association::sendShutdownAck(Clock::time_point now)
     if (!tcb_) {
         return;
     }
+    const auto rto = tcb_->sender.rto();
     queue(ChunkType::ShutdownAck, 0, {});
     state_ = State::ShutdownAckSent;
-    t2_ = Retry{.at = now + tcb_->sender.rto(), .backoff = tcb_->sender.rto(), .count = t2_ ? t2_->count : 0};
+    t2_ = Retry{.at = now + rto, .backoff = rto, .count = t2_ ? t2_->count : 0};
 }
 
 void Association::countError()

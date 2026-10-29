@@ -127,13 +127,16 @@ struct Handshake {
         : simulation(seed), client_events(simulation, 0), server(simulation),
           client(client_events, std::move(client_configuration), SERVER_ADDRESS, simulation.now())
     {
+        simulation.attach(0, {.receive = [this](std::span<const std::byte> datagram,
+                                                TimePoint now) { client.handleDatagram(datagram, now); },
+                              .next_timeout = [this] { return client.nextTimeout(); },
+                              .timeout = [this](TimePoint now) { client.handleTimeout(now); }});
         simulation.attach(
-            0, {[this](std::span<const std::byte> datagram, TimePoint now) { client.handleDatagram(datagram, now); },
-                [this] { return client.nextTimeout(); }, [this](TimePoint now) { client.handleTimeout(now); }});
-        simulation.attach(
-            1, {[this](std::span<const std::byte> datagram, TimePoint now) { server.receive(datagram, now); },
-                [this] { return server.connection ? server.connection->nextTimeout() : std::optional<TimePoint>{}; },
-                [this](TimePoint now) { server.connection->handleTimeout(now); }});
+            1,
+            {.receive = [this](std::span<const std::byte> datagram, TimePoint now) { server.receive(datagram, now); },
+             .next_timeout =
+                 [this] { return server.connection ? server.connection->nextTimeout() : std::optional<TimePoint>{}; },
+             .timeout = [this](TimePoint now) { server.connection->handleTimeout(now); }});
     }
 
     bool connect()
@@ -178,8 +181,8 @@ TEST(Connection, MessagesCrossBothWaysAfterTheHandshake)
 {
     Handshake handshake{{.guid = 0xC1C1}, 9};
     ASSERT_TRUE(handshake.connect());
-    handshake.simulation.setConditions(0, {0.1, 0.05, 0.1});
-    handshake.simulation.setConditions(1, {0.1, 0.05, 0.1});
+    handshake.simulation.setConditions(0, {.loss = 0.1, .duplicate = 0.05, .reorder = 0.1});
+    handshake.simulation.setConditions(1, {.loss = 0.1, .duplicate = 0.05, .reorder = 0.1});
     const auto up = payload(300000, 1);
     const auto down = payload(70000, 2);
     ASSERT_TRUE(handshake.client.send(ByteBuf::copyBuffer(up), PacketPriority::High, PacketReliability::ReliableOrdered,
@@ -195,7 +198,7 @@ TEST(Connection, MessagesCrossBothWaysAfterTheHandshake)
 TEST(Connection, ProbesFallFromThe1600To1200To576ByteMtu)
 {
     Handshake handshake;
-    handshake.simulation.setConditions(0, {1.0});
+    handshake.simulation.setConditions(0, {.loss = 1.0});
     ASSERT_TRUE(handshake.simulation.runUntil([&] { return !handshake.client_events.disconnected.empty(); }, 10s));
     EXPECT_EQ(handshake.client_events.disconnected,
               std::vector<DisconnectReason>{DisconnectReason::ConnectionAttemptFailed});
@@ -268,12 +271,12 @@ TEST(Connection, RepeatedOpenConnectionRequest2IsAnsweredAgainOrRefused)
                            "000000000000c1c2"),
                    simulation.now());
     ASSERT_EQ(server.events.datagrams.size(), 3U);
-    const auto reply = "08"
-                       "00ffff00fefefefefdfdfdfd12345678"
-                       "0000000000005e5e"
-                       "04f5fffffdc350"
-                       "04b0"
-                       "00";
+    const auto *const reply = "08"
+                              "00ffff00fefefefefdfdfdfd12345678"
+                              "0000000000005e5e"
+                              "04f5fffffdc350"
+                              "04b0"
+                              "00";
     EXPECT_EQ(toHex(server.events.datagrams[0]), reply);
     EXPECT_EQ(toHex(server.events.datagrams[1]), reply);
     EXPECT_EQ(toHex(server.events.datagrams[2]), "12"
@@ -367,9 +370,10 @@ TEST(Connection, HalfOpenConnectionIsReapedAfterTenSeconds)
 {
     Simulation simulation;
     Server server{simulation};
-    simulation.attach(1, {[&](std::span<const std::byte> datagram, TimePoint now) { server.receive(datagram, now); },
-                          [&] { return server.connection->nextTimeout(); },
-                          [&](TimePoint now) { server.connection->handleTimeout(now); }});
+    simulation.attach(
+        1, {.receive = [&](std::span<const std::byte> datagram, TimePoint now) { server.receive(datagram, now); },
+            .next_timeout = [&] { return server.connection->nextTimeout(); },
+            .timeout = [&](TimePoint now) { server.connection->handleTimeout(now); }});
     server.receive(fromHex("07"
                            "00ffff00fefefefefdfdfdfd12345678"
                            "04f5fffffe4abc"
@@ -401,7 +405,7 @@ TEST(Connection, SilentPeerIsLostAfterTheTimeout)
 {
     Handshake handshake;
     ASSERT_TRUE(handshake.connect());
-    handshake.simulation.setConditions(1, {1.0});
+    handshake.simulation.setConditions(1, {.loss = 1.0});
     const auto start = handshake.simulation.now();
     ASSERT_TRUE(handshake.simulation.runUntil([&] { return !handshake.client_events.disconnected.empty(); }, 30s));
     EXPECT_EQ(handshake.client_events.disconnected, std::vector<DisconnectReason>{DisconnectReason::ConnectionLost});
@@ -427,7 +431,7 @@ TEST(Connection, ClosingConnectionEndsEvenIfThePeerKeepsSendingWithoutAcking)
 {
     Handshake handshake;
     ASSERT_TRUE(handshake.connect());
-    handshake.simulation.setConditions(0, {1.0});
+    handshake.simulation.setConditions(0, {.loss = 1.0});
     handshake.server.connection->close(true, handshake.simulation.now());
     const auto start = handshake.simulation.now();
     for (std::uint32_t i = 0; i < 30 && handshake.server.events.disconnected.empty(); ++i) {
@@ -454,7 +458,7 @@ TEST(Connection, CloseWithoutNotificationIsImmediate)
 TEST(Connection, ClosingDuringTheOpenConnectionPhaseStopsProbing)
 {
     Handshake handshake;
-    handshake.simulation.setConditions(0, {1.0});
+    handshake.simulation.setConditions(0, {.loss = 1.0});
     handshake.simulation.runUntil([] { return false; }, 700ms);
     handshake.client.close(true, handshake.simulation.now());
     EXPECT_EQ(handshake.client_events.disconnected, std::vector<DisconnectReason>{DisconnectReason::ClosedLocally});
@@ -546,7 +550,7 @@ TEST(Connection, RepeatedConnectionRequestsQueueOneAnswerAtATime)
     Handshake handshake;
     ASSERT_TRUE(handshake.connect());
     handshake.simulation.runUntil([] { return false; }, 100ms);
-    handshake.simulation.setConditions(1, {1.0});
+    handshake.simulation.setConditions(1, {.loss = 1.0});
     for (std::uint32_t i = 0; i < 50; ++i) {
         const auto number = toHex(std::array{std::byte(0x30 + i), std::byte{0}, std::byte{0}});
         const auto reliable = toHex(std::array{std::byte(0x10 + i), std::byte{0}, std::byte{0}});
@@ -559,7 +563,7 @@ TEST(Connection, RepeatedConnectionRequestsQueueOneAnswerAtATime)
     }
     std::size_t answers = 0;
     for (const auto &datagram : handshake.server.events.datagrams) {
-        answers += toHex(datagram).find("1004f5fffffdc350") != std::string::npos ? 1 : 0;
+        answers += toHex(datagram).contains("1004f5fffffdc350") ? 1 : 0;
     }
     EXPECT_EQ(answers, 2U);
 }

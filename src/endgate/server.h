@@ -28,7 +28,7 @@ public:
 
     [[nodiscard]] bool isShutdown() const;
     [[nodiscard]] bool isShuttingDown() const;
-    [[nodiscard]] ProxyVersion getVersion() const;
+    [[nodiscard]] static ProxyVersion getVersion();
     [[nodiscard]] Console &getConsoleCommandSource();
     [[nodiscard]] const ServerListPingHandler &getServerListPingHandler() const;
     [[nodiscard]] const ProxyConfig &getConfiguration() const;

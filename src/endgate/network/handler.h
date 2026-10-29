@@ -82,7 +82,7 @@ private:
 class BatchHandler {
 public:
     template <typename Context>
-    void read(Context &context, ByteBuf batch)
+    void read(Context &context, const ByteBuf &batch)
     {
         std::size_t offset = 0;
         while (offset < batch.length()) {

@@ -6,7 +6,7 @@
 namespace endgate::nethernet {
 
 NetworkSession::NetworkSession(Listener &listener, const rtc::Description &offer, rtc::IceCredentials local,
-                               std::shared_ptr<const rtc::Certificate> certificate, Config config,
+                               std::shared_ptr<const rtc::Certificate> certificate, const Config &config,
                                Clock::time_point now)
     : listener_(listener), now_(now), ice_(*this, std::move(local), offer.ice_ufrag, config.ice, now),
       dtls_(*this, std::move(certificate),

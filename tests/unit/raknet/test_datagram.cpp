@@ -41,15 +41,43 @@ struct GoldenFrame {
 };
 
 const std::array<GoldenFrame, 8> GOLDEN_FRAMES{{
-    {{PacketReliability::Unreliable}, "000018fe0102"},
-    {{PacketReliability::UnreliableSequenced, UINT24_MASK, 0x010203, 0x040506, 7}, "20001803020106050407fe0102"},
-    {{PacketReliability::Reliable, 0x0A0B0C}, "4000180c0b0afe0102"},
-    {{PacketReliability::ReliableOrdered, 0x0A0B0C, 0, 0x040506, 31}, "6000180c0b0a0605041ffe0102"},
-    {{PacketReliability::ReliableSequenced, 0x0A0B0C, 0x010203, 0x040506, 3}, "8000180c0b0a03020106050403fe0102"},
-    {{PacketReliability::ReliableOrdered, 0x000102, 0, 0x000009, 0, 5, 0x1234, 4},
-     "7000180201000900000000000005123400000004fe0102"},
-    {{PacketReliability::ReliableOrderedWithAckReceipt, 0x0A0B0C, 0, 0x040506, 2}, "6000180c0b0a06050402fe0102"},
-    {{PacketReliability::UnreliableWithAckReceipt}, "000018fe0102"},
+    {.header = {.reliability = PacketReliability::Unreliable}, .legacy = "000018fe0102"},
+    {.header = {.reliability = PacketReliability::UnreliableSequenced,
+                .reliable_message_number = UINT24_MASK,
+                .sequencing_index = 0x010203,
+                .ordering_index = 0x040506,
+                .ordering_channel = 7},
+     .legacy = "20001803020106050407fe0102"},
+    {.header = {.reliability = PacketReliability::Reliable, .reliable_message_number = 0x0A0B0C},
+     .legacy = "4000180c0b0afe0102"},
+    {.header = {.reliability = PacketReliability::ReliableOrdered,
+                .reliable_message_number = 0x0A0B0C,
+                .sequencing_index = 0,
+                .ordering_index = 0x040506,
+                .ordering_channel = 31},
+     .legacy = "6000180c0b0a0605041ffe0102"},
+    {.header = {.reliability = PacketReliability::ReliableSequenced,
+                .reliable_message_number = 0x0A0B0C,
+                .sequencing_index = 0x010203,
+                .ordering_index = 0x040506,
+                .ordering_channel = 3},
+     .legacy = "8000180c0b0a03020106050403fe0102"},
+    {.header = {.reliability = PacketReliability::ReliableOrdered,
+                .reliable_message_number = 0x000102,
+                .sequencing_index = 0,
+                .ordering_index = 0x000009,
+                .ordering_channel = 0,
+                .split_packet_count = 5,
+                .split_packet_id = 0x1234,
+                .split_packet_index = 4},
+     .legacy = "7000180201000900000000000005123400000004fe0102"},
+    {.header = {.reliability = PacketReliability::ReliableOrderedWithAckReceipt,
+                .reliable_message_number = 0x0A0B0C,
+                .sequencing_index = 0,
+                .ordering_index = 0x040506,
+                .ordering_channel = 2},
+     .legacy = "6000180c0b0a06050402fe0102"},
+    {.header = {.reliability = PacketReliability::UnreliableWithAckReceipt}, .legacy = "000018fe0102"},
 }};
 
 TEST(Datagram, FramesMatchLegacyPort)
@@ -158,7 +186,12 @@ TEST(Datagram, MalformedFramesAreRejected)
 
 TEST(Datagram, LargestFrameHeaderIsReliableSequencedAndSplit)
 {
-    const FrameHeader header{PacketReliability::ReliableSequenced, 0, 0, 0, 0, 1};
+    const FrameHeader header{.reliability = PacketReliability::ReliableSequenced,
+                             .reliable_message_number = 0,
+                             .sequencing_index = 0,
+                             .ordering_index = 0,
+                             .ordering_channel = 0,
+                             .split_packet_count = 1};
     EXPECT_EQ(header.length(), MAXIMUM_FRAME_HEADER_LENGTH);
     EXPECT_EQ(MAXIMUM_FRAME_HEADER_LENGTH, 23U);
 }

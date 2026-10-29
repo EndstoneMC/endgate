@@ -83,7 +83,7 @@ TEST(Message, UnconnectedPongMatchesLegacyPort)
 
 TEST(Message, OpenConnectionRequest1PadsToTheProbedMtu)
 {
-    const auto encoded = bytes(encode(OpenConnectionRequest1{RAKNET_PROTOCOL_VERSION, 1200}));
+    const auto encoded = bytes(encode(OpenConnectionRequest1{.protocol = RAKNET_PROTOCOL_VERSION, .mtu = 1200}));
     EXPECT_EQ(encoded.size(), 0x494U);
     EXPECT_EQ(toHex(std::span{encoded}.first(18)), "05" + std::string{MAGIC} + "0b");
     EXPECT_TRUE(std::ranges::all_of(std::span{encoded}.subspan(18), [](std::byte b) { return b == std::byte{0}; }));
@@ -230,8 +230,11 @@ TEST(Message, ConnectionRequestAcceptedMatchesLegacyPortAndWirePy)
         golden += "04ffffffff0000";
     }
     golden += "0a0b0c0d0e0f10111213141516171819";
-    const ConnectionRequestAccepted accepted{
-        endpoint("10.0.0.2", 50000), 0, {}, 0x0A0B0C0D0E0F1011, 0x1213141516171819};
+    const ConnectionRequestAccepted accepted{.client_address = endpoint("10.0.0.2", 50000),
+                                             .system_index = 0,
+                                             .internal_addresses = {},
+                                             .send_ping_time = 0x0A0B0C0D0E0F1011,
+                                             .send_pong_time = 0x1213141516171819};
     EXPECT_EQ(encode(accepted), golden);
     const auto decoded = ConnectionRequestAccepted::decode(bytes(golden));
     ASSERT_TRUE(decoded);
@@ -247,7 +250,10 @@ TEST(Message, NewIncomingConnectionMatchesLegacyPortAndWirePy)
         golden += "04ffffffff0000";
     }
     golden += "0a0b0c0d0e0f10111213141516171819";
-    const NewIncomingConnection incoming{endpoint("10.0.0.1", 19132), {}, 0x0A0B0C0D0E0F1011, 0x1213141516171819};
+    const NewIncomingConnection incoming{.server_address = endpoint("10.0.0.1", 19132),
+                                         .internal_addresses = {},
+                                         .send_ping_time = 0x0A0B0C0D0E0F1011,
+                                         .send_pong_time = 0x1213141516171819};
     EXPECT_EQ(encode(incoming), golden);
     const auto decoded = NewIncomingConnection::decode(bytes(golden));
     ASSERT_TRUE(decoded);
@@ -298,7 +304,7 @@ TEST(Message, InvalidPasswordCarriesTheGuid)
 
 TEST(Message, OfflineDecodersRefuseDatagramsTooShortToClassify)
 {
-    for (const auto id : {"05", "06", "07", "08", "12", "19"}) {
+    for (const auto *const id : {"05", "06", "07", "08", "12", "19"}) {
         EXPECT_FALSE(OpenConnectionRequest1::decode(bytes(id)));
         EXPECT_FALSE(OpenConnectionReply1::decode(bytes(id)));
         EXPECT_FALSE(OpenConnectionRequest2::decode(bytes(id)));

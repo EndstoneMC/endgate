@@ -52,7 +52,7 @@ public:
 
     void onSessionOpen(NetworkSessionManager::SessionId session, const std::string &network_id) override
     {
-        std::cout << "open " << session << " " << network_id << std::endl;
+        std::cout << "open " << session << " " << network_id << '\n';
     }
 
     void onPacket(NetworkSessionManager::SessionId session, ByteBuf packet) override
@@ -62,7 +62,7 @@ public:
 
     void onSessionClosed(NetworkSessionManager::SessionId session, ESessionError reason) override
     {
-        std::cout << "closed " << session << " " << static_cast<std::uint32_t>(reason) << std::endl;
+        std::cout << "closed " << session << " " << static_cast<std::uint32_t>(reason) << '\n';
     }
 
     endgate::ServerPing getServerPing(const endgate::nethernet::PingRequest &request) override
@@ -138,8 +138,9 @@ private:
 
 int main(int argc, char **argv)
 {
+    std::cout << std::unitbuf;
     asio::io_context io_context;
     Echo echo(io_context, asio::ip::make_address(argc > 1 ? argv[1] : "127.0.0.1"));
-    std::cout << "listening " << echo.port() << std::endl;
+    std::cout << "listening " << echo.port() << '\n';
     io_context.run();
 }

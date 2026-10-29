@@ -96,7 +96,7 @@ public:
     };
 
     NetworkSession(Listener &listener, const rtc::Description &offer, rtc::IceCredentials local,
-                   std::shared_ptr<const rtc::Certificate> certificate, Config config, Clock::time_point now);
+                   std::shared_ptr<const rtc::Certificate> certificate, const Config &config, Clock::time_point now);
     NetworkSession(const NetworkSession &) = delete;
     NetworkSession &operator=(const NetworkSession &) = delete;
     NetworkSession(NetworkSession &&) = delete;

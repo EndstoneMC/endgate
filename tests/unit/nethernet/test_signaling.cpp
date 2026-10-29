@@ -149,8 +149,8 @@ TEST_F(HttpSignalingServerTest, PassesOnTheAddressTheClientReachedUsAt)
 
 TEST_F(HttpSignalingServerTest, ClosesOnAHostItCannotRead)
 {
-    for (const auto header : {"Host: a\r\nHost: b\r\n", "Host: example.com:port\r\n", "Host: [::1\r\n", "Host: ::1\r\n",
-                              "Host: :19132\r\n", "Host: example.com:70000\r\n"}) {
+    for (const auto *const header : {"Host: a\r\nHost: b\r\n", "Host: example.com:port\r\n", "Host: [::1\r\n",
+                                     "Host: ::1\r\n", "Host: :19132\r\n", "Host: example.com:70000\r\n"}) {
         EXPECT_EQ(roundTrip(std::format("POST /v1/join/1 HTTP/1.1\r\n{}Content-Length: {}\r\n\r\n{}", header,
                                         OFFER.size(), OFFER)),
                   "")

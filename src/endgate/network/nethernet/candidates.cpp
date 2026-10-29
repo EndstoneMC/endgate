@@ -51,9 +51,11 @@ std::vector<rtc::CandidateAddress> gatherCandidates(std::span<const asio::ip::ad
         const auto base = std::ranges::find_if(local, [&](const asio::ip::address &candidate) {
             return candidate.is_v4() == normalised.is_v4() && !candidate.is_loopback();
         });
-        const auto base_address = base != local.end() ? *base
-                                : normalised.is_v4()  ? asio::ip::address{asio::ip::address_v4::any()}
-                                                      : asio::ip::address{asio::ip::address_v6::any()};
+        auto base_address = normalised.is_v4() ? asio::ip::address{asio::ip::address_v4::any()}
+                                               : asio::ip::address{asio::ip::address_v6::any()};
+        if (base != local.end()) {
+            base_address = *base;
+        }
         candidates.push_back(
             {.address = {normalised, reached_port}, .base = asio::ip::udp::endpoint{base_address, local_port}});
     }

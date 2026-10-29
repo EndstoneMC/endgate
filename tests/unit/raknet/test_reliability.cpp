@@ -27,17 +27,19 @@ public:
     Peer(Simulation &simulation, std::size_t index, std::size_t mtu = 1400)
         : simulation_(simulation), index_(index), layer(*this, mtu, simulation.now())
     {
-        simulation.attach(index, {[this](std::span<const std::byte> datagram, TimePoint now) {
-                                      layer.handleSocketReceiveFromConnectedPlayer(datagram, now);
-                                      drain();
-                                      layer.update(now);
-                                      drain();
-                                  },
-                                  [this] { return layer.nextTimeout(); },
-                                  [this](TimePoint now) {
-                                      layer.update(now);
-                                      drain();
-                                  }});
+        simulation.attach(index, {.receive =
+                                      [this](std::span<const std::byte> datagram, TimePoint now) {
+                                          layer.handleSocketReceiveFromConnectedPlayer(datagram, now);
+                                          drain();
+                                          layer.update(now);
+                                          drain();
+                                      },
+                                  .next_timeout = [this] { return layer.nextTimeout(); },
+                                  .timeout =
+                                      [this](TimePoint now) {
+                                          layer.update(now);
+                                          drain();
+                                      }});
     }
 
     void sendDatagram(std::span<const std::byte> datagram) override
@@ -116,8 +118,8 @@ struct Pair {
 
     void lossy(double loss, double duplicate, double reorder)
     {
-        simulation.setConditions(0, {loss, duplicate, reorder});
-        simulation.setConditions(1, {loss, duplicate, reorder});
+        simulation.setConditions(0, {.loss = loss, .duplicate = duplicate, .reorder = reorder});
+        simulation.setConditions(1, {.loss = loss, .duplicate = duplicate, .reorder = reorder});
     }
 
     Simulation simulation;
@@ -227,7 +229,7 @@ TEST(Reliability, ReceiptsAreReportedForAckedMessages)
 TEST(Reliability, UnreliableReceiptsReportLossWhenNothingAcks)
 {
     Pair pair;
-    pair.simulation.setConditions(0, {1.0});
+    pair.simulation.setConditions(0, {.loss = 1.0});
     pair.a.send(message(0), PacketReliability::UnreliableWithAckReceipt, 0, 55);
     ASSERT_TRUE(pair.simulation.runUntil([&] { return !pair.a.received.empty(); }, 5s));
     EXPECT_EQ(pair.a.received[0][0], std::byte{static_cast<std::uint8_t>(MessageId::SndReceiptLoss)});
@@ -299,7 +301,7 @@ TEST(Reliability, StaleUnreliableMessagesAreCulledEvenWhileTheWindowIsClosed)
 {
     Pair pair;
     pair.a.layer.setUnreliableTimeout(1000ms);
-    pair.simulation.setConditions(0, {1.0});
+    pair.simulation.setConditions(0, {.loss = 1.0});
     for (std::uint32_t i = 0; i < 4; ++i) {
         pair.a.send(message(i, 1300), PacketReliability::Reliable);
     }
@@ -322,7 +324,7 @@ TEST(Reliability, StaleUnreliableMessagesAreCulledEvenWhileTheWindowIsClosed)
 TEST(Reliability, SmallMessagesShareADatagram)
 {
     Pair pair;
-    pair.simulation.setConditions(0, {1.0});
+    pair.simulation.setConditions(0, {.loss = 1.0});
     for (std::uint32_t i = 0; i < 20; ++i) {
         pair.a.layer.send(ByteBuf::copyBuffer(message(i)), PacketPriority::High, PacketReliability::Reliable, 0, 0,
                           pair.simulation.now());
@@ -369,7 +371,7 @@ TEST(Reliability, AckIsDelayedOnceTheRoundTripIsKnown)
 TEST(Reliability, UnacknowledgedMessagesAreResentAfterTheRto)
 {
     Pair pair;
-    pair.simulation.setConditions(1, {1.0});
+    pair.simulation.setConditions(1, {.loss = 1.0});
     pair.a.send(message(0), PacketReliability::Reliable);
     const auto first = pair.simulation.now();
     ASSERT_EQ(pair.a.datagrams.size(), 1U);
@@ -384,7 +386,7 @@ TEST(Reliability, NakTriggersImmediateResend)
     pair.a.send(message(0), PacketReliability::Reliable);
     pair.a.send(message(1), PacketReliability::Reliable);
     ASSERT_TRUE(pair.simulation.runUntil([&] { return pair.a.layer.getMessagesInResendBuffer() == 0; }, 5s));
-    pair.simulation.setConditions(1, {1.0});
+    pair.simulation.setConditions(1, {.loss = 1.0});
     pair.a.send(message(2), PacketReliability::Reliable);
     const auto sent = pair.a.datagrams.size();
     pair.a.inject("a0000101"
@@ -395,7 +397,7 @@ TEST(Reliability, NakTriggersImmediateResend)
 TEST(Reliability, SilentPeerMakesTheConnectionDead)
 {
     Pair pair;
-    pair.simulation.setConditions(1, {1.0});
+    pair.simulation.setConditions(1, {.loss = 1.0});
     pair.a.send(message(0), PacketReliability::Reliable);
     const auto start = pair.simulation.now();
     ASSERT_TRUE(pair.simulation.runUntil([&] { return pair.a.layer.isDeadConnection(); }, 20s));
@@ -406,7 +408,7 @@ TEST(Reliability, SilentPeerMakesTheConnectionDead)
 TEST(Reliability, PeerThatKeepsSendingButNeverAcksIsDroppedAfterTheTimeout)
 {
     Pair pair;
-    pair.simulation.setConditions(1, {1.0});
+    pair.simulation.setConditions(1, {.loss = 1.0});
     pair.a.send(message(0), PacketReliability::Reliable);
     const auto start = pair.simulation.now();
     for (std::uint32_t i = 0; i < 40 && !pair.a.layer.isDeadConnection(); ++i) {
@@ -424,7 +426,7 @@ TEST(Reliability, PeerThatKeepsSendingButNeverAcksIsDroppedAfterTheTimeout)
 TEST(Reliability, SkippedDatagramsAreNaked)
 {
     Pair pair;
-    pair.simulation.setConditions(1, {1.0});
+    pair.simulation.setConditions(1, {.loss = 1.0});
     pair.b.inject("84000000"
                   "000018fe0102");
     pair.b.inject("84030000"
