@@ -134,9 +134,8 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::i
         return;
     }
     if (owner != nullptr && owner != this) {
-        owner->getEventLoop().execute([owner, copy = Unpooled::copiedBuffer(datagram), sender]() mutable {
-            owner->forward(std::move(copy), sender);
-        });
+        owner->getEventLoop().execute(
+            [owner, copy = Unpooled::copiedBuffer(datagram), sender] { owner->forward(copy, sender); });
     }
 }
 
