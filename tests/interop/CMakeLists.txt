@@ -1,2 +1,5 @@
 add_executable(endgate_nethernet_echo nethernet_echo.cpp)
 target_link_libraries(endgate_nethernet_echo PRIVATE endgate::nethernet)
+
+add_executable(endgate_nethernet_dial nethernet_dial.cpp)
+target_link_libraries(endgate_nethernet_dial PRIVATE endgate::nethernet)
