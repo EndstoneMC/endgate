@@ -11,7 +11,8 @@ Log what Velocity logs, when it logs it, at the same level and in the same words
 - The layout is Velocity's `log4j2.xml`:
   - console: `[HH:mm:ss LEVEL]: message` for endgate's own loggers, `[HH:mm:ss LEVEL] [logger]: message` for any other;
   - file: `logs/latest.log` as `[HH:mm:ss] [thread/LEVEL] [logger]: message`, rolled to `logs/yyyy-MM-dd-N.log.gz` daily and at startup.
-- Startup and shutdown use Velocity's lines: `Booting up {} {}...`, `Connections will use {} channels, {} compression, {} ciphers`, `Listening on {}`, `Done ({}s)!`, `Shutting down the proxy...`.
+- Startup and shutdown use Velocity's lines: `Starting {} {}...`, `Connections will use {} channels, {} compression, {} ciphers`, `Listening on {}`, `Done ({}s)!`, `Stopping the proxy...`.
+- Where a Velocity word reads oddly, take BDS's: *start* and *stop*, never *boot up* or *shut down*. A server *uses* or *supports* a transport; it never *speaks* or *answers* one.
 - A connection names itself as Velocity's `toString` does: `[initial connection] {address}`, `[connected player] {name} ({address})`, `[server connection] {name} -> {server}`. Its lifecycle lines are `{} has connected` and `{} has disconnected`.
 - Where Velocity has no counterpart, such as a RakNet or NetherNet event, write the line in the same style.
 - Velocity's logging keys sit in `[advanced]` of `endgate.toml` with Velocity's names, defaults and comments, read through `ProxyConfig`:
