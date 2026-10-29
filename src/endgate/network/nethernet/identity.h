@@ -131,4 +131,18 @@ private:
     std::string fingerprints_;
 };
 
+/**
+ * Checks the a=identity a client's offer carries: a token of at most 16 KiB whose cpk claim is a base64
+ * DER key, and a fingerprints JWS that verifies under that key. The token itself is only decoded; its
+ * signature, expiry and audience are left to the caller.
+ *
+ * @see ClientIdentityAssertionVerifier::verify
+ */
+class ClientIdentityAssertionVerifier {
+public:
+    static constexpr std::size_t MAX_TOKEN_SIZE = 16 * 1024;
+
+    [[nodiscard]] static std::optional<JsonWebToken> verify(std::string_view sdp);
+};
+
 }  // namespace endgate::nethernet

@@ -74,9 +74,12 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
     std::shared_ptr<asio::ssl::context> tls;
     try {
         if (!identity_) {
+            const auto key = nethernet::ServerIdentityAssertionGenerator::loadOrCreateKey(identity_key_path);
             identity_ = std::make_shared<const nethernet::ServerIdentityAssertionGenerator>(
-                nethernet::ServerIdentityAssertionGenerator::loadOrCreateKey(identity_key_path),
-                nethernet::ServerIdentityAssertionGenerator::Config{});
+                key, nethernet::ServerIdentityAssertionGenerator::Config{});
+            offer_identity_ = std::make_shared<const nethernet::ServerIdentityAssertionGenerator>(
+                key, nethernet::ServerIdentityAssertionGenerator::Config{
+                         .cpk_encoding = nethernet::CpkEncoding::SubjectPublicKeyInfo});
         }
         if (!configuration.getTlsCertificate().empty()) {
             tls = nethernet::HttpSignalingServer::loadTls(configuration.getTlsCertificate(),
@@ -92,7 +95,7 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
     auto socket = sockets.begin();
     for (auto &loop : group_) {
         endpoints_.emplace_back(server_, loop, registry_, *socket++, offline_.getGuid(),
-                                offline_.getOfflinePingResponse(), identity_, tls);
+                                offline_.getOfflinePingResponse(), identity_, offer_identity_, tls);
     }
     try {
         for (auto &endpoint : endpoints_) {

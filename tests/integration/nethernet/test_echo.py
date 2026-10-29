@@ -2,6 +2,7 @@ import asyncio
 import time
 
 import nethernet
+from harness import connect_player
 from nethernet import SendType
 
 
@@ -10,7 +11,7 @@ def run(coroutine):
 
 
 async def connect(echo) -> nethernet.Connection:
-    return await nethernet.connect_http(echo.url, timeout=20)
+    return await connect_player(echo.url)
 
 
 def payload(size: int, seed: int) -> bytes:

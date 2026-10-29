@@ -41,6 +41,7 @@ private:
     spdlog::logger &logger_;
     OfflineMessageHandler offline_;
     std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity_;
+    std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> offer_identity_;
     Registry registry_;
     EventLoopGroup group_;
     asio::signal_set signals_;

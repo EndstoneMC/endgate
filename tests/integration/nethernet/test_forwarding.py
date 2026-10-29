@@ -3,6 +3,7 @@ import re
 
 import nethernet
 import raknet
+from harness import connect_player
 from nethernet import SendType
 
 BATCH = bytes([0xFE])
@@ -18,7 +19,7 @@ def payload(size: int, seed: int) -> bytes:
 
 async def join(proxy, backend):
     """A NetherNet player on the proxy, and the connection the proxy opened to the RakNet backend for it."""
-    player = await nethernet.connect_http(proxy.url, timeout=20)
+    player = await connect_player(proxy.url)
     upstream = await asyncio.to_thread(backend.accept, 10)
     assert await asyncio.to_thread(proxy.wait_for, "-> lobby has connected", 5), proxy.lines
     return player, upstream

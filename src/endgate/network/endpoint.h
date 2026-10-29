@@ -48,6 +48,7 @@ public:
              std::shared_ptr<asio::ip::udp::socket> socket, std::uint64_t guid,
              std::span<const std::byte> offline_ping_response,
              std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity,
+             std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> offer_identity,
              std::shared_ptr<asio::ssl::context> tls);
     Endpoint(const Endpoint &) = delete;
     Endpoint &operator=(const Endpoint &) = delete;
@@ -63,6 +64,10 @@ public:
     [[nodiscard]] const std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> &getIdentity() const
     {
         return identity_;
+    }
+    [[nodiscard]] const std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> &getOfferIdentity() const
+    {
+        return offer_identity_;
     }
 
     void listen(const asio::ip::tcp::endpoint &endpoint);
@@ -120,6 +125,7 @@ private:
     raknet::OfflineHandler offline_;
     std::shared_ptr<const rtc::Certificate> certificate_;
     std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity_;
+    std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> offer_identity_;
     nethernet::NetworkSession::Config session_config_;
     std::shared_ptr<nethernet::HttpSignalingServer> signaling_;
     nethernet::DnsCache dns_;

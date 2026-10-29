@@ -113,6 +113,15 @@ struct CpkClaim {
     };
 };
 
+struct ClientCpkClaim {
+    std::string cpk;
+
+    struct glaze {
+        using T = ClientCpkClaim;
+        static constexpr auto value = glz::object("cpk", &T::cpk);
+    };
+};
+
 template <typename Cpk>
 struct Claims {
     Cpk cpk;
@@ -288,6 +297,20 @@ std::optional<std::string> sign(EVP_PKEY *key, std::string_view input)
 
 bool verify(EVP_PKEY *key, std::string_view algorithm, std::string_view input, std::span<const std::byte> raw)
 {
+    if (key != nullptr && EVP_PKEY_get_base_id(key) == EVP_PKEY_RSA) {
+        constexpr std::array<std::pair<std::string_view, const EVP_MD *(*)()>, 3> rsa_algorithms{{
+            {"RS256", EVP_sha256},
+            {"RS384", EVP_sha384},
+            {"RS512", EVP_sha512},
+        }};
+        const auto *const rsa =
+            std::ranges::find(rsa_algorithms, algorithm, &decltype(rsa_algorithms)::value_type::first);
+        const std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> context(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+        return rsa != rsa_algorithms.end() && context &&
+               EVP_DigestVerifyInit(context.get(), nullptr, rsa->second(), nullptr, key) == 1 &&
+               EVP_DigestVerify(context.get(), reinterpret_cast<const unsigned char *>(raw.data()), raw.size(),
+                                reinterpret_cast<const unsigned char *>(input.data()), input.size()) == 1;
+    }
     const auto *const curve = curveOf(key);
     if (curve == nullptr || curve->algorithm != algorithm || raw.size() != curve->coordinate_size * 2) {
         return false;
@@ -309,6 +332,16 @@ bool verify(EVP_PKEY *key, std::string_view algorithm, std::string_view input, s
            EVP_DigestVerifyInit(context.get(), nullptr, curve->digest(), nullptr, key) == 1 &&
            EVP_DigestVerify(context.get(), der, static_cast<std::size_t>(der_length),
                             reinterpret_cast<const unsigned char *>(input.data()), input.size()) == 1;
+}
+
+PublicKey subjectPublicKeyInfoOf(std::string_view base64)
+{
+    const auto der = base64Decode(base64);
+    if (!der) {
+        return nullptr;
+    }
+    const auto *cursor = reinterpret_cast<const unsigned char *>(der->data());
+    return {d2i_PUBKEY(nullptr, &cursor, static_cast<std::int64_t>(der->size())), EVP_PKEY_free};
 }
 
 template <typename Value>
@@ -357,12 +390,7 @@ PublicKey JsonWebToken::publicKey() const
         return nullptr;
     }
     if (const auto *const spki = std::get_if<std::string>(&claim.cpk)) {
-        const auto der = base64Decode(*spki);
-        if (!der) {
-            return nullptr;
-        }
-        const auto *cursor = reinterpret_cast<const unsigned char *>(der->data());
-        return {d2i_PUBKEY(nullptr, &cursor, static_cast<std::int64_t>(der->size())), EVP_PKEY_free};
+        return subjectPublicKeyInfoOf(*spki);
     }
     const auto &jwk = std::get<JsonWebKey>(claim.cpk);
     const auto *const curve = std::ranges::find(CURVES, jwk.crv, &Curve::jwk_name);
@@ -640,6 +668,25 @@ bool IdentityAssertion::verifyFingerprints(EVP_PKEY *key) const
 {
     const auto jws = getSignedFingerprints();
     return jws && verifyDetachedJws(*jws, fingerprints_, key);
+}
+
+std::optional<JsonWebToken> ClientIdentityAssertionVerifier::verify(std::string_view sdp)
+{
+    const auto assertion = IdentityAssertion::extractFromSdp(sdp);
+    const auto token = assertion ? assertion->getToken() : std::nullopt;
+    if (!token || token->size() > MAX_TOKEN_SIZE) {
+        return std::nullopt;
+    }
+    auto decoded = JsonWebToken::decode(*token);
+    ClientCpkClaim claim;
+    if (!decoded || glz::read<LENIENT_READ>(claim, decoded->claims)) {
+        return std::nullopt;
+    }
+    const auto key = subjectPublicKeyInfoOf(claim.cpk);
+    if (!key || !assertion->verifyFingerprints(key.get())) {
+        return std::nullopt;
+    }
+    return decoded;
 }
 
 }  // namespace endgate::nethernet

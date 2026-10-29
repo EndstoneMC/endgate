@@ -1,9 +1,9 @@
 import asyncio
 import socket
 
-import nethernet
 import pytest
 import raknet
+from harness import connect_player
 
 BATCH = bytes([0xFE])
 
@@ -28,7 +28,7 @@ def test_a_nethernet_player_s_first_batch_waits_for_the_backend(make_proxy, echo
     proxy = make_proxy(echo_backend.port)
 
     async def body():
-        player = await nethernet.connect_http(proxy.url, timeout=20)
+        player = await connect_player(proxy.url)
         sent = batches(20)
         for batch in sent:
             await player.send(batch)
@@ -70,4 +70,6 @@ def test_too_much_before_the_backend_is_up_closes_the_player(make_proxy, silent_
             player.recv(timeout=5)
     finally:
         player.close()
-    assert proxy.events(r"WARN \[server connection\] .* -> lobby: more than 65536 bytes arrived before the server was up")
+    assert proxy.events(
+        r"WARN \[server connection\] .* -> lobby: more than 65536 bytes arrived before the server was up"
+    )

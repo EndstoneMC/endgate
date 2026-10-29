@@ -33,10 +33,12 @@ Endpoint::Endpoint(ProxyServer &server, EventLoop &event_loop, Registry &registr
                    std::shared_ptr<asio::ip::udp::socket> socket, std::uint64_t guid,
                    std::span<const std::byte> offline_ping_response,
                    std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity,
+                   std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> offer_identity,
                    std::shared_ptr<asio::ssl::context> tls)
     : server_(server), logger_(LogManager::getLogger("endgate::Endpoint")), event_loop_(event_loop),
       registry_(registry), socket_(std::move(socket)), offline_(*this, guid), certificate_(rtc::Certificate::shared()),
-      identity_(std::move(identity)), session_config_{.max_packet_size = 8 * 1024 * 1024},
+      identity_(std::move(identity)), offer_identity_(std::move(offer_identity)),
+      session_config_{.max_packet_size = 8 * 1024 * 1024},
       signaling_(nethernet::HttpSignalingServer::create(event_loop, *this, {}, std::move(tls)))
 {
     offline_.setOfflinePingResponse(Unpooled::wrappedBuffer(offline_ping_response));
@@ -331,6 +333,10 @@ Awaitable<void> Endpoint::join(nethernet::JoinRequest request, nethernet::JoinRe
 {
     constexpr std::chrono::seconds resolve_timeout{2};
 
+    if (!nethernet::ClientIdentityAssertionVerifier::verify(request.offer)) {
+        response.reject(static_cast<std::uint32_t>(nethernet::ESessionError::IdentityNotAllowed));
+        co_return;
+    }
     const auto offer = rtc::Description::parse(nethernet::IdentityAssertion::stripFromSdp(request.offer));
     if (!offer) {
         response.reject(static_cast<std::uint32_t>(nethernet::ESessionError::FailedToSetRemoteDescription));

@@ -31,7 +31,7 @@ class Node {
 public:
     Node(ProxyServer &server, Registry &registry)
         : socket_(std::make_shared<asio::ip::udp::socket>(loop_.getExecutor(), asio::ip::udp::endpoint{LOOPBACK, 0})),
-          endpoint_(server, loop_, registry, socket_, 1, std::span<const std::byte>{}, nullptr, nullptr)
+          endpoint_(server, loop_, registry, socket_, 1, std::span<const std::byte>{}, nullptr, nullptr, nullptr)
     {
         loop_.execute([this] { endpoint_.start(); });
     }

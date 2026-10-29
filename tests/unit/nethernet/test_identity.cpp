@@ -1,5 +1,6 @@
 #include <unistd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -11,6 +12,7 @@
 #include <openssl/ec.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
+#include <openssl/rsa.h>
 
 #include "endgate/network/nethernet/identity.h"
 
@@ -202,6 +204,68 @@ TEST(JsonWebTokenTest, RejectsMalformedTokens)
     EXPECT_FALSE(no_cpk.publicKey());
     const JsonWebToken bad_jwk{.claims = R"({"cpk":{"kty":"EC","crv":"P-256","x":"AA","y":"AA"}})"};
     EXPECT_FALSE(bad_jwk.publicKey());
+}
+
+TEST(JsonWebTokenTest, VerifiesAnRs256Signature)
+{
+    const PublicKey key(EVP_RSA_gen(2048), EVP_PKEY_free);
+    ASSERT_TRUE(key);
+    const std::string header = "eyJhbGciOiJSUzI1NiJ9";
+    const std::string payload = R"({"fingerprint":[]})";
+    const std::string signing_input = header + ".eyJmaW5nZXJwcmludCI6W119";
+    const std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> context(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+    std::size_t length = 0;
+    ASSERT_EQ(EVP_DigestSignInit(context.get(), nullptr, EVP_sha256(), nullptr, key.get()), 1);
+    ASSERT_EQ(EVP_DigestSign(context.get(), nullptr, &length,
+                             reinterpret_cast<const unsigned char *>(signing_input.data()), signing_input.size()),
+              1);
+    std::string signature(length, '\0');
+    ASSERT_EQ(EVP_DigestSign(context.get(), reinterpret_cast<unsigned char *>(signature.data()), &length,
+                             reinterpret_cast<const unsigned char *>(signing_input.data()), signing_input.size()),
+              1);
+    std::string encoded(((length + 2) / 3) * 4, '\0');
+    encoded.resize(static_cast<std::size_t>(EVP_EncodeBlock(reinterpret_cast<unsigned char *>(encoded.data()),
+                                                            reinterpret_cast<const unsigned char *>(signature.data()),
+                                                            static_cast<int>(length))));
+    std::ranges::replace(encoded, '+', '-');
+    std::ranges::replace(encoded, '/', '_');
+    std::erase(encoded, '=');
+
+    EXPECT_TRUE(verifyDetachedJws(header + ".." + encoded, payload, key.get()));
+    EXPECT_FALSE(verifyDetachedJws(header + ".." + encoded, payload + " ", key.get()));
+    EXPECT_FALSE(verifyDetachedJws("eyJhbGciOiJSUzM4NCJ9.." + encoded, payload, key.get()));
+    EXPECT_FALSE(verifyDetachedJws("eyJhbGciOiJFUzI1NiJ9.." + encoded, payload, key.get()));
+}
+
+TEST(ClientIdentityAssertionVerifierTest, AcceptsAnOfferSignedUnderItsBase64DerCpk)
+{
+    const auto key = generateKey("P-384");
+    const ServerIdentityAssertionGenerator generator(key, {.cpk_encoding = CpkEncoding::SubjectPublicKeyInfo});
+    const auto offer = IdentityAssertion::create(generator, ANSWER_SDP, NOW)->injectIntoSdp(ANSWER_SDP);
+
+    const auto token = ClientIdentityAssertionVerifier::verify(offer);
+    ASSERT_TRUE(token);
+    EXPECT_EQ(token->algorithm, "ES384");
+    EXPECT_NE(token->claims.find(R"("cpk":"MHYw)"), std::string::npos) << token->claims;
+}
+
+TEST(ClientIdentityAssertionVerifierTest, RefusesWhatBdsRefuses)
+{
+    const ServerIdentityAssertionGenerator spki(generateKey("P-384"),
+                                                {.cpk_encoding = CpkEncoding::SubjectPublicKeyInfo});
+    const ServerIdentityAssertionGenerator jwk(generateKey("P-384"), {});
+    const auto offer = IdentityAssertion::create(spki, ANSWER_SDP, NOW)->injectIntoSdp(ANSWER_SDP);
+
+    EXPECT_FALSE(ClientIdentityAssertionVerifier::verify(ANSWER_SDP));
+    EXPECT_FALSE(ClientIdentityAssertionVerifier::verify(
+        IdentityAssertion::create(jwk, ANSWER_SDP, NOW)->injectIntoSdp(ANSWER_SDP)));
+    auto tampered = offer;
+    tampered.replace(tampered.find("11:22:33"), 8, "11:22:34");
+    EXPECT_FALSE(ClientIdentityAssertionVerifier::verify(tampered));
+    auto without_fingerprint = offer;
+    without_fingerprint.erase(without_fingerprint.find("a=fingerprint:"),
+                              std::string_view{"a=fingerprint:sha-256 11:22:33\r\n"}.size());
+    EXPECT_FALSE(ClientIdentityAssertionVerifier::verify(without_fingerprint));
 }
 
 TEST(ServerIdentityAssertionGeneratorTest, KeepsItsKeyAcrossRestarts)

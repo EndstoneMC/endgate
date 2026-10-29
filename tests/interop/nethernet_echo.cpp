@@ -60,6 +60,10 @@ public:
 
     void onJoin(endgate::nethernet::JoinRequest request, endgate::nethernet::JoinResponse response) override
     {
+        if (!endgate::nethernet::ClientIdentityAssertionVerifier::verify(request.offer)) {
+            response.reject(static_cast<std::uint32_t>(ESessionError::IdentityNotAllowed));
+            return;
+        }
         const auto offer =
             endgate::rtc::Description::parse(endgate::nethernet::IdentityAssertion::stripFromSdp(request.offer));
         if (!offer) {

@@ -10,6 +10,7 @@ import threading
 import time
 from pathlib import Path
 
+import nethernet
 import raknet
 from nethernet import serve_http
 from nethernet.identity import IdentitySigner, generate_operator_key
@@ -17,6 +18,14 @@ from nethernet.identity import IdentitySigner, generate_operator_key
 REPOSITORY = Path(__file__).resolve().parents[2]
 DEFAULT_BINARY = REPOSITORY / "build" / "RelWithDebInfo" / "endgate"
 DEFAULT_ECHO = REPOSITORY / "build" / "RelWithDebInfo" / "tests" / "interop" / "endgate_nethernet_echo"
+
+
+PLAYER_IDENTITY = IdentitySigner(generate_operator_key(), domain="self")
+
+
+async def connect_player(url: str, identity_signer=PLAYER_IDENTITY) -> nethernet.Connection:
+    """A NetherNet player dialling as a Bedrock client does, its offer signed with its own key."""
+    return await nethernet.connect_http(url, timeout=20, identity_signer=identity_signer)
 
 
 def free_port() -> int:

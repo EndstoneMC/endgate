@@ -79,7 +79,7 @@ Awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> self)
         self->connection_ = connection;
         endpoint.registerConnection(connection, std::nullopt);
         self->logger_.debug("[server connection] {} -> {}: connecting over NetherNet", player_address, info.getName());
-        connection->connect(info.getHost(), info.getPort(), endpoint.getIdentity());
+        connection->connect(info.getHost(), info.getPort(), endpoint.getOfferIdentity());
         co_return;
     }
 

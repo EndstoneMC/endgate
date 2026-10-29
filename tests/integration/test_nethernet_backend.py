@@ -1,7 +1,7 @@
 import asyncio
 
-import nethernet
 import raknet
+from harness import connect_player
 
 BATCH = bytes([0xFE])
 SIZES = (1, 1400, 65535, 300000, 1_000_000)
@@ -29,7 +29,7 @@ def test_a_nethernet_player_reaches_a_nethernet_backend(make_proxy, nethernet_ba
     proxy = make_proxy(nethernet_backend.port)
 
     async def body():
-        player = await nethernet.connect_http(proxy.url, timeout=20)
+        player = await connect_player(proxy.url)
         for size in SIZES:
             data = payload(size, size & 0xFF)
             await player.send(data)

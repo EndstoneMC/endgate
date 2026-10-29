@@ -187,7 +187,8 @@ private:
     std::shared_ptr<endgate::nethernet::ServerIdentityAssertionGenerator> generator_{
         std::make_shared<endgate::nethernet::ServerIdentityAssertionGenerator>(
             endgate::nethernet::PrivateKey{EVP_EC_gen("P-384"), EVP_PKEY_free},
-            endgate::nethernet::ServerIdentityAssertionGenerator::Config{})};
+            endgate::nethernet::ServerIdentityAssertionGenerator::Config{
+                .cpk_encoding = endgate::nethernet::CpkEncoding::SubjectPublicKeyInfo})};
     endgate::rtc::IceCredentials credentials_{endgate::rtc::IceCredentials::generate()};
     std::vector<std::byte> payload_{payloadOf(5000)};
     std::array<std::byte, 65536> buffer_{};

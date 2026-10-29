@@ -1,7 +1,7 @@
 import asyncio
 
-import nethernet
 import raknet
+from harness import connect_player
 
 BATCH = bytes([0xFE])
 
@@ -18,7 +18,7 @@ def test_raknet_and_nethernet_players_share_the_port(make_proxy, echo_backend):
             player.close()
 
     async def nethernet_player(index: int) -> bytes:
-        player = await nethernet.connect_http(proxy.url, timeout=20)
+        player = await connect_player(proxy.url)
         await player.send(b"nethernet" + bytes([index]))
         reply = await asyncio.wait_for(player.recv(), 10)
         await player.close()
