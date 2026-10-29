@@ -70,7 +70,7 @@ void ClientPlaySessionHandler::connected()
     player_->createConnectionRequest(*server);
 }
 
-void ClientPlaySessionHandler::handleUnknown(ByteBuf batch)
+void ClientPlaySessionHandler::handleUnknown(ByteBufView batch)
 {
     const auto &server = player_->getConnectedServer();
     if (!server) {
@@ -78,7 +78,14 @@ void ClientPlaySessionHandler::handleUnknown(ByteBuf batch)
                       player_->getConnection().getRemoteAddress(), batch.readableBytes());
         return;
     }
-    server->write(std::move(batch));
+    server->write(batch.copy());
+}
+
+void ClientPlaySessionHandler::readCompleted()
+{
+    if (const auto &server = player_->getConnectedServer()) {
+        server->flush();
+    }
 }
 
 void ClientPlaySessionHandler::disconnected()

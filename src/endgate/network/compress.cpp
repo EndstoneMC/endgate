@@ -8,13 +8,11 @@
 
 namespace endgate {
 
-MinecraftCompressDecoder::MinecraftCompressDecoder()
-    : decompressor_(libdeflate_alloc_decompressor(), libdeflate_free_decompressor)
-{
-}
-
 void MinecraftCompressDecoder::setCompressionEnabled(bool enabled, PacketCompressionAlgorithm algorithm)
 {
+    if (enabled && !decompressor_) {
+        decompressor_ = {libdeflate_alloc_decompressor(), libdeflate_free_decompressor};
+    }
     enabled_ = enabled;
     algorithm_ = algorithm;
 }
@@ -85,15 +83,16 @@ ByteBuf MinecraftCompressDecoder::decompress(const ByteBufView &batch) const
 }
 
 MinecraftCompressEncoder::MinecraftCompressEncoder(int compression_level)
+    : compression_level_(compression_level < 0 ? DEFAULT_COMPRESSION_LEVEL : compression_level)
 {
-    constexpr int default_compression_level = 6;
-    compressor_ = {libdeflate_alloc_compressor(compression_level < 0 ? default_compression_level : compression_level),
-                   libdeflate_free_compressor};
 }
 
 void MinecraftCompressEncoder::setCompressionEnabled(bool enabled, PacketCompressionAlgorithm algorithm,
                                                      std::uint16_t threshold)
 {
+    if (enabled && !compressor_) {
+        compressor_ = {libdeflate_alloc_compressor(compression_level_), libdeflate_free_compressor};
+    }
     enabled_ = enabled;
     algorithm_ = algorithm;
     threshold_ = threshold;

@@ -50,8 +50,6 @@ private:
  */
 class MinecraftCompressDecoder : public MessageToMessageDecoder {
 public:
-    MinecraftCompressDecoder();
-
     void setCompressionEnabled(bool enabled, PacketCompressionAlgorithm algorithm);
     void setHybridCompressionEnabled(bool enabled);
 
@@ -83,6 +81,8 @@ private:
  */
 class MinecraftCompressEncoder : public MessageToByteEncoder {
 public:
+    static constexpr int DEFAULT_COMPRESSION_LEVEL = 6;
+
     explicit MinecraftCompressEncoder(int compression_level = -1);
 
     void setCompressionEnabled(bool enabled, PacketCompressionAlgorithm algorithm, std::uint16_t threshold);
@@ -107,6 +107,7 @@ public:
 private:
     void compress(const ByteBufView &batch, ByteBuf &out) const;
 
+    int compression_level_;
     bool enabled_{false};
     PacketCompressionAlgorithm algorithm_{PacketCompressionAlgorithm::None};
     std::uint16_t threshold_{0};

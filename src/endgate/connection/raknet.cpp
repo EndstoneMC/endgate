@@ -93,6 +93,7 @@ void RakNetConnection::handleDatagram(std::span<const std::byte> datagram, const
         return;
     }
     connection_.handleDatagram(Unpooled::wrappedBuffer(datagram), raknet::Clock::now());
+    channelReadComplete();
     arm();
 }
 
@@ -156,7 +157,8 @@ void RakNetConnection::onMessage(ByteBufView message)
         logger_.debug("{}: dropping {} bytes, not a batch", getRemoteAddress(), message.readableBytes());
         return;
     }
-    channelRead(Unpooled::copiedBuffer(message.nioBuffer().subspan(1)));
+    message.skipBytes(1);
+    channelRead(message);
 }
 
 void RakNetConnection::onDisconnected(raknet::DisconnectReason reason)
@@ -208,6 +210,7 @@ void RakNetConnection::arm()
         }
         self->armed_.reset();
         self->connection_.handleTimeout(raknet::Clock::now());
+        self->channelReadComplete();
         self->arm();
     });
 }

@@ -106,7 +106,7 @@ void ServerConnection::write(ByteBuf batch)
     constexpr std::size_t max_pending_bytes = 64 * 1024;
 
     if (connected_) {
-        connection_->write(std::move(batch));
+        connection_->delayedWrite(std::move(batch));
         return;
     }
     if (pending_bytes_ > max_pending_bytes) {
@@ -124,6 +124,13 @@ void ServerConnection::write(ByteBuf batch)
     pending_.push_back(std::move(batch));
 }
 
+void ServerConnection::flush()
+{
+    if (connected_) {
+        connection_->flush();
+    }
+}
+
 void ServerConnection::connected()
 {
     if (!player_->isActive() || !connection_) {
@@ -131,8 +138,9 @@ void ServerConnection::connected()
     }
     connected_ = true;
     for (auto &batch : std::exchange(pending_, {})) {
-        connection_->write(std::move(batch));
+        connection_->delayedWrite(std::move(batch));
     }
+    connection_->flush();
     pending_bytes_ = 0;
 }
 
@@ -153,9 +161,14 @@ void BackendPlaySessionHandler::connected()
     server_connection_->connected();
 }
 
-void BackendPlaySessionHandler::handleUnknown(ByteBuf batch)
+void BackendPlaySessionHandler::handleUnknown(ByteBufView batch)
 {
-    server_connection_->getPlayer().getConnection().write(std::move(batch));
+    server_connection_->getPlayer().getConnection().delayedWrite(batch.copy());
+}
+
+void BackendPlaySessionHandler::readCompleted()
+{
+    server_connection_->getPlayer().getConnection().flush();
 }
 
 void BackendPlaySessionHandler::disconnected()

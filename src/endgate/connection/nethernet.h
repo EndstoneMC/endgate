@@ -223,6 +223,7 @@ void NetherNetConnection<Session>::handleDatagram(std::span<const std::byte> dat
         return;
     }
     session_->handleDatagram(Clock::now(), sender, Unpooled::wrappedBuffer(datagram));
+    channelReadComplete();
     arm();
 }
 
@@ -287,7 +288,7 @@ void NetherNetConnection<Session>::onOpen()
 template <typename Session>
 void NetherNetConnection<Session>::onPacket(ByteBufView packet)
 {
-    channelRead(Unpooled::copiedBuffer(packet.nioBuffer()));
+    channelRead(packet);
 }
 
 template <typename Session>
@@ -339,6 +340,7 @@ void NetherNetConnection<Session>::arm()
         }
         self->armed_.reset();
         self->session_->handleTimeout(Clock::now());
+        self->channelReadComplete();
         self->arm();
     });
 }

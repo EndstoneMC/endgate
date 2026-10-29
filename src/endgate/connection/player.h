@@ -72,7 +72,8 @@ public:
     explicit ClientPlaySessionHandler(std::shared_ptr<Player> player);
 
     void connected() override;
-    void handleUnknown(ByteBuf batch) override;
+    void handleUnknown(ByteBufView batch) override;
+    void readCompleted() override;
     void disconnected() override;
 
 private:

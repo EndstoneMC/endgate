@@ -39,6 +39,7 @@ public:
     void disconnect();
 
     void write(ByteBuf batch);
+    void flush();
     void connected();
 
     [[nodiscard]] BackendServer &getServer() const { return server_; }
@@ -73,7 +74,8 @@ public:
     explicit BackendPlaySessionHandler(std::shared_ptr<ServerConnection> server_connection);
 
     void connected() override;
-    void handleUnknown(ByteBuf batch) override;
+    void handleUnknown(ByteBufView batch) override;
+    void readCompleted() override;
     void disconnected() override;
 
 private:
