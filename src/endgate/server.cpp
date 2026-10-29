@@ -1,11 +1,13 @@
 #include "endgate/server.h"
 
 #include <charconv>
+#include <format>
 #include <utility>
 
 #include <asio/ip/address.hpp>
 
 #include "endgate/logging/manager.h"
+#include "endgate/network/version.h"
 
 namespace endgate {
 
@@ -36,6 +38,13 @@ bool ProxyServer::start()
         if (auto info = ServerInfo::parse(name, address)) {
             servers_.try_emplace(name, std::move(*info));
         }
+    }
+
+    if (configuration_.isOnlineMode()) {
+        keys_ = std::make_shared<MinecraftServiceKeyManager>(
+            createHttpClient(), std::format("{}/{}", version.getName(), version.getVersion()),
+            std::format("{}{}", MinecraftServiceKeyManager::DISCOVERY_URI, MAXIMUM_VERSION.getName()));
+        keys_->start();
     }
 
     cm_.logChannelInformation();
@@ -72,6 +81,9 @@ void ProxyServer::shutdown([[maybe_unused]] bool explicit_exit)
     }
 
     logger_.info("Stopping the proxy...");
+    if (keys_) {
+        keys_->shutdown();
+    }
     cm_.shutdown();
     shutdown_.store(true);
 }
@@ -79,6 +91,11 @@ void ProxyServer::shutdown([[maybe_unused]] bool explicit_exit)
 void ProxyServer::awaitProxyShutdown()
 {
     cm_.awaitTermination();
+}
+
+HttpClient ProxyServer::createHttpClient()
+{
+    return cm_.createHttpClient();
 }
 
 bool ProxyServer::isShutdown() const

@@ -45,6 +45,8 @@ add_library(endgate_proxy STATIC
         src/endgate/config.cpp
         src/endgate/console.cpp
         src/endgate/server.cpp
+        src/endgate/auth/keys.cpp
+        src/endgate/auth/token.cpp
         src/endgate/connection/backend.cpp
         src/endgate/connection/connection.cpp
         src/endgate/connection/player.cpp
@@ -54,6 +56,7 @@ add_library(endgate_proxy STATIC
         src/endgate/logging/manager.cpp
         src/endgate/network/compress.cpp
         src/endgate/network/endpoint.cpp
+        src/endgate/network/http.cpp
         src/endgate/network/manager.cpp
         src/endgate/network/offline.cpp
         src/endgate/network/ping.cpp
@@ -65,6 +68,7 @@ target_include_directories(endgate_proxy PUBLIC src ${CMAKE_CURRENT_BINARY_DIR}/
 target_compile_definitions(endgate_proxy PUBLIC ENDGATE_VERSION="${PROJECT_VERSION}")
 
 target_link_libraries(endgate_proxy PUBLIC
+        endgate::crypto
         endgate::eventloop
         endgate::nethernet
         endgate::raknet
@@ -79,4 +83,5 @@ target_link_libraries(endgate_proxy PUBLIC
 add_executable(endgate src/main.cpp)
 target_link_libraries(endgate PRIVATE endgate::proxy)
 
+add_subdirectory(tests/unit/auth)
 add_subdirectory(tests/unit/network)

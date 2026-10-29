@@ -10,6 +10,7 @@
 
 #include "endgate/network/endpoint.h"
 #include "endgate/network/eventloop.h"
+#include "endgate/network/http.h"
 #include "endgate/network/nethernet/identity.h"
 #include "endgate/network/offline.h"
 #include "endgate/network/registry.h"
@@ -31,6 +32,11 @@ public:
     ~ConnectionManager();
 
     void logChannelInformation();
+
+    /**
+     * @see com.velocitypowered.proxy.network.ConnectionManager#createHttpClient
+     */
+    [[nodiscard]] HttpClient createHttpClient();
     bool bind(const asio::ip::address &address, std::uint16_t port);
     void start();
     void shutdown();

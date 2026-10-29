@@ -39,6 +39,11 @@ void ConnectionManager::logChannelInformation()
     logger_.info("Connections will use {} channels, {} compression, {} ciphers", "asio", "libdeflate", "OpenSSL");
 }
 
+HttpClient ConnectionManager::createHttpClient()
+{
+    return HttpClient(group_.next(), {});
+}
+
 bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t port)
 {
     asio::error_code ec;

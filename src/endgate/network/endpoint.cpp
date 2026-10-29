@@ -18,6 +18,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+#include "endgate/auth/token.h"
 #include "endgate/awaitable.h"
 #include "endgate/connection/nethernet.h"
 #include "endgate/connection/player.h"
@@ -333,9 +334,19 @@ Awaitable<void> Endpoint::join(nethernet::JoinRequest request, nethernet::JoinRe
 {
     constexpr std::chrono::seconds resolve_timeout{2};
 
-    if (!nethernet::ClientIdentityAssertionVerifier::verify(request.offer)) {
+    const auto token = nethernet::ClientIdentityAssertionVerifier::verify(request.offer);
+    if (!token) {
+        logger_.debug("Refusing NetherNet network {}: its identity doesn't verify", request.network_id);
         response.reject(static_cast<std::uint32_t>(nethernet::ESessionError::IdentityNotAllowed));
         co_return;
+    }
+    if (auto *const keys = server_.getMinecraftServiceKeyManager()) {
+        if (const auto identity = GameServerToken::validate(*token, *keys); !identity) {
+            logger_.debug("Refusing NetherNet network {}: its token fails validation ({})", request.network_id,
+                          static_cast<int>(identity.error()));
+            response.reject(static_cast<std::uint32_t>(nethernet::ESessionError::IdentityNotAllowed));
+            co_return;
+        }
     }
     const auto offer = rtc::Description::parse(nethernet::IdentityAssertion::stripFromSdp(request.offer));
     if (!offer) {
