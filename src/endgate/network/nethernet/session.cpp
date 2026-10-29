@@ -40,7 +40,7 @@ void NetworkSession::handleDatagram(Clock::time_point now, const asio::ip::udp::
     advance();
 }
 
-bool NetworkSession::send(const ByteBuf &packet, ESendType type, Clock::time_point now)
+bool NetworkSession::send(const LegacyByteBuf &packet, ESendType type, Clock::time_point now)
 {
     if (!isOpen()) {
         return false;
@@ -164,7 +164,7 @@ void NetworkSession::onChannelOpen(const rtc::DataChannel &channel)
     }
 }
 
-void NetworkSession::onChannelMessage(const rtc::DataChannel &channel, ByteBuf message, bool)
+void NetworkSession::onChannelMessage(const rtc::DataChannel &channel, LegacyByteBuf message, bool)
 {
     if (channel.stream == reliable_stream_) {
         queue_.onOrderedMessage(message);
@@ -181,7 +181,7 @@ void NetworkSession::onChannelClosed(const rtc::DataChannel &channel)
     }
 }
 
-void NetworkSession::sendFragment(ESendType type, ByteBuf fragment)
+void NetworkSession::sendFragment(ESendType type, LegacyByteBuf fragment)
 {
     const auto stream = type == ESendType::Reliable ? reliable_stream_ : unreliable_stream_;
     if (!stream || closed_) {
@@ -192,7 +192,7 @@ void NetworkSession::sendFragment(ESendType type, ByteBuf fragment)
     }
 }
 
-void NetworkSession::onPacket(ByteBuf packet)
+void NetworkSession::onPacket(LegacyByteBuf packet)
 {
     if (!closed_) {
         listener_.onPacket(std::move(packet));
@@ -326,7 +326,7 @@ void DialerSession::handleDatagram(Clock::time_point now, const asio::ip::udp::e
     advance();
 }
 
-bool DialerSession::send(const ByteBuf &packet, ESendType type, Clock::time_point now)
+bool DialerSession::send(const LegacyByteBuf &packet, ESendType type, Clock::time_point now)
 {
     if (!isOpen()) {
         return false;
@@ -428,7 +428,7 @@ void DialerSession::onStateChange(rtc::SctpTransport::State state)
 
 void DialerSession::onChannelOpen(const rtc::DataChannel &) {}
 
-void DialerSession::onChannelMessage(const rtc::DataChannel &channel, ByteBuf message, bool)
+void DialerSession::onChannelMessage(const rtc::DataChannel &channel, LegacyByteBuf message, bool)
 {
     if (channel.stream == reliable_stream_) {
         queue_.onOrderedMessage(message);
@@ -445,7 +445,7 @@ void DialerSession::onChannelClosed(const rtc::DataChannel &channel)
     }
 }
 
-void DialerSession::sendFragment(ESendType type, ByteBuf fragment)
+void DialerSession::sendFragment(ESendType type, LegacyByteBuf fragment)
 {
     const auto stream = type == ESendType::Reliable ? reliable_stream_ : unreliable_stream_;
     if (!stream || closed_) {
@@ -456,7 +456,7 @@ void DialerSession::sendFragment(ESendType type, ByteBuf fragment)
     }
 }
 
-void DialerSession::onPacket(ByteBuf packet)
+void DialerSession::onPacket(LegacyByteBuf packet)
 {
     if (!closed_) {
         listener_.onPacket(std::move(packet));

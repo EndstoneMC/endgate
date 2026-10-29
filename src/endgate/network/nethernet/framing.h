@@ -28,8 +28,8 @@ public:
     class Listener {
     public:
         virtual ~Listener() = default;
-        virtual void sendFragment(ESendType type, ByteBuf fragment) = 0;
-        virtual void onPacket(ByteBuf packet) = 0;
+        virtual void sendFragment(ESendType type, LegacyByteBuf fragment) = 0;
+        virtual void onPacket(LegacyByteBuf packet) = 0;
         virtual void closeChannel(ESendType type) = 0;
     };
 
@@ -40,19 +40,19 @@ public:
 
     bool setMaxMessageSize(std::size_t max_message_size);
 
-    bool push(const ByteBuf &packet, ESendType type);
+    bool push(const LegacyByteBuf &packet, ESendType type);
 
-    void onOrderedMessage(const ByteBuf &message);
+    void onOrderedMessage(const LegacyByteBuf &message);
 
-    void onUnorderedMessage(const ByteBuf &message);
+    void onUnorderedMessage(const LegacyByteBuf &message);
 
 private:
     struct PartialReceive {
         std::uint8_t expected_header;
-        ByteBuf data;
+        LegacyByteBuf data;
     };
 
-    void sendFragment(std::uint8_t header, ByteBuf payload, ESendType type);
+    void sendFragment(std::uint8_t header, LegacyByteBuf payload, ESendType type);
 
     Listener &listener_;
     std::size_t max_packet_size_;

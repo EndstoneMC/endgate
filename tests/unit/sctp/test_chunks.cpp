@@ -96,7 +96,7 @@ TEST(DataChunk, SerializesCapture)
 {
     EXPECT_EQ(serialized([](PacketBuilder &builder) {
                   builder.addData({.tsn = 1426601532, .stream = 2, .ssn = 1, .ppid = 53, .flags = 3, .payload = {}},
-                                  ByteBuf::copyBuffer(bytes({0, 1, 2, 3})));
+                                  LegacyByteBuf::copyBuffer(bytes({0, 1, 2, 3})));
               }),
               CAPTURED_DATA);
 }
@@ -105,15 +105,15 @@ TEST(DataChunk, PadsOddPayload)
 {
     const auto chunk = serialized([](PacketBuilder &builder) {
         builder.addData({.tsn = 7, .stream = 1, .ssn = 0, .ppid = 51, .flags = 3, .payload = {}},
-                        ByteBuf::copyBuffer(bytes({0xaa})));
+                        LegacyByteBuf::copyBuffer(bytes({0xaa})));
     });
     EXPECT_EQ(chunk, bytes({0x00, 0x03, 0x00, 0x11, 0, 0, 0, 7, 0, 1, 0, 0, 0, 0, 0, 51, 0xaa, 0, 0, 0}));
 }
 
 TEST(DataChunk, SerializesChainedPayload)
 {
-    auto payload = ByteBuf::copyBuffer(bytes({1, 2}));
-    payload.appendToChain(ByteBuf::copyBuffer(bytes({3, 4, 5})));
+    auto payload = LegacyByteBuf::copyBuffer(bytes({1, 2}));
+    payload.appendToChain(LegacyByteBuf::copyBuffer(bytes({3, 4, 5})));
     const auto chunk = serialized([&](PacketBuilder &builder) {
         builder.addData({.tsn = 1, .stream = 0, .ssn = 0, .ppid = 53, .flags = 3, .payload = {}}, payload);
     });

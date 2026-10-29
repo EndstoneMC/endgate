@@ -99,7 +99,7 @@ void ServerConnection::disconnect()
     }
 }
 
-void ServerConnection::write(ByteBuf batch)
+void ServerConnection::write(LegacyByteBuf batch)
 {
     constexpr std::size_t max_pending_bytes = 64 * 1024;
 
@@ -148,7 +148,7 @@ void BackendPlaySessionHandler::connected()
     asio::post(player.getExecutor(), [server_connection = server_connection_] { server_connection->connected(); });
 }
 
-void BackendPlaySessionHandler::handleUnknown(ByteBuf batch)
+void BackendPlaySessionHandler::handleUnknown(LegacyByteBuf batch)
 {
     server_connection_->getPlayer().getConnection().write(std::move(batch));
 }

@@ -63,7 +63,7 @@ public:
         virtual void sendPacket(std::span<const std::byte> packet) = 0;
         virtual void onStateChange(State state) = 0;
         virtual void onChannelOpen(const DataChannel &channel) = 0;
-        virtual void onChannelMessage(const DataChannel &channel, ByteBuf message, bool binary) = 0;
+        virtual void onChannelMessage(const DataChannel &channel, LegacyByteBuf message, bool binary) = 0;
         virtual void onChannelClosed(const DataChannel &channel) = 0;
     };
 
@@ -77,7 +77,7 @@ public:
     std::optional<std::uint16_t> createDataChannel(std::string label, std::string protocol,
                                                    const Reliability &reliability, std::uint16_t priority,
                                                    Clock::time_point now);
-    bool send(std::uint16_t stream, ByteBuf message, bool binary, Clock::time_point now);
+    bool send(std::uint16_t stream, LegacyByteBuf message, bool binary, Clock::time_point now);
 
     /**
      * @see RFC 8831 section 6.7

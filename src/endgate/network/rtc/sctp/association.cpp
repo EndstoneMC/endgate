@@ -184,8 +184,8 @@ std::optional<Association::Clock::time_point> Association::nextTimeout() const
     return next;
 }
 
-bool Association::send(std::uint16_t stream, std::uint32_t ppid, ByteBuf payload, const Sender::SendOptions &options,
-                       Clock::time_point now)
+bool Association::send(std::uint16_t stream, std::uint32_t ppid, LegacyByteBuf payload,
+                       const Sender::SendOptions &options, Clock::time_point now)
 {
     if (!tcb_ || state_ != State::Established || stream >= tcb_->outbound_streams ||
         !tcb_->sender.send(stream, ppid, std::move(payload), options, now)) {
@@ -647,7 +647,7 @@ void Association::handleData(const Chunk &chunk, std::vector<Message> &delivered
         queue(ChunkType::Error, 0, cause(CauseCode::InvalidStreamIdentifier, stream));
         return;
     }
-    tcb_->receiver.receive(*header, ByteBuf::copyBuffer(header->payload), delivered);
+    tcb_->receiver.receive(*header, LegacyByteBuf::copyBuffer(header->payload), delivered);
 }
 
 void Association::handleSack(const Chunk &chunk, Clock::time_point now)

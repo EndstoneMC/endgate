@@ -21,7 +21,7 @@ constexpr std::uint8_t UNORDERED = DataChunk::UNORDERED_FLAG;
 const Receiver::Config CONFIG{.window = 1 << 20, .max_message_size = 262144, .streams = 1024};
 const auto START = std::chrono::steady_clock::time_point{} + 1h;
 
-std::string text(const ByteBuf &buf)
+std::string text(const LegacyByteBuf &buf)
 {
     std::string result(buf.length(), '\0');
     buf.copyTo(std::as_writable_bytes(std::span{result}));
@@ -34,7 +34,7 @@ protected:
                            const std::string &payload)
     {
         const DataChunk chunk{.tsn = tsn, .stream = stream, .ssn = ssn, .ppid = 51, .flags = flags, .payload = {}};
-        return receiver_.receive(chunk, ByteBuf::copyBuffer(std::as_bytes(std::span{payload})), delivered_);
+        return receiver_.receive(chunk, LegacyByteBuf::copyBuffer(std::as_bytes(std::span{payload})), delivered_);
     }
 
     std::vector<std::string> take()
@@ -276,7 +276,7 @@ TEST_F(ReceiverTest, AcceptsOnlyTheNextTsnWhenWindowIsFull)
     const std::string payload(1000, 'x');
     const auto send = [&](std::uint32_t tsn, std::uint16_t ssn) {
         const DataChunk chunk{.tsn = tsn, .stream = 1, .ssn = ssn, .ppid = 53, .flags = WHOLE, .payload = {}};
-        return small.receive(chunk, ByteBuf::copyBuffer(std::as_bytes(std::span{payload})), out);
+        return small.receive(chunk, LegacyByteBuf::copyBuffer(std::as_bytes(std::span{payload})), out);
     };
     for (std::uint32_t i = 1; i <= 4; ++i) {
         EXPECT_EQ(send(100 + i, static_cast<std::uint16_t>(i)), Receiver::Outcome::Accepted);
@@ -301,7 +301,7 @@ TEST_F(ReceiverTest, FailsWhenPeerKeepsFillingPastTheWindow)
                               .ppid = 53,
                               .flags = WHOLE,
                               .payload = {}};
-        small.receive(chunk, ByteBuf::copyBuffer(std::as_bytes(std::span{payload})), out);
+        small.receive(chunk, LegacyByteBuf::copyBuffer(std::as_bytes(std::span{payload})), out);
     }
     EXPECT_TRUE(out.empty());
     EXPECT_EQ(small.failure(), CauseCode::OutOfResource);
@@ -336,7 +336,7 @@ TEST_F(ReceiverTest, FollowsTsnAcrossWrap)
                               .ppid = 51,
                               .flags = WHOLE,
                               .payload = {}};
-        EXPECT_EQ(wrapping.receive(chunk, ByteBuf::copyBuffer(std::vector<std::byte>(1)), out),
+        EXPECT_EQ(wrapping.receive(chunk, LegacyByteBuf::copyBuffer(std::vector<std::byte>(1)), out),
                   Receiver::Outcome::Accepted);
     }
     EXPECT_EQ(out.size(), 4U);

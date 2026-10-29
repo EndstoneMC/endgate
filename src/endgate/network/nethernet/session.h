@@ -91,7 +91,7 @@ public:
         virtual void onRouteAdded(const asio::ip::udp::endpoint &remote) = 0;
         virtual void onRouteRemoved(const asio::ip::udp::endpoint &remote) = 0;
         virtual void onOpen() = 0;
-        virtual void onPacket(ByteBuf packet) = 0;
+        virtual void onPacket(LegacyByteBuf packet) = 0;
         virtual void onClosed(ESessionError reason) = 0;
     };
 
@@ -109,7 +109,7 @@ public:
     /**
      * @see NetherNet::NetworkSession::sendPacket
      */
-    bool send(const ByteBuf &packet, ESendType type, Clock::time_point now);
+    bool send(const LegacyByteBuf &packet, ESendType type, Clock::time_point now);
 
     void close(Clock::time_point now);
 
@@ -134,11 +134,11 @@ private:
     void sendPacket(std::span<const std::byte> packet) override;
     void onStateChange(rtc::SctpTransport::State state) override;
     void onChannelOpen(const rtc::DataChannel &channel) override;
-    void onChannelMessage(const rtc::DataChannel &channel, ByteBuf message, bool binary) override;
+    void onChannelMessage(const rtc::DataChannel &channel, LegacyByteBuf message, bool binary) override;
     void onChannelClosed(const rtc::DataChannel &channel) override;
 
-    void sendFragment(ESendType type, ByteBuf fragment) override;
-    void onPacket(ByteBuf packet) override;
+    void sendFragment(ESendType type, LegacyByteBuf fragment) override;
+    void onPacket(LegacyByteBuf packet) override;
     void closeChannel(ESendType type) override;
 
     void fail(ESessionError reason);
@@ -198,7 +198,7 @@ public:
     /**
      * @see NetherNet::NetworkSession::sendPacket
      */
-    bool send(const ByteBuf &packet, ESendType type, Clock::time_point now);
+    bool send(const LegacyByteBuf &packet, ESendType type, Clock::time_point now);
 
     void close(Clock::time_point now);
 
@@ -224,11 +224,11 @@ private:
     void sendPacket(std::span<const std::byte> packet) override;
     void onStateChange(rtc::SctpTransport::State state) override;
     void onChannelOpen(const rtc::DataChannel &channel) override;
-    void onChannelMessage(const rtc::DataChannel &channel, ByteBuf message, bool binary) override;
+    void onChannelMessage(const rtc::DataChannel &channel, LegacyByteBuf message, bool binary) override;
     void onChannelClosed(const rtc::DataChannel &channel) override;
 
-    void sendFragment(ESendType type, ByteBuf fragment) override;
-    void onPacket(ByteBuf packet) override;
+    void sendFragment(ESendType type, LegacyByteBuf fragment) override;
+    void onPacket(LegacyByteBuf packet) override;
     void closeChannel(ESendType type) override;
 
     void fail(ESessionError reason);

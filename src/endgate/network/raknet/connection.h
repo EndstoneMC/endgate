@@ -85,7 +85,7 @@ public:
         virtual void sendDatagram(std::span<const std::byte> datagram) = 0;
         virtual bool sendMtuProbe(std::span<const std::byte> datagram) = 0;
         virtual void onConnected() = 0;
-        virtual void onMessage(ByteBuf message) = 0;
+        virtual void onMessage(LegacyByteBuf message) = 0;
         virtual void onDisconnected(DisconnectReason reason) = 0;
         virtual void onReliabilityLayerNotification(std::string_view message, bool is_error) = 0;
 
@@ -124,8 +124,8 @@ public:
     /**
      * @see RakNet::RakPeer::Send
      */
-    bool send(ByteBuf message, PacketPriority priority, PacketReliability reliability, std::uint8_t ordering_channel,
-              TimePoint now);
+    bool send(LegacyByteBuf message, PacketPriority priority, PacketReliability reliability,
+              std::uint8_t ordering_channel, TimePoint now);
 
     /**
      * @see RakNet::RakPeer::CloseConnection
@@ -149,7 +149,7 @@ private:
 
     void handleOfflineMessage(std::span<const std::byte> datagram, TimePoint now);
     void handleMessages(TimePoint now);
-    void handleMessage(ByteBuf message, TimePoint now);
+    void handleMessage(LegacyByteBuf message, TimePoint now);
     void parseConnectionRequestPacket(std::span<const std::byte> message, TimePoint now);
     void onConnectionRequest(std::uint64_t incoming_timestamp, TimePoint now);
     void onConnectedPong(std::uint64_t send_ping_time, TimePoint now);

@@ -188,7 +188,7 @@ void Connection::handleMessages(TimePoint now)
     delivering_ = false;
 }
 
-void Connection::handleMessage(ByteBuf message, TimePoint now)
+void Connection::handleMessage(LegacyByteBuf message, TimePoint now)
 {
     if (!reliability_layer_) {
         return;
@@ -359,7 +359,7 @@ void Connection::sendImmediate(std::span<const std::byte> message, PacketPriorit
         connect_mode_ == ConnectMode::Closed) {
         return;
     }
-    reliability_layer_->send(ByteBuf::copyBuffer(message), priority, reliability, 0, 0, now);
+    reliability_layer_->send(LegacyByteBuf::copyBuffer(message), priority, reliability, 0, 0, now);
     if (reliability == PacketReliability::Reliable || reliability == PacketReliability::ReliableOrdered ||
         reliability == PacketReliability::ReliableSequenced ||
         reliability == PacketReliability::ReliableWithAckReceipt ||
@@ -368,7 +368,7 @@ void Connection::sendImmediate(std::span<const std::byte> message, PacketPriorit
     }
 }
 
-bool Connection::send(ByteBuf message, PacketPriority priority, PacketReliability reliability,
+bool Connection::send(LegacyByteBuf message, PacketPriority priority, PacketReliability reliability,
                       std::uint8_t ordering_channel, TimePoint now)
 {
     if (!reliability_layer_ || message.empty() || connect_mode_ == ConnectMode::DisconnectAsap ||

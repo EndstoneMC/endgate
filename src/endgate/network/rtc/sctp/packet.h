@@ -275,7 +275,7 @@ public:
     [[nodiscard]] std::size_t remaining() const;
 
     void addChunk(ChunkType type, std::uint8_t flags, std::span<const std::byte> value);
-    void addData(const DataChunk &header, const ByteBuf &payload);
+    void addData(const DataChunk &header, const LegacyByteBuf &payload);
     void addInit(ChunkType type, const InitChunk &init, std::span<const std::byte> parameters);
     void addSack(const SackChunk &sack);
     void addForwardTsn(const ForwardTsnChunk &forward_tsn);

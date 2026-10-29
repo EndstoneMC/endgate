@@ -11,7 +11,7 @@ namespace {
 constexpr std::size_t FRAGMENT_OVERHEAD = 64;
 constexpr std::uint64_t SSN_ORIGIN = std::uint64_t{1} << 16U;
 
-std::size_t charge(const ByteBuf &payload)
+std::size_t charge(const LegacyByteBuf &payload)
 {
     return payload.length() + FRAGMENT_OVERHEAD;
 }
@@ -28,7 +28,7 @@ Receiver::Receiver(const Config &config, std::uint32_t peer_initial_tsn)
 {
 }
 
-Receiver::Outcome Receiver::receive(const DataChunk &chunk, ByteBuf payload, std::vector<Message> &delivered)
+Receiver::Outcome Receiver::receive(const DataChunk &chunk, LegacyByteBuf payload, std::vector<Message> &delivered)
 {
     const auto tsn = unwrap(chunk.tsn, cumulative_);
     const auto outcome = track(chunk, tsn);

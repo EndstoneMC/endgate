@@ -96,13 +96,13 @@ void RakNetConnection::handleDatagram(std::span<const std::byte> datagram, const
     arm();
 }
 
-void RakNetConnection::send(ByteBuf batch)
+void RakNetConnection::send(LegacyByteBuf batch)
 {
     if (!active_) {
         logger_.debug("Dropping {} bytes for {}: not connected", batch.length(), getRemoteAddress());
         return;
     }
-    static const auto header = ByteBuf::copyBuffer(std::array{BATCH_HEADER});
+    static const auto header = LegacyByteBuf::copyBuffer(std::array{BATCH_HEADER});
     auto message = header;
     message.appendToChain(std::move(batch));
     connection_.send(std::move(message), raknet::PacketPriority::High, raknet::PacketReliability::ReliableOrdered, 0,
@@ -149,7 +149,7 @@ void RakNetConnection::onConnected()
     channelActive();
 }
 
-void RakNetConnection::onMessage(ByteBuf message)
+void RakNetConnection::onMessage(LegacyByteBuf message)
 {
     std::array<std::byte, 1> first{};
     message.copyTo(first);

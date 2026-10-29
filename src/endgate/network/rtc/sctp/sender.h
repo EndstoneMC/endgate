@@ -54,7 +54,7 @@ public:
 
     Sender(const Config &config, std::uint32_t initial_tsn, std::uint32_t peer_window);
 
-    bool send(std::uint16_t stream, std::uint32_t ppid, ByteBuf payload, const SendOptions &options,
+    bool send(std::uint16_t stream, std::uint32_t ppid, LegacyByteBuf payload, const SendOptions &options,
               Clock::time_point now);
 
     /**
@@ -121,7 +121,7 @@ private:
         std::uint16_t ssn;
         std::uint32_t ppid;
         std::uint8_t flags;
-        ByteBuf payload;
+        LegacyByteBuf payload;
         std::uint64_t message;
         Clock::time_point sent;
         std::uint64_t boundary;
@@ -136,7 +136,7 @@ private:
 
     struct Pending {
         std::uint32_t ppid;
-        ByteBuf payload;
+        LegacyByteBuf payload;
         bool unordered;
         std::optional<std::uint16_t> max_retransmits;
         std::optional<Clock::time_point> expires_at;

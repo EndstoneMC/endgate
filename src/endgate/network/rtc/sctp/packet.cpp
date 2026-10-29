@@ -292,7 +292,7 @@ void PacketBuilder::addChunk(ChunkType type, std::uint8_t flags, std::span<const
     writer.pad();
 }
 
-void PacketBuilder::addData(const DataChunk &header, const ByteBuf &payload)
+void PacketBuilder::addData(const DataChunk &header, const LegacyByteBuf &payload)
 {
     ByteWriter writer(buffer_);
     writer.write8(static_cast<std::uint8_t>(ChunkType::Data));

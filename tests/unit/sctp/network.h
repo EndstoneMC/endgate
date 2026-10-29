@@ -56,23 +56,23 @@ inline std::function<void(std::span<std::byte>)> seeded(std::uint32_t seed)
     };
 }
 
-inline std::string text(const ByteBuf &buf)
+inline std::string text(const LegacyByteBuf &buf)
 {
     std::string result(buf.length(), '\0');
     buf.copyTo(std::as_writable_bytes(std::span{result}));
     return result;
 }
 
-inline ByteBuf bufferOf(const std::string &value)
+inline LegacyByteBuf bufferOf(const std::string &value)
 {
-    return ByteBuf::copyBuffer(std::as_bytes(std::span{value}));
+    return LegacyByteBuf::copyBuffer(std::as_bytes(std::span{value}));
 }
 
 struct TransportEndpoint : SctpTransport::Listener {
     void sendPacket(std::span<const std::byte> packet) override { outbox.emplace_back(packet.begin(), packet.end()); }
     void onStateChange(SctpTransport::State state) override { states.push_back(state); }
     void onChannelOpen(const DataChannel &channel) override { opened.push_back(channel); }
-    void onChannelMessage(const DataChannel &channel, ByteBuf message, bool binary) override
+    void onChannelMessage(const DataChannel &channel, LegacyByteBuf message, bool binary) override
     {
         if (on_message) {
             on_message(channel, message);
@@ -93,7 +93,7 @@ struct TransportEndpoint : SctpTransport::Listener {
     std::vector<DataChannel> opened;
     std::vector<Received> messages;
     std::vector<DataChannel> closed;
-    std::function<void(const DataChannel &, const ByteBuf &)> on_message;
+    std::function<void(const DataChannel &, const LegacyByteBuf &)> on_message;
 };
 
 inline void seedRandom(Association::Config &config, std::uint32_t seed)

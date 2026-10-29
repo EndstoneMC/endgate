@@ -15,16 +15,16 @@ namespace {
 using namespace std::chrono_literals;
 using State = Association::State;
 
-ByteBuf patterned(std::size_t size, std::uint32_t seed)
+LegacyByteBuf patterned(std::size_t size, std::uint32_t seed)
 {
     std::vector<std::byte> data(size);
     for (std::size_t i = 0; i < size; ++i) {
         data[i] = static_cast<std::byte>((seed * 31 + i * 7) & 0xFFU);
     }
-    return ByteBuf::copyBuffer(data);
+    return LegacyByteBuf::copyBuffer(data);
 }
 
-bool intact(const ByteBuf &payload, std::size_t size, std::uint32_t seed)
+bool intact(const LegacyByteBuf &payload, std::size_t size, std::uint32_t seed)
 {
     if (payload.length() != size) {
         return false;

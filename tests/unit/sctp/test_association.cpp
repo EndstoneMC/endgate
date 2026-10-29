@@ -319,7 +319,7 @@ TEST(Association, ShutsDownGracefullyAfterDeliveringEverything)
     network.a->connect(network.now);
     ASSERT_TRUE(network.runUntil([&] { return established(network); }, 1s));
     for (auto i = 0; i < 50; ++i) {
-        ASSERT_TRUE(network.a->send(0, 53, ByteBuf::copyBuffer(std::vector<std::byte>(1000)), {}, network.now));
+        ASSERT_TRUE(network.a->send(0, 53, LegacyByteBuf::copyBuffer(std::vector<std::byte>(1000)), {}, network.now));
     }
     network.a->shutdown(network.now);
     EXPECT_FALSE(network.a->send(0, 53, bufferOf("late"), {}, network.now));

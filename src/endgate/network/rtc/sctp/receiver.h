@@ -22,7 +22,7 @@ struct Message {
     std::uint16_t stream;
     std::uint32_t ppid;
     bool unordered;
-    ByteBuf payload;
+    LegacyByteBuf payload;
 };
 
 /**
@@ -54,7 +54,7 @@ public:
 
     Receiver(const Config &config, std::uint32_t peer_initial_tsn);
 
-    Outcome receive(const DataChunk &chunk, ByteBuf payload, std::vector<Message> &delivered);
+    Outcome receive(const DataChunk &chunk, LegacyByteBuf payload, std::vector<Message> &delivered);
 
     /**
      * @see RFC 9260 section 6.5
@@ -95,7 +95,7 @@ private:
         std::uint16_t ssn;
         std::uint32_t ppid;
         std::uint8_t flags;
-        ByteBuf payload;
+        LegacyByteBuf payload;
     };
 
     struct OrderedStream {

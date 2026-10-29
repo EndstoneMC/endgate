@@ -82,7 +82,7 @@ private:
 class BatchHandler {
 public:
     template <typename Context>
-    void read(Context &context, const ByteBuf &batch)
+    void read(Context &context, const LegacyByteBuf &batch)
     {
         std::size_t offset = 0;
         while (offset < batch.length()) {
@@ -93,7 +93,7 @@ public:
     }
 
     template <typename Context>
-    void write(Context &context, ByteBuf packet)
+    void write(Context &context, LegacyByteBuf packet)
     {
         context.write(std::move(packet));
     }
@@ -117,7 +117,7 @@ public:
     void setHybridCompressionEnabled(bool enabled);
 
     template <typename Context>
-    void read(Context &context, ByteBuf batch)
+    void read(Context &context, LegacyByteBuf batch)
     {
         if (!enabled_) {
             context.fireRead(std::move(batch));
@@ -132,7 +132,7 @@ public:
     }
 
     template <typename Context>
-    void write(Context &context, ByteBuf batch)
+    void write(Context &context, LegacyByteBuf batch)
     {
         if (!enabled_) {
             context.write(std::move(batch));
@@ -147,8 +147,8 @@ public:
     }
 
 private:
-    [[nodiscard]] std::expected<ByteBuf, DecodeError> decompress(const ByteBuf &batch);
-    [[nodiscard]] std::expected<ByteBuf, DecodeError> compress(const ByteBuf &batch);
+    [[nodiscard]] std::expected<LegacyByteBuf, DecodeError> decompress(const LegacyByteBuf &batch);
+    [[nodiscard]] std::expected<LegacyByteBuf, DecodeError> compress(const LegacyByteBuf &batch);
 
     bool enabled_{false};
     PacketCompressionAlgorithm algorithm_{PacketCompressionAlgorithm::None};
@@ -168,7 +168,7 @@ public:
     void setEncryptionEnabled(bool enabled) { enabled_ = enabled; }
 
     template <typename Context>
-    void read(Context &context, ByteBuf batch)
+    void read(Context &context, LegacyByteBuf batch)
     {
         if (!enabled_) {
             context.fireRead(std::move(batch));
@@ -178,7 +178,7 @@ public:
     }
 
     template <typename Context>
-    void write(Context &context, ByteBuf batch)
+    void write(Context &context, LegacyByteBuf batch)
     {
         context.write(std::move(batch));
     }

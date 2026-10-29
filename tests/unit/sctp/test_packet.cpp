@@ -170,12 +170,12 @@ TEST(PacketBuilder, ReportsSpaceWithinMtu)
     EXPECT_EQ(builder.remaining(), 1176U);
 
     builder.addData({.tsn = 1, .stream = 0, .ssn = 0, .ppid = 53, .flags = 3, .payload = {}},
-                    ByteBuf::copyBuffer(std::vector<std::byte>(183)));
+                    LegacyByteBuf::copyBuffer(std::vector<std::byte>(183)));
     EXPECT_FALSE(builder.empty());
     EXPECT_EQ(builder.remaining(), 1176U - 16 - 184);
 
     builder.addData({.tsn = 2, .stream = 0, .ssn = 1, .ppid = 53, .flags = 3, .payload = {}},
-                    ByteBuf::copyBuffer(std::vector<std::byte>(1176 - 16 - 184 - 16)));
+                    LegacyByteBuf::copyBuffer(std::vector<std::byte>(1176 - 16 - 184 - 16)));
     EXPECT_EQ(builder.remaining(), 0U);
     EXPECT_EQ(builder.build().size(), 1188U);
 }
@@ -187,7 +187,7 @@ TEST(PacketBuilder, RoundTripsThroughParse)
                           1200);
     builder.addChunk(ChunkType::Heartbeat, 0, bytes({0x00, 0x01, 0x00, 0x05, 0x7f}));
     builder.addData({.tsn = 9, .stream = 3, .ssn = 4, .ppid = 51, .flags = 7, .payload = {}},
-                    ByteBuf::copyBuffer(bytes({1, 2, 3})));
+                    LegacyByteBuf::copyBuffer(bytes({1, 2, 3})));
     const auto packet = Packet::parse(builder.build());
     ASSERT_TRUE(packet);
     EXPECT_EQ(packet->header.source_port, 5000);

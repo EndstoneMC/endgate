@@ -26,7 +26,7 @@ namespace endgate::raknet {
 struct InternalPacket : FrameHeader {
     PacketPriority priority{PacketPriority::High};
     std::uint32_t send_receipt_serial{0};
-    ByteBuf data;
+    LegacyByteBuf data;
     std::size_t header_length{0};
     std::uint8_t times_sent{0};
     TimePoint creation_time;
@@ -73,12 +73,12 @@ public:
     /**
      * @see RakNet::ReliabilityLayer::Receive
      */
-    [[nodiscard]] std::optional<ByteBuf> receive();
+    [[nodiscard]] std::optional<LegacyByteBuf> receive();
 
     /**
      * @see RakNet::ReliabilityLayer::Send
      */
-    bool send(ByteBuf data, PacketPriority priority, PacketReliability reliability, std::uint8_t ordering_channel,
+    bool send(LegacyByteBuf data, PacketPriority priority, PacketReliability reliability, std::uint8_t ordering_channel,
               std::uint32_t receipt, TimePoint now);
 
     /**
@@ -129,7 +129,7 @@ private:
         std::uint32_t split_packet_count;
         std::size_t bytes{0};
         FrameHeader first_header;
-        std::vector<std::pair<std::uint32_t, ByteBuf>> parts;
+        std::vector<std::pair<std::uint32_t, LegacyByteBuf>> parts;
     };
 
     /**
@@ -157,10 +157,10 @@ private:
 
     void handleAcknowledgements(Reader &reader, TimePoint now);
     void handleNegativeAcknowledgements(Reader &reader, TimePoint now);
-    void handleFrame(const FrameHeader &header, ByteBuf data, TimePoint now);
+    void handleFrame(const FrameHeader &header, LegacyByteBuf data, TimePoint now);
     [[nodiscard]] bool hold(std::size_t bytes);
     [[nodiscard]] std::optional<std::pair<InternalPacket, std::size_t>> insertIntoSplitPacketList(
-        const FrameHeader &header, ByteBuf data, TimePoint now);
+        const FrameHeader &header, LegacyByteBuf data, TimePoint now);
     void deliver(InternalPacket packet, std::size_t held_bytes);
     void removePacketFromResendList(std::uint32_t message_number);
 
@@ -186,7 +186,7 @@ private:
     TimePoint last_update_time_;
     bool dead_connection_{false};
 
-    std::deque<ByteBuf> output_queue_;
+    std::deque<LegacyByteBuf> output_queue_;
     RangeList acknowlegements_;
     RangeList naks_;
     bool remote_system_needs_b_and_as_{false};

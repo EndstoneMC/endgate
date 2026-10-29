@@ -37,11 +37,11 @@ bool isOlderOrderedPacket(std::uint32_t new_packet_ordering_index, std::uint32_t
            new_packet_ordering_index < waiting_for_packet_ordering_index;
 }
 
-ByteBuf receipt(MessageId id, std::uint32_t serial)
+LegacyByteBuf receipt(MessageId id, std::uint32_t serial)
 {
     std::array<std::byte, sizeof(MessageId) + sizeof(serial)> bytes{static_cast<std::byte>(id)};
     std::memcpy(bytes.data() + sizeof(MessageId), &serial, sizeof(serial));
-    return ByteBuf::copyBuffer(bytes);
+    return LegacyByteBuf::copyBuffer(bytes);
 }
 
 }  // namespace
@@ -145,7 +145,7 @@ void ReliabilityLayer::handleSocketReceiveFromConnectedPlayer(std::span<const st
             }
             return;
         }
-        handleFrame(frame->header, ByteBuf::copyBuffer(frame->data), now);
+        handleFrame(frame->header, LegacyByteBuf::copyBuffer(frame->data), now);
         if (dead_connection_) {
             return;
         }
@@ -243,7 +243,7 @@ void ReliabilityLayer::handleNegativeAcknowledgements(Reader &reader, TimePoint 
     }
 }
 
-void ReliabilityLayer::handleFrame(const FrameHeader &header, ByteBuf data, TimePoint now)
+void ReliabilityLayer::handleFrame(const FrameHeader &header, LegacyByteBuf data, TimePoint now)
 {
     const auto reliability = header.reliability;
     if (reliability == PacketReliability::Reliable || reliability == PacketReliability::ReliableSequenced ||
@@ -296,7 +296,7 @@ void ReliabilityLayer::handleFrame(const FrameHeader &header, ByteBuf data, Time
 }
 
 std::optional<std::pair<InternalPacket, std::size_t>> ReliabilityLayer::insertIntoSplitPacketList(
-    const FrameHeader &header, ByteBuf data, TimePoint now)
+    const FrameHeader &header, LegacyByteBuf data, TimePoint now)
 {
     if (header.split_packet_count > MAX_SPLIT_PACKET_COUNT) {
         notify("splitPacketCount exceeds MAX_SPLIT_PACKET_COUNT", true);
@@ -322,7 +322,7 @@ std::optional<std::pair<InternalPacket, std::size_t>> ReliabilityLayer::insertIn
     auto position = split.parts.end();
     if (!split.parts.empty() && header.split_packet_index <= split.parts.back().first) {
         position = std::ranges::lower_bound(split.parts, header.split_packet_index, {},
-                                            &std::pair<std::uint32_t, ByteBuf>::first);
+                                            &std::pair<std::uint32_t, LegacyByteBuf>::first);
         if (position->first == header.split_packet_index) {
             return std::nullopt;
         }
@@ -423,7 +423,7 @@ bool ReliabilityLayer::hold(std::size_t bytes)
     return true;
 }
 
-std::optional<ByteBuf> ReliabilityLayer::receive()
+std::optional<LegacyByteBuf> ReliabilityLayer::receive()
 {
     if (output_queue_.empty()) {
         return std::nullopt;
@@ -450,7 +450,7 @@ void ReliabilityLayer::removePacketFromResendList(std::uint32_t message_number)
     resend_list_.erase(packet);
 }
 
-bool ReliabilityLayer::send(ByteBuf data, PacketPriority priority, PacketReliability reliability,
+bool ReliabilityLayer::send(LegacyByteBuf data, PacketPriority priority, PacketReliability reliability,
                             std::uint8_t ordering_channel, std::uint32_t receipt, TimePoint now)
 {
     last_update_time_ = now;

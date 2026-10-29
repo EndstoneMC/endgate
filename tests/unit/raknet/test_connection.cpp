@@ -47,7 +47,7 @@ struct Events : Connection::Listener {
 
     void onConnected() override { ++connected; }
 
-    void onMessage(ByteBuf message) override
+    void onMessage(LegacyByteBuf message) override
     {
         std::vector<std::byte> bytes(message.length());
         message.copyTo(bytes);
@@ -185,9 +185,9 @@ TEST(Connection, MessagesCrossBothWaysAfterTheHandshake)
     handshake.simulation.setConditions(1, {.loss = 0.1, .duplicate = 0.05, .reorder = 0.1});
     const auto up = payload(300000, 1);
     const auto down = payload(70000, 2);
-    ASSERT_TRUE(handshake.client.send(ByteBuf::copyBuffer(up), PacketPriority::High, PacketReliability::ReliableOrdered,
-                                      0, handshake.simulation.now()));
-    ASSERT_TRUE(handshake.server.connection->send(ByteBuf::copyBuffer(down), PacketPriority::High,
+    ASSERT_TRUE(handshake.client.send(LegacyByteBuf::copyBuffer(up), PacketPriority::High,
+                                      PacketReliability::ReliableOrdered, 0, handshake.simulation.now()));
+    ASSERT_TRUE(handshake.server.connection->send(LegacyByteBuf::copyBuffer(down), PacketPriority::High,
                                                   PacketReliability::ReliableOrdered, 0, handshake.simulation.now()));
     ASSERT_TRUE(handshake.simulation.runUntil(
         [&] { return !handshake.client_events.messages.empty() && !handshake.server.events.messages.empty(); }, 60s));
@@ -418,7 +418,7 @@ TEST(Connection, GracefulCloseReachesThePeer)
     Handshake handshake;
     ASSERT_TRUE(handshake.connect());
     handshake.client.close(true, handshake.simulation.now());
-    EXPECT_FALSE(handshake.client.send(ByteBuf::copyBuffer(payload(10)), PacketPriority::High,
+    EXPECT_FALSE(handshake.client.send(LegacyByteBuf::copyBuffer(payload(10)), PacketPriority::High,
                                        PacketReliability::Reliable, 0, handshake.simulation.now()));
     ASSERT_TRUE(handshake.simulation.runUntil(
         [&] { return !handshake.client_events.disconnected.empty() && !handshake.server.events.disconnected.empty(); },

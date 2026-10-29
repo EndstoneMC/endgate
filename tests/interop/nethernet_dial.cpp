@@ -28,7 +28,7 @@
 
 namespace {
 
-using endgate::ByteBuf;
+using endgate::LegacyByteBuf;
 using endgate::nethernet::DialerSession;
 using endgate::nethernet::ESendType;
 using endgate::nethernet::ESessionError;
@@ -109,11 +109,11 @@ public:
     void onOpen() override
     {
         std::cout << "open\n";
-        session_->send(ByteBuf::copyBuffer(payload_), ESendType::Reliable, Clock::now());
+        session_->send(LegacyByteBuf::copyBuffer(payload_), ESendType::Reliable, Clock::now());
         rearm();
     }
 
-    void onPacket(ByteBuf packet) override
+    void onPacket(LegacyByteBuf packet) override
     {
         std::vector<std::byte> bytes(packet.length());
         packet.copyTo(bytes);

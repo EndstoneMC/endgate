@@ -27,7 +27,7 @@
 
 namespace {
 
-using endgate::ByteBuf;
+using endgate::LegacyByteBuf;
 using endgate::nethernet::ESendType;
 using endgate::nethernet::ESessionError;
 using endgate::nethernet::NetworkSession;
@@ -126,7 +126,7 @@ private:
 
         void onOpen() override { std::cout << "open " << id << " " << network_id << '\n'; }
 
-        void onPacket(ByteBuf packet) override { session.send(packet, ESendType::Reliable, Clock::now()); }
+        void onPacket(LegacyByteBuf packet) override { session.send(packet, ESendType::Reliable, Clock::now()); }
 
         void onClosed(ESessionError reason) override { closed = reason; }
 

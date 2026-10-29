@@ -81,7 +81,7 @@ public:
 
 protected:
     void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender) override;
-    void send(ByteBuf batch) override;
+    void send(LegacyByteBuf batch) override;
     void disconnect(bool wait_for_peer) override;
 
 private:
@@ -89,7 +89,7 @@ private:
     void onRouteAdded(const asio::ip::udp::endpoint &remote) override;
     void onRouteRemoved(const asio::ip::udp::endpoint &remote) override;
     void onOpen() override;
-    void onPacket(ByteBuf packet) override;
+    void onPacket(LegacyByteBuf packet) override;
     void onClosed(nethernet::ESessionError reason) override;
 
     static asio::awaitable<void> dial(std::shared_ptr<NetherNetConnection> self, std::string host, std::uint16_t port,
@@ -269,7 +269,7 @@ void NetherNetConnection<Session>::handleDatagram(std::span<const std::byte> dat
 }
 
 template <typename Session>
-void NetherNetConnection<Session>::send(ByteBuf batch)
+void NetherNetConnection<Session>::send(LegacyByteBuf batch)
 {
     if (!active_ || !session_) {
         logger_.debug("Dropping {} bytes for {}: not connected", batch.length(), getRemoteAddress());
@@ -328,7 +328,7 @@ void NetherNetConnection<Session>::onOpen()
 }
 
 template <typename Session>
-void NetherNetConnection<Session>::onPacket(ByteBuf packet)
+void NetherNetConnection<Session>::onPacket(LegacyByteBuf packet)
 {
     channelRead(std::move(packet));
 }

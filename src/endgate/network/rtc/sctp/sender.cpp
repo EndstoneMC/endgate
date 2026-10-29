@@ -21,7 +21,7 @@ Sender::Sender(const Config &config, std::uint32_t initial_tsn, std::uint32_t pe
 {
 }
 
-bool Sender::send(std::uint16_t stream_id, std::uint32_t ppid, ByteBuf payload, const SendOptions &options,
+bool Sender::send(std::uint16_t stream_id, std::uint32_t ppid, LegacyByteBuf payload, const SendOptions &options,
                   Clock::time_point now)
 {
     constexpr std::size_t message_overhead = 64;

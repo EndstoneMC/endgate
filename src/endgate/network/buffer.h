@@ -22,16 +22,16 @@ namespace endgate {
  * @see folly::IOBuf
  * @see io.netty.buffer.CompositeByteBuf
  */
-class ByteBuf {
+class LegacyByteBuf {
 public:
-    ByteBuf() = default;
+    LegacyByteBuf() = default;
 
     /**
      * @see folly::IOBuf::create
      */
-    static ByteBuf create(std::size_t capacity)
+    static LegacyByteBuf create(std::size_t capacity)
     {
-        ByteBuf buf;
+        LegacyByteBuf buf;
         buf.elements_.push_back(
             {.storage = std::make_shared<std::vector<std::byte>>(capacity), .offset = 0, .length = 0});
         return buf;
@@ -40,9 +40,9 @@ public:
     /**
      * @see folly::IOBuf::copyBuffer
      */
-    static ByteBuf copyBuffer(std::span<const std::byte> data)
+    static LegacyByteBuf copyBuffer(std::span<const std::byte> data)
     {
-        ByteBuf buf;
+        LegacyByteBuf buf;
         buf.elements_.push_back({.storage = std::make_shared<std::vector<std::byte>>(data.begin(), data.end()),
                                  .offset = 0,
                                  .length = data.size()});
@@ -94,7 +94,7 @@ public:
     /**
      * @see folly::IOBuf::appendToChain
      */
-    void appendToChain(ByteBuf buf)
+    void appendToChain(LegacyByteBuf buf)
     {
         for (auto &element : buf.elements_) {
             length_ += element.length;
@@ -105,7 +105,7 @@ public:
     /**
      * @see folly::IOBuf::prependChain
      */
-    void prependChain(ByteBuf buf)
+    void prependChain(LegacyByteBuf buf)
     {
         length_ += buf.length_;
         elements_.insert(elements_.begin(), buf.elements_.begin(), buf.elements_.end());
@@ -114,11 +114,11 @@ public:
     /**
      * Shares the storage rather than copying it, so a batch fans out into packets for free.
      *
-     * @see io.netty.buffer.ByteBuf.retainedSlice
+     * @see io.netty.buffer.LegacyByteBuf.retainedSlice
      */
-    [[nodiscard]] ByteBuf retainedSlice(std::size_t index, std::size_t length) const
+    [[nodiscard]] LegacyByteBuf retainedSlice(std::size_t index, std::size_t length) const
     {
-        ByteBuf slice;
+        LegacyByteBuf slice;
         std::size_t skipped = 0;
         for (const auto &element : elements_) {
             if (skipped + element.length <= index) {

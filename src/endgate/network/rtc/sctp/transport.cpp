@@ -47,7 +47,8 @@ std::optional<std::uint16_t> SctpTransport::createDataChannel(std::string label,
             continue;
         }
         const auto open = DataChannelOpen::of(label, protocol, reliability, priority).serialize();
-        if (!association_.send(stream, static_cast<std::uint32_t>(Ppid::Dcep), ByteBuf::copyBuffer(open), {}, now)) {
+        if (!association_.send(stream, static_cast<std::uint32_t>(Ppid::Dcep), LegacyByteBuf::copyBuffer(open), {},
+                               now)) {
             return std::nullopt;
         }
         channels_.emplace(stream, Channel{
@@ -63,7 +64,7 @@ std::optional<std::uint16_t> SctpTransport::createDataChannel(std::string label,
     return std::nullopt;
 }
 
-bool SctpTransport::send(std::uint16_t stream, ByteBuf message, bool binary, Clock::time_point now)
+bool SctpTransport::send(std::uint16_t stream, LegacyByteBuf message, bool binary, Clock::time_point now)
 {
     now_ = now;
     const auto channel = channels_.find(stream);
@@ -83,7 +84,7 @@ bool SctpTransport::send(std::uint16_t stream, ByteBuf message, bool binary, Clo
     if (message.empty()) {
         constexpr std::array<std::byte, 1> placeholder{};
         return association_.send(stream, static_cast<std::uint32_t>(binary ? Ppid::BinaryEmpty : Ppid::StringEmpty),
-                                 ByteBuf::copyBuffer(placeholder), options, now);
+                                 LegacyByteBuf::copyBuffer(placeholder), options, now);
     }
     return association_.send(stream, static_cast<std::uint32_t>(binary ? Ppid::Binary : Ppid::String),
                              std::move(message), options, now);
@@ -168,7 +169,7 @@ void SctpTransport::onMessage(sctp::Message message)
         const auto ppid = static_cast<Ppid>(message.ppid);
         const auto empty = ppid == Ppid::StringEmpty || ppid == Ppid::BinaryEmpty;
         notifying_ = message.stream;
-        listener_.onChannelMessage(channel->second.info, empty ? ByteBuf{} : std::move(message.payload),
+        listener_.onChannelMessage(channel->second.info, empty ? LegacyByteBuf{} : std::move(message.payload),
                                    ppid == Ppid::Binary || ppid == Ppid::BinaryEmpty);
         notifying_.reset();
         if (std::exchange(finish_after_notify_, false)) {
@@ -237,7 +238,7 @@ void SctpTransport::handleOpen(std::uint16_t stream, std::span<const std::byte> 
         return;
     }
     constexpr std::array ack{std::byte{DataChannelAck::MESSAGE_TYPE}};
-    if (!association_.send(stream, static_cast<std::uint32_t>(Ppid::Dcep), ByteBuf::copyBuffer(ack), {}, now_)) {
+    if (!association_.send(stream, static_cast<std::uint32_t>(Ppid::Dcep), LegacyByteBuf::copyBuffer(ack), {}, now_)) {
         refuse(stream);
         return;
     }

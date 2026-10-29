@@ -32,9 +32,9 @@ struct Sent {
     std::size_t length;
 };
 
-ByteBuf payload(std::size_t size)
+LegacyByteBuf payload(std::size_t size)
 {
-    return ByteBuf::copyBuffer(std::vector<std::byte>(size, std::byte{0x5a}));
+    return LegacyByteBuf::copyBuffer(std::vector<std::byte>(size, std::byte{0x5a}));
 }
 
 class SenderTest : public testing::Test {
@@ -475,7 +475,7 @@ TEST_F(SenderTest, RefusesWhatTheBufferCannotHold)
     EXPECT_FALSE(small.send(0, 53, payload(600), {}, START));
     EXPECT_TRUE(small.send(0, 53, payload(200), {}, START));
     EXPECT_FALSE(small.send(0, 53, payload(10), {}, START));
-    EXPECT_FALSE(small.send(0, 53, ByteBuf{}, {}, START));
+    EXPECT_FALSE(small.send(0, 53, LegacyByteBuf{}, {}, START));
     EXPECT_EQ(small.bufferedAmount(), 800U);
     EXPECT_EQ(small.bufferedAmount(0), 800U);
 }

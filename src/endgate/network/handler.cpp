@@ -11,7 +11,7 @@
 namespace endgate {
 
 namespace {
-std::span<const std::byte> gather(const ByteBuf &batch, std::vector<std::byte> &scratch)
+std::span<const std::byte> gather(const LegacyByteBuf &batch, std::vector<std::byte> &scratch)
 {
     if (const auto contiguous = batch.coalesce(); !contiguous.empty()) {
         return contiguous;
@@ -43,7 +43,7 @@ void CompressionHandler::setHybridCompressionEnabled(bool enabled)
     hybrid_ = enabled;
 }
 
-std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf &batch)
+std::expected<LegacyByteBuf, DecodeError> CompressionHandler::decompress(const LegacyByteBuf &batch)
 {
     constexpr std::size_t max_decompressed_size = 64 * 1024 * 1024;
 
@@ -58,7 +58,7 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf
     const auto payload = input.subspan(hybrid_ ? CompressionHeader::SIZE : 0);
 
     if (header.isCompressedWith(PacketCompressionAlgorithm::None)) {
-        return ByteBuf::copyBuffer(payload);
+        return LegacyByteBuf::copyBuffer(payload);
     }
 
     if (!header.isCompressedWith(algorithm_)) {
@@ -74,7 +74,7 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf
             return std::unexpected(DecodeError::DecompressedSizeExceeded);
         }
 
-        auto out = ByteBuf::create(size);
+        auto out = LegacyByteBuf::create(size);
         if (!snappy::RawUncompress(reinterpret_cast<const char *>(payload.data()), payload.size(),
                                    reinterpret_cast<char *>(out.writableTail().data()))) {
             return std::unexpected(DecodeError::CorruptCompressedData);
@@ -86,7 +86,7 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf
     if (header.isCompressedWith(PacketCompressionAlgorithm::ZLib)) {
         for (std::size_t capacity = std::max<std::size_t>(payload.size() * 6, 1024); capacity <= max_decompressed_size;
              capacity *= 2) {
-            auto out = ByteBuf::create(capacity);
+            auto out = LegacyByteBuf::create(capacity);
             std::size_t produced = 0;
             const auto result = libdeflate_deflate_decompress(decompressor_.get(), payload.data(), payload.size(),
                                                               out.writableTail().data(), capacity, &produced);
@@ -104,7 +104,7 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::decompress(const ByteBuf
     return std::unexpected(DecodeError::UnknownCompressionAlgorithm);
 }
 
-std::expected<ByteBuf, DecodeError> CompressionHandler::compress(const ByteBuf &batch)
+std::expected<LegacyByteBuf, DecodeError> CompressionHandler::compress(const LegacyByteBuf &batch)
 {
     std::vector<std::byte> scratch;
     const auto input = gather(batch, scratch);
@@ -116,7 +116,7 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::compress(const ByteBuf &
                              ? snappy::MaxCompressedLength(input.size())
                              : libdeflate_deflate_compress_bound(compressor_.get(), input.size());
 
-        auto out = ByteBuf::create(bound + prefix);
+        auto out = LegacyByteBuf::create(bound + prefix);
         auto writable = out.writableTail();
         std::size_t produced = 0;
 
@@ -142,7 +142,7 @@ std::expected<ByteBuf, DecodeError> CompressionHandler::compress(const ByteBuf &
         }
     }
 
-    auto out = ByteBuf::create(input.size() + prefix);
+    auto out = LegacyByteBuf::create(input.size() + prefix);
     auto writable = out.writableTail();
     if (hybrid_) {
         writable[0] = static_cast<std::byte>(CompressionHeader{PacketCompressionAlgorithm::None}.getRaw());

@@ -185,8 +185,8 @@ TEST_F(DataChannelTest, DeliversQueuedMessagesBeforeClosing)
 TEST_F(DataChannelTest, CarriesEmptyMessages)
 {
     openNetherNetChannels();
-    ASSERT_TRUE(network_.a->send(1, ByteBuf{}, false, network_.now));
-    ASSERT_TRUE(network_.a->send(1, ByteBuf{}, true, network_.now));
+    ASSERT_TRUE(network_.a->send(1, LegacyByteBuf{}, false, network_.now));
+    ASSERT_TRUE(network_.a->send(1, LegacyByteBuf{}, true, network_.now));
     ASSERT_TRUE(network_.runUntil([&] { return network_.endpoint_b.messages.size() == 2; }, 5s));
     EXPECT_EQ(network_.endpoint_b.messages[0].payload, "");
     EXPECT_FALSE(network_.endpoint_b.messages[0].binary);
@@ -240,9 +240,9 @@ TEST_F(DataChannelTest, BoundsTheChannelsAPeerMayOpen)
 TEST_F(DataChannelTest, ListenerMaySendFromInsideAMessage)
 {
     openNetherNetChannels();
-    network_.endpoint_b.on_message = [&](const DataChannel &channel, const ByteBuf &message) {
-        EXPECT_TRUE(network_.b->send(channel.stream, ByteBuf::copyBuffer(std::vector<std::byte>(message.length())),
-                                     true, network_.now));
+    network_.endpoint_b.on_message = [&](const DataChannel &channel, const LegacyByteBuf &message) {
+        EXPECT_TRUE(network_.b->send(
+            channel.stream, LegacyByteBuf::copyBuffer(std::vector<std::byte>(message.length())), true, network_.now));
     };
     ASSERT_TRUE(network_.a->send(1, bufferOf("echo me"), true, network_.now));
     ASSERT_TRUE(network_.runUntil([&] { return !network_.endpoint_a.messages.empty(); }, 5s));
@@ -274,7 +274,8 @@ protected:
 
     void open(std::uint16_t stream, std::vector<std::byte> message)
     {
-        ASSERT_TRUE(peer_.send(stream, static_cast<std::uint32_t>(Ppid::Dcep), ByteBuf::copyBuffer(message), {}, now_));
+        ASSERT_TRUE(
+            peer_.send(stream, static_cast<std::uint32_t>(Ppid::Dcep), LegacyByteBuf::copyBuffer(message), {}, now_));
         pump();
     }
 
@@ -350,7 +351,7 @@ TEST_F(RawPeerTest, ListenerMayCloseTheChannelItIsHearingFrom)
 {
     open(1, DataChannelOpen::of("chan", "", RELIABLE, 256).serialize());
     std::string label;
-    server_.on_message = [&](const DataChannel &channel, const ByteBuf &) {
+    server_.on_message = [&](const DataChannel &channel, const LegacyByteBuf &) {
         transport_.abort(now_);
         transport_.closeDataChannel(channel.stream, now_);
         label = channel.label;

@@ -14,7 +14,7 @@ MinecraftConnection::MinecraftConnection(Endpoint &endpoint, asio::io_context &i
 {
 }
 
-void MinecraftConnection::write(ByteBuf batch)
+void MinecraftConnection::write(LegacyByteBuf batch)
 {
     asio::post(strand_,
                [self = shared_from_this(), batch = std::move(batch)]() mutable { self->send(std::move(batch)); });
@@ -50,7 +50,7 @@ void MinecraftConnection::channelActive()
     }
 }
 
-void MinecraftConnection::channelRead(ByteBuf batch)
+void MinecraftConnection::channelRead(LegacyByteBuf batch)
 {
     if (handler_) {
         handler_->handleUnknown(std::move(batch));

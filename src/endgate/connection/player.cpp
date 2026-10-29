@@ -66,7 +66,7 @@ void ClientPlaySessionHandler::connected()
     player_->createConnectionRequest(*server);
 }
 
-void ClientPlaySessionHandler::handleUnknown(ByteBuf batch)
+void ClientPlaySessionHandler::handleUnknown(LegacyByteBuf batch)
 {
     const auto &server = player_->getConnectedServer();
     if (!server) {

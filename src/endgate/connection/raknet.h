@@ -43,14 +43,14 @@ public:
 
 protected:
     void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender) override;
-    void send(ByteBuf batch) override;
+    void send(LegacyByteBuf batch) override;
     void disconnect(bool wait_for_peer) override;
 
 private:
     void sendDatagram(std::span<const std::byte> datagram) override;
     bool sendMtuProbe(std::span<const std::byte> datagram) override;
     void onConnected() override;
-    void onMessage(ByteBuf message) override;
+    void onMessage(LegacyByteBuf message) override;
     void onDisconnected(raknet::DisconnectReason reason) override;
     void onReliabilityLayerNotification(std::string_view message, bool is_error) override;
 

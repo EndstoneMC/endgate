@@ -57,7 +57,7 @@ public:
     void send(const std::vector<std::byte> &message, PacketReliability reliability, std::uint8_t channel = 0,
               std::uint32_t receipt = 0, PacketPriority priority = PacketPriority::High)
     {
-        layer.send(ByteBuf::copyBuffer(message), priority, reliability, channel, receipt, simulation_.now());
+        layer.send(LegacyByteBuf::copyBuffer(message), priority, reliability, channel, receipt, simulation_.now());
         layer.update(simulation_.now());
         drain();
     }
@@ -326,8 +326,8 @@ TEST(Reliability, SmallMessagesShareADatagram)
     Pair pair;
     pair.simulation.setConditions(0, {.loss = 1.0});
     for (std::uint32_t i = 0; i < 20; ++i) {
-        pair.a.layer.send(ByteBuf::copyBuffer(message(i)), PacketPriority::High, PacketReliability::Reliable, 0, 0,
-                          pair.simulation.now());
+        pair.a.layer.send(LegacyByteBuf::copyBuffer(message(i)), PacketPriority::High, PacketReliability::Reliable, 0,
+                          0, pair.simulation.now());
     }
     pair.a.layer.update(pair.simulation.now());
     EXPECT_EQ(pair.a.datagrams.size(), 1U);
@@ -337,11 +337,11 @@ TEST(Reliability, ImmediatePriorityOvertakesQueuedHighPriority)
 {
     Pair pair;
     for (std::uint32_t i = 0; i < 4; ++i) {
-        pair.a.layer.send(ByteBuf::copyBuffer(message(i)), PacketPriority::Low, PacketReliability::Reliable, 0, 0,
+        pair.a.layer.send(LegacyByteBuf::copyBuffer(message(i)), PacketPriority::Low, PacketReliability::Reliable, 0, 0,
                           pair.simulation.now());
     }
-    pair.a.layer.send(ByteBuf::copyBuffer(message(99)), PacketPriority::Immediate, PacketReliability::Reliable, 0, 0,
-                      pair.simulation.now());
+    pair.a.layer.send(LegacyByteBuf::copyBuffer(message(99)), PacketPriority::Immediate, PacketReliability::Reliable, 0,
+                      0, pair.simulation.now());
     pair.a.layer.update(pair.simulation.now());
     ASSERT_TRUE(pair.simulation.runUntil([&] { return pair.b.received.size() == 5; }, 5s));
     EXPECT_EQ(sequenceOf(pair.b.received[0]), 99U);

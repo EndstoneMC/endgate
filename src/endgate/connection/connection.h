@@ -39,7 +39,7 @@ public:
     /**
      * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler#handleUnknown
      */
-    virtual void handleUnknown(ByteBuf batch) = 0;
+    virtual void handleUnknown(LegacyByteBuf batch) = 0;
 
     /**
      * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler#disconnected
@@ -70,7 +70,7 @@ public:
     /**
      * @see com.velocitypowered.proxy.connection.MinecraftConnection#write
      */
-    void write(ByteBuf batch);
+    void write(LegacyByteBuf batch);
 
     /**
      * @see com.velocitypowered.proxy.connection.MinecraftConnection#close
@@ -103,7 +103,7 @@ public:
 
 protected:
     virtual void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender) = 0;
-    virtual void send(ByteBuf batch) = 0;
+    virtual void send(LegacyByteBuf batch) = 0;
     virtual void disconnect(bool wait_for_peer) = 0;
 
     void setRemoteAddress(std::string remote_address) { remote_address_ = std::move(remote_address); }
@@ -116,7 +116,7 @@ protected:
     /**
      * @see com.velocitypowered.proxy.connection.MinecraftConnection#channelRead
      */
-    void channelRead(ByteBuf batch);
+    void channelRead(LegacyByteBuf batch);
 
     /**
      * @see com.velocitypowered.proxy.connection.MinecraftConnection#channelInactive

@@ -20,7 +20,7 @@ bool PacketQueue::setMaxMessageSize(std::size_t max_message_size)
     return true;
 }
 
-bool PacketQueue::push(const ByteBuf &packet, ESendType type)
+bool PacketQueue::push(const LegacyByteBuf &packet, ESendType type)
 {
     const auto size = packet.length();
     if (size <= fragment_size_) {
@@ -45,15 +45,15 @@ bool PacketQueue::push(const ByteBuf &packet, ESendType type)
     return true;
 }
 
-void PacketQueue::sendFragment(std::uint8_t header, ByteBuf payload, ESendType type)
+void PacketQueue::sendFragment(std::uint8_t header, LegacyByteBuf payload, ESendType type)
 {
     const std::array header_byte{static_cast<std::byte>(header)};
-    auto fragment = ByteBuf::copyBuffer(header_byte);
+    auto fragment = LegacyByteBuf::copyBuffer(header_byte);
     fragment.appendToChain(std::move(payload));
     listener_.sendFragment(type, std::move(fragment));
 }
 
-void PacketQueue::onOrderedMessage(const ByteBuf &message)
+void PacketQueue::onOrderedMessage(const LegacyByteBuf &message)
 {
     if (message.length() <= 1) {
         partial_receive_.reset();
@@ -66,7 +66,7 @@ void PacketQueue::onOrderedMessage(const ByteBuf &message)
     const auto header = std::to_integer<std::uint8_t>(header_byte.front());
 
     if (!partial_receive_) {
-        partial_receive_.emplace(header, ByteBuf{});
+        partial_receive_.emplace(header, LegacyByteBuf{});
     }
     else if (header != partial_receive_->expected_header) {
         partial_receive_.reset();
@@ -91,7 +91,7 @@ void PacketQueue::onOrderedMessage(const ByteBuf &message)
     listener_.onPacket(std::move(packet));
 }
 
-void PacketQueue::onUnorderedMessage(const ByteBuf &message)
+void PacketQueue::onUnorderedMessage(const LegacyByteBuf &message)
 {
     if (message.length() <= 1) {
         listener_.closeChannel(ESendType::Unreliable);

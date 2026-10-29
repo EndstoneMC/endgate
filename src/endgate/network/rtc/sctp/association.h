@@ -100,7 +100,7 @@ public:
     void handleTimeout(Clock::time_point now);
     [[nodiscard]] std::optional<Clock::time_point> nextTimeout() const;
 
-    bool send(std::uint16_t stream, std::uint32_t ppid, ByteBuf payload, const Sender::SendOptions &options,
+    bool send(std::uint16_t stream, std::uint32_t ppid, LegacyByteBuf payload, const Sender::SendOptions &options,
               Clock::time_point now);
 
     /**
