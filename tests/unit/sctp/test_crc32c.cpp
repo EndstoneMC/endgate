@@ -1,6 +1,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <random>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -79,6 +80,40 @@ TEST(Crc32c, ContinuesFromPreviousValue)
     for (std::size_t split = 0; split <= data.size(); ++split) {
         const auto head = crc32c(std::span{data}.first(split));
         EXPECT_EQ(crc32c(std::span{data}.subspan(split), head), crc32c(data)) << split;
+    }
+}
+
+TEST(Crc32c, MatchesTheBitwiseDefinitionAtEveryLengthAndAlignment)
+{
+    std::seed_seq seed{1};
+    std::mt19937 random{seed};
+    std::vector<std::byte> data(1024 + 8);
+    for (auto &byte : data) {
+        byte = static_cast<std::byte>(random());
+    }
+    for (std::size_t offset = 0; offset < 8; ++offset) {
+        for (std::size_t length = 0; length <= 1024; ++length) {
+            const auto input = std::span{data}.subspan(offset, length);
+            std::uint32_t expected = 0xFFFFFFFFU;
+            for (const auto byte : input) {
+                expected ^= std::to_integer<std::uint32_t>(byte);
+                for (auto bit = 0; bit < 8; ++bit) {
+                    expected = (expected & 1U) ? (expected >> 1U) ^ 0x82F63B78U : expected >> 1U;
+                }
+            }
+            ASSERT_EQ(crc32c(input), ~expected) << "offset " << offset << " length " << length;
+        }
+    }
+}
+
+TEST(Crc32c, ChainsAcrossCalls)
+{
+    const auto data = filled(1000, 7, 13);
+    const auto whole = crc32c(data);
+    for (const std::size_t split : {0, 1, 7, 8, 9, 500, 999, 1000}) {
+        const auto head = std::span{data}.first(split);
+        const auto tail = std::span{data}.subspan(split);
+        EXPECT_EQ(crc32c(tail, crc32c(head)), whole) << "split " << split;
     }
 }
 
