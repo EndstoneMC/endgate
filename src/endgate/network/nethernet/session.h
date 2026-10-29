@@ -161,4 +161,95 @@ private:
     bool close_reported_{false};
 };
 
+/**
+ * The dialer's NetherNet session: a controlling full ICE agent, DTLS in the role the answer assigns,
+ * and SCTP over which this side opens the two data channels a Bedrock client opens — ReliableDataChannel
+ * ordered and reliable, UnreliableDataChannel unordered with maxRetransmits 0 — with NetherNet's fragment
+ * framing on top. The reported events and ESessionError reporting match the answering side.
+ *
+ * @see NetherNet::NetworkSession
+ */
+class DialerSession : rtc::IceController::Listener,
+                      rtc::DtlsTransport::Listener,
+                      rtc::SctpTransport::Listener,
+                      PacketQueue::Listener {
+public:
+    using Clock = std::chrono::steady_clock;
+    using Listener = NetworkSession::Listener;
+
+    struct Config {
+        std::size_t max_packet_size;
+        rtc::IceController::Config ice{};
+        rtc::DtlsTransport::Config dtls{};
+        rtc::sctp::Association::Config association{};
+    };
+
+    DialerSession(Listener &listener, const rtc::Description &answer, rtc::IceCredentials local,
+                  std::shared_ptr<const rtc::Certificate> certificate, const Config &config, Clock::time_point now);
+    DialerSession(const DialerSession &) = delete;
+    DialerSession &operator=(const DialerSession &) = delete;
+    DialerSession(DialerSession &&) = delete;
+    DialerSession &operator=(DialerSession &&) = delete;
+    ~DialerSession() override = default;
+
+    void handleDatagram(Clock::time_point now, const asio::ip::udp::endpoint &remote,
+                        std::span<const std::byte> datagram);
+
+    /**
+     * @see NetherNet::NetworkSession::sendPacket
+     */
+    bool send(const ByteBuf &packet, ESendType type, Clock::time_point now);
+
+    void close(Clock::time_point now);
+
+    [[nodiscard]] std::optional<Clock::time_point> nextTimeout() const;
+    void handleTimeout(Clock::time_point now);
+
+    [[nodiscard]] bool isOpen() const { return open_ && !closed_; }
+    [[nodiscard]] bool isClosed() const { return closed_.has_value(); }
+    [[nodiscard]] const rtc::IceController &getIceController() const { return ice_; }
+    [[nodiscard]] const std::vector<asio::ip::udp::endpoint> &getRemoteCandidates() const { return candidates_; }
+
+private:
+    [[nodiscard]] static std::vector<asio::ip::udp::endpoint> endpointsOf(const rtc::Description &answer);
+
+    void sendIceDatagram(const asio::ip::udp::endpoint &remote, std::span<const std::byte> datagram) override;
+    void onSelectedPairChanged(const std::optional<asio::ip::udp::endpoint> &remote) override;
+    void onIceStateChanged(rtc::IceController::State state) override;
+
+    void sendDtlsDatagram(std::span<const std::byte> datagram) override;
+    void onDtlsData(std::span<const std::byte> data) override;
+    void onDtlsStateChanged(rtc::DtlsTransport::State state) override;
+
+    void sendPacket(std::span<const std::byte> packet) override;
+    void onStateChange(rtc::SctpTransport::State state) override;
+    void onChannelOpen(const rtc::DataChannel &channel) override;
+    void onChannelMessage(const rtc::DataChannel &channel, ByteBuf message, bool binary) override;
+    void onChannelClosed(const rtc::DataChannel &channel) override;
+
+    void sendFragment(ESendType type, ByteBuf fragment) override;
+    void onPacket(ByteBuf packet) override;
+    void closeChannel(ESendType type) override;
+
+    void fail(ESessionError reason);
+    void advance();
+
+    Listener &listener_;
+    Clock::time_point now_;
+    std::vector<asio::ip::udp::endpoint> candidates_;
+    rtc::IceController ice_;
+    rtc::DtlsTransport dtls_;
+    rtc::SctpTransport sctp_;
+    PacketQueue queue_;
+    std::vector<std::vector<std::byte>> outbox_;
+    std::optional<std::uint16_t> reliable_stream_;
+    std::optional<std::uint16_t> unreliable_stream_;
+    unsigned depth_{0};
+    bool sctp_started_{false};
+    bool channels_opened_{false};
+    bool open_{false};
+    std::optional<ESessionError> closed_;
+    bool close_reported_{false};
+};
+
 }  // namespace endgate::nethernet

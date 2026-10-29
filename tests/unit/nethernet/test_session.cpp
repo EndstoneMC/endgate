@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +16,8 @@
 #include <gtest/gtest.h>
 
 #include "endgate/network/nethernet/session.h"
+#include "endgate/network/rtc/certificate.h"
+#include "endgate/network/rtc/description.h"
 #include "endgate/network/rtc/stun.h"
 
 namespace endgate::nethernet {
@@ -291,6 +294,142 @@ TEST_F(NetworkSessionTest, ClosesOnAHeaderOnlyMessage)
     client_.drive(now_);
     pump();
     EXPECT_EQ(recorder_.closed, std::vector{ESessionError::DataChannelClosed});
+}
+
+class DialerSessionTest : public testing::Test {
+protected:
+    DialerSessionTest()
+        : offer_(rtc::Description::offer(dialer_creds_, dialer_certificate_->getFingerprint(),
+                                         std::vector{dialer_address_})),
+          answerer_(answerer_recorder_, offer_, answerer_creds_, answerer_certificate_,
+                    {.max_packet_size = 8 * 1024 * 1024}, now_),
+          answer_(rtc::Description::answer(offer_, answerer_creds_, answerer_certificate_->getFingerprint(),
+                                           std::array{rtc::CandidateAddress{.address = answerer_address_}})),
+          dialer_(dialer_recorder_, answer_, dialer_creds_, dialer_certificate_, {.max_packet_size = 8 * 1024 * 1024},
+                  now_)
+    {
+    }
+
+    void deliver()
+    {
+        while (!dialer_recorder_.outgoing.empty() || !answerer_recorder_.outgoing.empty()) {
+            while (!dialer_recorder_.outgoing.empty()) {
+                auto [destination, datagram] = std::move(dialer_recorder_.outgoing.front());
+                dialer_recorder_.outgoing.pop_front();
+                if (destination == answerer_address_) {
+                    answerer_.handleDatagram(now_, dialer_address_, datagram);
+                }
+            }
+            while (!answerer_recorder_.outgoing.empty()) {
+                auto [destination, datagram] = std::move(answerer_recorder_.outgoing.front());
+                answerer_recorder_.outgoing.pop_front();
+                if (destination == dialer_address_) {
+                    dialer_.handleDatagram(now_, answerer_address_, datagram);
+                }
+            }
+        }
+    }
+
+    void pump()
+    {
+        for (int round = 0; round < 10000; ++round) {
+            deliver();
+            if ((dialer_.isOpen() || dialer_.isClosed()) && (answerer_.isOpen() || answerer_.isClosed())) {
+                return;
+            }
+            const auto dialer_next = dialer_.nextTimeout();
+            const auto answerer_next = answerer_.nextTimeout();
+            std::optional<Clock::time_point> next = dialer_next;
+            if (answerer_next && (!next || *answerer_next < *next)) {
+                next = answerer_next;
+            }
+            if (!next) {
+                return;
+            }
+            now_ = std::max(now_, *next);
+            if (dialer_next && *dialer_next <= now_) {
+                dialer_.handleTimeout(now_);
+            }
+            if (answerer_next && *answerer_next <= now_) {
+                answerer_.handleTimeout(now_);
+            }
+        }
+        FAIL() << "the two sides never went quiet";
+    }
+
+    Clock::time_point now_{Clock::now()};
+    std::shared_ptr<const rtc::Certificate> dialer_certificate_{rtc::Certificate::generate()};
+    std::shared_ptr<const rtc::Certificate> answerer_certificate_{rtc::Certificate::generate()};
+    rtc::IceCredentials dialer_creds_{rtc::IceCredentials::generate()};
+    rtc::IceCredentials answerer_creds_{rtc::IceCredentials::generate()};
+    asio::ip::udp::endpoint dialer_address_{asio::ip::make_address("203.0.113.7"), 41234};
+    asio::ip::udp::endpoint answerer_address_{asio::ip::make_address("198.51.100.8"), 19132};
+    Recorder dialer_recorder_;
+    Recorder answerer_recorder_;
+    rtc::Description offer_;
+    NetworkSession answerer_;
+    rtc::Description answer_;
+    DialerSession dialer_;
+};
+
+TEST_F(DialerSessionTest, OpensBothSidesWhenTheDialerOffersAndOpensItsChannels)
+{
+    pump();
+    EXPECT_TRUE(dialer_.isOpen());
+    EXPECT_TRUE(answerer_.isOpen());
+    EXPECT_EQ(dialer_recorder_.opened, 1);
+    EXPECT_EQ(answerer_recorder_.opened, 1);
+    EXPECT_TRUE(dialer_recorder_.closed.empty());
+    EXPECT_TRUE(answerer_recorder_.closed.empty());
+    EXPECT_EQ(dialer_recorder_.routes, std::vector{answerer_address_});
+}
+
+TEST_F(DialerSessionTest, CarriesPacketsBothWaysOnBothChannels)
+{
+    pump();
+    ASSERT_TRUE(dialer_.isOpen());
+    ASSERT_TRUE(answerer_.isOpen());
+
+    const auto reliable = payloadOf(300000, 11);
+    EXPECT_TRUE(dialer_.send(ByteBuf::copyBuffer(reliable), ESendType::Reliable, now_));
+    const auto unreliable = payloadOf(40, 12);
+    EXPECT_TRUE(dialer_.send(ByteBuf::copyBuffer(unreliable), ESendType::Unreliable, now_));
+    pump();
+    ASSERT_EQ(answerer_recorder_.packets.size(), 2U);
+    EXPECT_TRUE(std::ranges::contains(answerer_recorder_.packets, reliable));
+    EXPECT_TRUE(std::ranges::contains(answerer_recorder_.packets, unreliable));
+
+    const auto back = payloadOf(1200, 13);
+    EXPECT_TRUE(answerer_.send(ByteBuf::copyBuffer(back), ESendType::Reliable, now_));
+    pump();
+    ASSERT_EQ(dialer_recorder_.packets.size(), 1U);
+    EXPECT_EQ(dialer_recorder_.packets.front(), back);
+}
+
+TEST_F(DialerSessionTest, ReportsALocalCloseOnceAndStopsSending)
+{
+    pump();
+    ASSERT_TRUE(dialer_.isOpen());
+    dialer_.close(now_);
+    dialer_.close(now_);
+    EXPECT_EQ(dialer_recorder_.closed, std::vector{ESessionError::None});
+    EXPECT_FALSE(dialer_.isOpen());
+    EXPECT_FALSE(dialer_.send(ByteBuf::copyBuffer(payloadOf(10, 14)), ESendType::Reliable, now_));
+    EXPECT_TRUE(dialer_recorder_.routes.empty());
+}
+
+TEST_F(DialerSessionTest, FailsWithIceWhenNothingAnswers)
+{
+    Recorder lonely_recorder;
+    DialerSession lonely(lonely_recorder, answer_, rtc::IceCredentials::generate(), dialer_certificate_,
+                         {.max_packet_size = 8 * 1024 * 1024}, now_);
+    for (auto deadline = lonely.nextTimeout(); deadline && lonely_recorder.closed.empty();
+         deadline = lonely.nextTimeout()) {
+        now_ = *deadline;
+        lonely_recorder.outgoing.clear();
+        lonely.handleTimeout(now_);
+    }
+    EXPECT_EQ(lonely_recorder.closed, std::vector{ESessionError::ICE});
 }
 
 }  // namespace
