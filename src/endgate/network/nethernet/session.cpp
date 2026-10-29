@@ -153,14 +153,21 @@ void NetworkSession::onStateChange(rtc::SctpTransport::State state)
 
 void NetworkSession::onChannelOpen(const rtc::DataChannel &channel)
 {
-    if (channel.label == "ReliableDataChannel") {
-        if (!reliable_stream_) {
-            reliable_stream_ = channel.stream;
+    if (channel.label != "ReliableDataChannel") {
+        if (!unreliable_stream_) {
+            unreliable_stream_ = channel.stream;
         }
+        return;
     }
-    else if (!unreliable_stream_) {
-        unreliable_stream_ = channel.stream;
+    if (reliable_stream_) {
+        return;
     }
+    reliable_stream_ = channel.stream;
+    open_ = true;
+    if (const auto size = sctp_.maxMessageSize(); size > 1) {
+        queue_.setMaxMessageSize(size);
+    }
+    listener_.onOpen();
 }
 
 void NetworkSession::onChannelMessage(const rtc::DataChannel &channel, ByteBufView message, bool)
@@ -236,14 +243,6 @@ void NetworkSession::advance()
             for (const auto &packet : std::exchange(outbox_, {})) {
                 dtls_.send(packet.slice());
             }
-            progressed = true;
-        }
-        if (!open_ && reliable_stream_ && unreliable_stream_) {
-            open_ = true;
-            if (const auto size = sctp_.maxMessageSize(); size > 1) {
-                queue_.setMaxMessageSize(size);
-            }
-            listener_.onOpen();
             progressed = true;
         }
     }

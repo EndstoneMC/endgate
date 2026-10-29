@@ -51,12 +51,17 @@ public:
     void onRouteAdded(const asio::ip::udp::endpoint &remote) override { routes.push_back(remote); }
     void onRouteRemoved(const asio::ip::udp::endpoint &remote) override { std::erase(routes, remote); }
     void onOpen() override { ++opened; }
-    void onPacket(ByteBufView packet) override { packets.push_back(bytesOf(packet)); }
+    void onPacket(ByteBufView packet) override
+    {
+        packets_before_open += opened == 0 ? 1 : 0;
+        packets.push_back(bytesOf(packet));
+    }
     void onClosed(ESessionError reason) override { closed.push_back(reason); }
 
     std::deque<std::pair<asio::ip::udp::endpoint, std::vector<std::byte>>> outgoing;
     std::vector<asio::ip::udp::endpoint> routes;
     int opened{0};
+    int packets_before_open{0};
     std::vector<std::vector<std::byte>> packets;
     std::vector<ESessionError> closed;
 };
@@ -79,8 +84,9 @@ public:
         }
         if (sctp.state() == rtc::SctpTransport::State::Connected && !reliable) {
             reliable = sctp.createDataChannel("ReliableDataChannel", "", {}, 0, now);
-            unreliable =
-                sctp.createDataChannel("UnreliableDataChannel", "", {.unordered = true, .max_retransmits = 0}, 0, now);
+            if (!hold_unreliable) {
+                openUnreliable();
+            }
         }
         while (dtls.getState() == rtc::DtlsTransport::State::Connected && !sctp_outbox.empty()) {
             for (const auto &packet : std::exchange(sctp_outbox, {})) {
@@ -89,10 +95,17 @@ public:
         }
     }
 
+    void openUnreliable()
+    {
+        unreliable =
+            sctp.createDataChannel("UnreliableDataChannel", "", {.unordered = true, .max_retransmits = 0}, 0, now);
+    }
+
     rtc::DtlsTransport dtls;
     rtc::SctpTransport sctp;
     PacketQueue queue;
     Clock::time_point now;
+    bool hold_unreliable{false};
     bool sctp_started{false};
     std::optional<std::uint16_t> reliable;
     std::optional<std::uint16_t> unreliable;
@@ -215,6 +228,27 @@ TEST_F(NetworkSessionTest, OpensWhenTheClientsTwoChannelsArrive)
     EXPECT_EQ(recorder_.routes, std::vector{client_address_});
     EXPECT_EQ(recorder_.opened, 1);
     EXPECT_TRUE(session_.isOpen());
+    EXPECT_TRUE(recorder_.closed.empty());
+}
+
+TEST_F(NetworkSessionTest, OpensWithItsReliableChannelBeforeTheUnreliableOneArrives)
+{
+    client_.hold_unreliable = true;
+    connect();
+    EXPECT_EQ(recorder_.opened, 1);
+    ASSERT_TRUE(session_.isOpen());
+
+    const auto request = payloadOf(7, 5);
+    client_.queue.push(Unpooled::wrappedBuffer(request), ESendType::Reliable);
+    client_.drive(now_);
+    pump();
+    EXPECT_EQ(recorder_.packets, std::vector<std::vector<std::byte>>{request});
+    EXPECT_EQ(recorder_.packets_before_open, 0);
+
+    client_.openUnreliable();
+    client_.drive(now_);
+    pump();
+    EXPECT_EQ(recorder_.opened, 1);
     EXPECT_TRUE(recorder_.closed.empty());
 }
 
