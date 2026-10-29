@@ -518,6 +518,71 @@ TEST(Reliability, SplitPartsReassembleInIndexOrderWhateverTheirArrival)
     EXPECT_EQ(test::toHex(pair.b.received[0]), "fe0001020304");
 }
 
+TEST(Reliability, SplitPartsArrivingZeroTwoOneReassembleInIndexOrder)
+{
+    Pair pair;
+    const std::array<std::string_view, 3> parts{"fe00", "0102", "0304"};
+    for (const std::uint32_t index : {0U, 2U, 1U}) {
+        const auto datagram = std::string{"84"} +
+                              test::toHex(std::array{std::byte(index), std::byte{0}, std::byte{0}}) + "700010" +
+                              test::toHex(std::array{std::byte(index), std::byte{0}, std::byte{0}}) +
+                              "000000"
+                              "00"
+                              "00000003"
+                              "0007"
+                              "0000000" +
+                              std::to_string(index) + std::string{parts[index]};
+        pair.b.inject(datagram);
+    }
+    ASSERT_EQ(pair.b.received.size(), 1U);
+    EXPECT_EQ(test::toHex(pair.b.received[0]), "fe0001020304");
+}
+
+TEST(Reliability, ARepeatedSplitPartKeepsTheFirstCopy)
+{
+    Pair pair;
+    const std::array<std::pair<std::uint32_t, std::string_view>, 4> arrivals{
+        {{0, "fe00"}, {2, "0304"}, {0, "ffff"}, {1, "0102"}}};
+    std::uint32_t number = 0;
+    for (const auto &[index, payload] : arrivals) {
+        pair.b.inject("84" + test::toHex(std::array{std::byte(number), std::byte{0}, std::byte{0}}) +
+                      "100010"
+                      "00000003"
+                      "0009"
+                      "0000000" +
+                      std::to_string(index) + std::string{payload});
+        ++number;
+    }
+    ASSERT_EQ(pair.b.received.size(), 1U);
+    EXPECT_EQ(test::toHex(pair.b.received[0]), "fe0001020304");
+}
+
+TEST(Reliability, ASplitPartIndexedPastTheCountIsDropped)
+{
+    Pair pair;
+    pair.b.inject("84000000"
+                  "100010"
+                  "00000002"
+                  "0001"
+                  "00000002"
+                  "fe00");
+    EXPECT_EQ(pair.b.errors, 1);
+    pair.b.inject("84010000"
+                  "100010"
+                  "00000002"
+                  "0001"
+                  "00000000"
+                  "fe00");
+    pair.b.inject("84020000"
+                  "100010"
+                  "00000002"
+                  "0001"
+                  "00000001"
+                  "0102");
+    ASSERT_EQ(pair.b.received.size(), 1U);
+    EXPECT_EQ(test::toHex(pair.b.received[0]), "fe000102");
+}
+
 TEST(Reliability, RepeatedUnreliableSplitPartsAreIgnored)
 {
     Pair pair;
