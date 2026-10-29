@@ -274,6 +274,27 @@ TEST_P(LargeMessages, SplitsReassembleUnderLossDuplicationAndReordering)
 
 INSTANTIATE_TEST_SUITE_P(Reliability, LargeMessages, testing::Values(1500, 65535, 300000, 1 << 20, 2700000));
 
+class DelayedSplits : public testing::TestWithParam<std::uint32_t> {};
+
+TEST_P(DelayedSplits, ReliableOrderedMessagesArriveIntactWhenPartsArriveLate)
+{
+    Pair pair{GetParam()};
+    for (const auto from : {0U, 1U}) {
+        pair.simulation.setConditions(
+            from, {.loss = 0.1, .duplicate = 0.05, .reorder = 0.3, .reorder_delay = std::chrono::milliseconds{120}});
+    }
+    std::vector<std::vector<std::byte>> sent;
+    for (const auto size : {300000UZ, 1000000UZ, 1000000UZ}) {
+        sent.push_back(message(static_cast<std::uint32_t>(sent.size()), size));
+        pair.a.send(sent.back(), PacketReliability::ReliableOrdered);
+    }
+    ASSERT_TRUE(pair.simulation.runUntil([&] { return pair.b.received.size() == sent.size(); }, 3000s));
+    EXPECT_EQ(pair.b.received, sent);
+    EXPECT_EQ(pair.b.errors, 0);
+}
+
+INSTANTIATE_TEST_SUITE_P(Reliability, DelayedSplits, testing::Values(1U, 2U, 3U));
+
 TEST(Reliability, UnreliableMessagesThatMustSplitBecomeReliable)
 {
     Pair pair{5};
