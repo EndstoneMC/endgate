@@ -85,32 +85,30 @@ void Endpoint::sendTo(const raknet::SystemAddress &address, ByteBufView datagram
 
 void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender)
 {
+    constexpr std::size_t forward_limit = 4096;
+
+    const auto buffer = Unpooled::wrappedBuffer(datagram);
     const auto id = static_cast<raknet::MessageId>(datagram.front());
-    const bool offline_message = raknet::isOfflineMessage(Unpooled::wrappedBuffer(datagram));
+    const bool offline_message = raknet::isOfflineMessage(buffer.slice());
     if (offline_message &&
         (id == raknet::MessageId::UnconnectedPing || id == raknet::MessageId::UnconnectedPingOpenConnections ||
          id == raknet::MessageId::OpenConnectionRequest1)) {
-        static_cast<void>(offline_.handle(Unpooled::wrappedBuffer(datagram), sender, true));
+        static_cast<void>(offline_.handle(buffer.slice(), sender, true));
         return;
     }
-    if (const auto route = routes_.find(sender); route != routes_.end()) {
-        const auto connection = route->second;
-        connection->handleDatagram(datagram, sender);
-        return;
-    }
-
     Endpoint *owner = nullptr;
-    if (const auto cached = forwards_.find(sender); cached != forwards_.end() && !offline_message) {
-        owner = cached->second;
-    }
-    else if (const auto peeked = rtc::StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(datagram))) {
+    if (const auto peeked = rtc::StunMessage::peekLocalUfrag(buffer.slice())) {
         const std::string ufrag(*peeked);
         if (const auto session = ufrags_.find(ufrag); session != ufrags_.end()) {
             const auto connection = session->second;
             connection->handleDatagram(datagram, sender);
             return;
         }
-        auto claim = closed_ ? Registry::Claim{} : registry_.claim(ufrag, *this);
+        const auto check = rtc::StunMessage::decode(buffer.slice());
+        if (!check || closed_) {
+            return;
+        }
+        auto claim = registry_.claim(ufrag, *this, *check, buffer.slice());
         if (auto *const join = std::get_if<PendingJoin>(&claim)) {
             const auto connection = std::make_shared<NetherNetConnection<nethernet::NetworkSession>>(
                 *this, join->network_id, join->offer, std::move(join->credentials), certificate_, session_config_,
@@ -119,49 +117,70 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::i
                 std::make_shared<ClientPlaySessionHandler>(std::make_shared<Player>(server_, connection)));
             connections_.emplace(connection, Registration{.ufrag = ufrag});
             ufrags_.emplace(ufrag, connection);
+            forwards_.erase(sender);
             connection->handleDatagram(datagram, sender);
             return;
         }
         if (const auto *const claimed = std::get_if<Endpoint *>(&claim)) {
             owner = *claimed;
-            if (forwards_.size() >= 4096) {
-                forwards_.clear();
+            if (forwards_.insert_or_assign(sender, owner).second) {
+                forward_order_.push_back(sender);
+                while (forward_order_.size() > forward_limit) {
+                    forwards_.erase(forward_order_.front());
+                    forward_order_.pop_front();
+                }
             }
-            forwards_.insert_or_assign(sender, owner);
         }
     }
-    else if (offline_message && id == raknet::MessageId::OpenConnectionRequest2) {
-        accept(datagram, sender);
+    else if (const auto route = routes_.find(sender); route != routes_.end()) {
+        const auto connection = route->second;
+        connection->handleDatagram(datagram, sender);
         return;
     }
+    else if (offline_message) {
+        if (id == raknet::MessageId::OpenConnectionRequest2) {
+            accept(datagram, sender);
+        }
+        return;
+    }
+    else if (const auto cached = forwards_.find(sender); cached != forwards_.end()) {
+        owner = cached->second;
+    }
     if (owner != nullptr && owner != this) {
-        owner->getEventLoop().execute(
-            [owner, copy = Unpooled::copiedBuffer(datagram), sender] { owner->forward(copy, sender); });
+        owner->getEventLoop().execute([owner, copy = Unpooled::copiedBuffer(datagram), sender, origin = this] {
+            owner->forward(copy, sender, *origin);
+        });
     }
 }
 
-void Endpoint::forward(const ByteBuf &datagram, const asio::ip::udp::endpoint &sender)
+void Endpoint::forward(const ByteBuf &datagram, const asio::ip::udp::endpoint &sender, Endpoint &origin)
 {
-    if (closed_ || !datagram.isReadable()) {
-        return;
-    }
-    if (const auto route = routes_.find(sender); route != routes_.end()) {
-        const auto connection = route->second;
-        connection->handleDatagram(datagram.nioBuffer(), sender);
-        return;
-    }
-    if (const auto peeked = rtc::StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(datagram.nioBuffer()))) {
-        if (const auto session = ufrags_.find(std::string(*peeked)); session != ufrags_.end()) {
-            const auto connection = session->second;
-            connection->handleDatagram(datagram.nioBuffer(), sender);
+    if (!closed_ && datagram.isReadable()) {
+        if (const auto peeked = rtc::StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(datagram.nioBuffer()))) {
+            if (const auto session = ufrags_.find(std::string(*peeked)); session != ufrags_.end()) {
+                const auto connection = session->second;
+                connection->handleDatagram(datagram.nioBuffer(), sender);
+                return;
+            }
         }
+        else if (const auto route = routes_.find(sender); route != routes_.end()) {
+            const auto connection = route->second;
+            connection->handleDatagram(datagram.nioBuffer(), sender);
+            return;
+        }
+    }
+    origin.getEventLoop().execute([&origin, owner = this, sender] { origin.invalidate(sender, owner); });
+}
+
+void Endpoint::invalidate(const asio::ip::udp::endpoint &sender, Endpoint *owner)
+{
+    if (const auto cached = forwards_.find(sender); cached != forwards_.end() && cached->second == owner) {
+        forwards_.erase(cached);
     }
 }
 
 void Endpoint::accept(std::span<const std::byte> datagram, const raknet::SystemAddress &sender)
 {
-    constexpr std::size_t half_open_limit = 1024;
-
     const auto request = offline_.handle(Unpooled::wrappedBuffer(datagram), sender, true);
     if (!request) {
         return;
@@ -173,14 +192,23 @@ void Endpoint::accept(std::span<const std::byte> datagram, const raknet::SystemA
         offline_.reject(sender, raknet::MessageId::AlreadyConnected);
         return;
     }
-    if (half_open_.size() >= half_open_limit) {
-        const auto oldest = half_open_.begin()->second;
-        half_open_.erase(half_open_.begin());
-        if (const auto registration = connections_.find(oldest); registration != connections_.end()) {
-            registration->second.half_open.reset();
-            unroute(oldest, registration->second);
+    if (!registry_.addHalfOpen()) {
+        if (!half_open_.empty()) {
+            const auto oldest = half_open_.begin()->second;
+            half_open_.erase(half_open_.begin());
+            if (const auto registration = connections_.find(oldest); registration != connections_.end()) {
+                registration->second.half_open.reset();
+                registry_.removeHalfOpen();
+                unroute(oldest, registration->second);
+            }
+            oldest->shutdown();
         }
-        oldest->shutdown();
+        if (!registry_.addHalfOpen()) {
+            if (guid) {
+                registry_.removeGuid(*guid);
+            }
+            return;
+        }
     }
 
     const auto system_index = getFreeSystemIndex();
@@ -242,6 +270,7 @@ void Endpoint::unregisterConnection(const std::shared_ptr<MinecraftConnection> &
     }
     if (registration->second.half_open) {
         half_open_.erase(*registration->second.half_open);
+        registry_.removeHalfOpen();
     }
     if (const auto session = ufrags_.find(registration->second.ufrag);
         session != ufrags_.end() && session->second == connection) {
@@ -259,6 +288,7 @@ void Endpoint::activated(const std::shared_ptr<MinecraftConnection> &connection)
     }
     if (const auto half_open = std::exchange(registration->second.half_open, std::nullopt)) {
         half_open_.erase(*half_open);
+        registry_.removeHalfOpen();
     }
 }
 
@@ -355,9 +385,15 @@ Awaitable<void> Endpoint::join(nethernet::JoinRequest request, nethernet::JoinRe
     auto candidates = nethernet::gatherCandidates(reached, request.port.value_or(port), interfaces, port);
     const auto created = MinecraftConnection::Clock::now();
     auto credentials = rtc::IceCredentials::generate();
-    while (!registry_.addPending(PendingJoin{
-        .offer = *offer, .credentials = credentials, .network_id = request.network_id, .created = created})) {
+    auto added = Registry::AddPending::Collision;
+    while ((added = registry_.addPending(PendingJoin{
+                .offer = *offer, .credentials = credentials, .network_id = request.network_id, .created = created})) ==
+           Registry::AddPending::Collision) {
         credentials = rtc::IceCredentials::generate();
+    }
+    if (added == Registry::AddPending::Full) {
+        response.reject(static_cast<std::uint32_t>(nethernet::ESessionError::GenericFailure));
+        co_return;
     }
 
     auto sdp = rtc::Description::answer(*offer, credentials, certificate_->getFingerprint(), candidates)
@@ -371,17 +407,13 @@ Awaitable<void> Endpoint::join(nethernet::JoinRequest request, nethernet::JoinRe
         }
         sdp = assertion->injectIntoSdp(sdp);
     }
-    asio::co_spawn(event_loop_.getExecutor(), expire(credentials.ufrag), asio::detached);
+    expiring_.insert_or_assign(credentials.ufrag, event_loop_.schedule(
+                                                      [this, ufrag = credentials.ufrag] {
+                                                          registry_.removePending(ufrag);
+                                                          expiring_.erase(ufrag);
+                                                      },
+                                                      session_config_.ice.negotiation_timeout));
     response.answer(std::move(sdp));
-}
-
-Awaitable<void> Endpoint::expire(std::string ufrag)
-{
-    asio::steady_timer timer(event_loop_.getExecutor(), session_config_.ice.negotiation_timeout);
-    expiring_.insert(&timer);
-    co_await timer.async_wait(asio::as_tuple(asio::use_awaitable));
-    expiring_.erase(&timer);
-    registry_.removePending(ufrag);
 }
 
 void Endpoint::close()
@@ -390,12 +422,16 @@ void Endpoint::close()
     asio::error_code ignored;
     std::ignore = socket_->cancel(ignored);
     signaling_->close();
-    for (auto *const timer : expiring_) {
-        timer->cancel();
+    for (const auto &[ufrag, expiry] : std::exchange(expiring_, {})) {
+        expiry->cancel();
+        registry_.removePending(ufrag);
     }
     for (const auto &[connection, registration] : std::exchange(connections_, {})) {
         if (registration.guid) {
             registry_.removeGuid(*registration.guid);
+        }
+        if (registration.half_open) {
+            registry_.removeHalfOpen();
         }
         if (!registration.ufrag.empty()) {
             registry_.release(registration.ufrag);
@@ -405,6 +441,7 @@ void Endpoint::close()
     routes_.clear();
     ufrags_.clear();
     forwards_.clear();
+    forward_order_.clear();
     half_open_.clear();
 }
 

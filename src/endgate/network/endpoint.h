@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <memory>
 #include <optional>
@@ -14,7 +15,6 @@
 #include <asio/ip/tcp.hpp>
 #include <asio/ip/udp.hpp>
 #include <asio/ssl/context.hpp>
-#include <asio/steady_timer.hpp>
 #include <spdlog/logger.h>
 
 #include "endgate/awaitable.h"
@@ -69,7 +69,11 @@ public:
 
     void start();
     void close();
-    void forward(const ByteBuf &datagram, const asio::ip::udp::endpoint &sender);
+    void forward(const ByteBuf &datagram, const asio::ip::udp::endpoint &sender, Endpoint &origin);
+    void invalidate(const asio::ip::udp::endpoint &sender, Endpoint *owner);
+
+    [[nodiscard]] std::size_t getConnectionCount() const { return connections_.size(); }
+    [[nodiscard]] std::size_t getForwardCount() const { return forwards_.size(); }
 
     /**
      * Keeps track of a connection the endpoint did not accept itself, so it is shut down with the
@@ -103,7 +107,6 @@ private:
 
     Awaitable<void> receive();
     void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender);
-    Awaitable<void> expire(std::string ufrag);
     void accept(std::span<const std::byte> datagram, const raknet::SystemAddress &sender);
     void sendTo(const raknet::SystemAddress &address, ByteBufView datagram) override;
     void unroute(const std::shared_ptr<MinecraftConnection> &connection, Registration &registration);
@@ -124,7 +127,8 @@ private:
     std::unordered_map<asio::ip::udp::endpoint, std::shared_ptr<MinecraftConnection>> routes_;
     std::unordered_map<std::string, std::shared_ptr<MinecraftConnection>> ufrags_;
     std::unordered_map<asio::ip::udp::endpoint, Endpoint *> forwards_;
-    std::unordered_set<asio::steady_timer *> expiring_;
+    std::deque<asio::ip::udp::endpoint> forward_order_;
+    std::unordered_map<std::string, std::shared_ptr<ScheduledFuture>> expiring_;
     std::map<std::uint64_t, std::shared_ptr<MinecraftConnection>> half_open_;
     std::uint64_t next_half_open_{0};
     bool closed_{false};
