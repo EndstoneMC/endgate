@@ -5,6 +5,8 @@
 
 #include <spdlog/details/fmt_helper.h>
 
+#include "endgate/thread.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -16,6 +18,9 @@ namespace endgate {
 namespace {
 std::string getThreadName()
 {
+    if (const auto &name = Thread::getName(); !name.empty()) {
+        return name;
+    }
 #ifdef _WIN32
     using GetThreadDescriptionFn = HRESULT(WINAPI *)(HANDLE, PWSTR *);
     static const auto get_thread_description = [] {

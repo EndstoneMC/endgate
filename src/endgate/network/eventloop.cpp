@@ -1,9 +1,17 @@
 #include "endgate/network/eventloop.h"
 
+#include <format>
+#include <utility>
+
+#include "endgate/thread.h"
+
 namespace endgate {
 
-EventLoop::EventLoop()
-    : io_context_(1), work_guard_(asio::make_work_guard(io_context_)), thread_([this] { io_context_.run(); })
+EventLoop::EventLoop(std::string name)
+    : io_context_(1), work_guard_(asio::make_work_guard(io_context_)), thread_([this, name = std::move(name)] {
+          Thread::setName(name);
+          io_context_.run();
+      })
 {
 }
 
@@ -36,10 +44,10 @@ void EventLoop::awaitTermination()
     }
 }
 
-EventLoopGroup::EventLoopGroup(std::size_t threads)
+EventLoopGroup::EventLoopGroup(std::size_t threads, std::string_view name)
 {
     for (std::size_t i = 0; i < threads; ++i) {
-        loops_.emplace_back();
+        loops_.emplace_back(std::format("{} #{}", name, i));
     }
 }
 

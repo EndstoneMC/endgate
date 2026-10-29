@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <deque>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -50,7 +52,7 @@ class EventLoop {
 public:
     using Executor = asio::io_context::executor_type;
 
-    EventLoop();
+    explicit EventLoop(std::string name = {});
     EventLoop(const EventLoop &) = delete;
     EventLoop &operator=(const EventLoop &) = delete;
     EventLoop(EventLoop &&) = delete;
@@ -122,7 +124,7 @@ private:
  */
 class EventLoopGroup {
 public:
-    explicit EventLoopGroup(std::size_t threads);
+    EventLoopGroup(std::size_t threads, std::string_view name);
 
     /**
      * @see io.netty.channel.EventLoopGroup#next

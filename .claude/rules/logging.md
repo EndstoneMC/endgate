@@ -7,10 +7,11 @@ paths:
 
 Log what Velocity logs, when it logs it, at the same level and in the same words. Adapt only where Bedrock differs.
 
-- Name each logger after its class, as Velocity's `LogManager.getLogger(X.class)` does, and hold it as a member.
+- Name each logger after its class, as Velocity's `LogManager.getLogger(X.class)` does, with no namespace (`LogManager::getLogger("ProxyServer")`, never `"endgate::ProxyServer"`), and hold it as a member.
 - The layout is Velocity's `log4j2.xml`:
-  - console: `[HH:mm:ss LEVEL]: message` for endgate's own loggers, `[HH:mm:ss LEVEL] [logger]: message` for any other;
+  - console: `[HH:mm:ss LEVEL]: message`, as Velocity prints its own loggers;
   - file: `logs/latest.log` as `[HH:mm:ss] [thread/LEVEL] [logger]: message`, rolled to `logs/yyyy-MM-dd-N.log.gz` daily and at startup.
+- Name each thread as Velocity does: `main`, and each event loop `Netty asio Worker #N`, Velocity's `Netty epoll Worker #N` with endgate's transport. Set it with `Thread::setName`, which keeps the whole name for the log.
 - Startup and shutdown use Velocity's lines: `Starting {} {}...`, `Connections will use {} channels, {} compression, {} ciphers`, `Listening on {}`, `Done ({}s)!`, `Stopping the proxy...`.
 - Where a Velocity word reads oddly, take BDS's: *start* and *stop*, never *boot up* or *shut down*. A server *uses* or *supports* a transport; it never *speaks* or *answers* one.
 - A connection names itself as Velocity's `toString` does: `[initial connection] {address}`, `[connected player] {name} ({address})`, `[server connection] {name} -> {server}`. Its lifecycle lines are `{} has connected` and `{} has disconnected`.

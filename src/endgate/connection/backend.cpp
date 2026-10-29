@@ -26,7 +26,7 @@
 namespace endgate {
 
 ServerConnection::ServerConnection(BackendServer &server, std::shared_ptr<Player> player)
-    : server_(server), player_(std::move(player)), logger_(LogManager::getLogger("endgate::ServerConnection"))
+    : server_(server), player_(std::move(player)), logger_(LogManager::getLogger("ServerConnection"))
 {
 }
 
@@ -145,8 +145,7 @@ void ServerConnection::connected()
 }
 
 BackendPlaySessionHandler::BackendPlaySessionHandler(std::shared_ptr<ServerConnection> server_connection)
-    : logger_(LogManager::getLogger("endgate::BackendPlaySessionHandler")),
-      server_connection_(std::move(server_connection))
+    : logger_(LogManager::getLogger("BackendPlaySessionHandler")), server_connection_(std::move(server_connection))
 {
 }
 

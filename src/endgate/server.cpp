@@ -12,7 +12,7 @@
 namespace endgate {
 
 ProxyServer::ProxyServer()
-    : logger_(LogManager::getLogger("endgate::ProxyServer")), cm_(*this), console_(*this), ping_handler_(*this)
+    : logger_(LogManager::getLogger("ProxyServer")), cm_(*this), console_(*this), ping_handler_(*this)
 {
 }
 

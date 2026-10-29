@@ -82,8 +82,7 @@ std::optional<ServerInfo> ServerInfo::parse(std::string name, std::string_view a
     return ServerInfo{std::move(name), std::string(address), std::string(host), number, transport};
 }
 
-BackendServer::BackendServer(ServerInfo info)
-    : info_(std::move(info)), logger_(LogManager::getLogger("endgate::BackendServer"))
+BackendServer::BackendServer(ServerInfo info) : info_(std::move(info)), logger_(LogManager::getLogger("BackendServer"))
 {
 }
 

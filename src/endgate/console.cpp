@@ -20,7 +20,7 @@ namespace {
 constexpr auto HISTORY_FILE = ".console_history";
 }  // namespace
 
-Console::Console(ProxyServer &server) : server_(server), logger_(LogManager::getLogger("endgate::Console"))
+Console::Console(ProxyServer &server) : server_(server), logger_(LogManager::getLogger("Console"))
 {
     constexpr std::size_t max_history_size = 1000;
 

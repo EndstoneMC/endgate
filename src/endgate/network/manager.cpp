@@ -22,8 +22,8 @@
 namespace endgate {
 
 ConnectionManager::ConnectionManager(ProxyServer &server)
-    : server_(server), logger_(LogManager::getLogger("endgate::ConnectionManager")), offline_(server),
-      group_(std::max(1U, std::thread::hardware_concurrency())),
+    : server_(server), logger_(LogManager::getLogger("ConnectionManager")), offline_(server),
+      group_(std::max(1U, std::thread::hardware_concurrency()), "Netty asio Worker"),
       signals_(group_.begin()->getIoContext(), SIGINT, SIGTERM)
 {
 }

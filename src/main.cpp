@@ -2,6 +2,7 @@
 
 #include "endgate/logging/manager.h"
 #include "endgate/server.h"
+#include "endgate/thread.h"
 
 /**
  * Launches the proxy.
@@ -10,7 +11,8 @@
  */
 int main()
 {
-    auto &logger = endgate::LogManager::getLogger("endgate::main");
+    endgate::Thread::setName("main");
+    auto &logger = endgate::LogManager::getLogger("main");
     const auto start_time = std::chrono::steady_clock::now();
 
     endgate::ProxyServer server;

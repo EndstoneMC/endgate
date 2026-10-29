@@ -6,7 +6,6 @@
 #include <chrono>
 #include <format>
 #include <fstream>
-#include <string_view>
 #include <utility>
 
 #include <spdlog/details/os.h>
@@ -97,11 +96,8 @@ TerminalConsoleAppender::TerminalConsoleAppender(std::FILE *target_file, spdlog:
     constexpr auto yellow = "\033[33m";
 
     setColorMode(mode);
-    for (auto &formatter : formatters_) {
-        formatter.add_flag<LevelFormatter>('L');
-    }
-    formatters_[0].set_pattern("%^[%H:%M:%S %L] [%n]: %v%$");
-    formatters_[1].set_pattern("%^[%H:%M:%S %L]: %v%$");
+    formatter_.add_flag<LevelFormatter>('L');
+    formatter_.set_pattern("%^[%H:%M:%S %L]: %v%$");
     colors_.at(spdlog::level::warn) = yellow;
     colors_.at(spdlog::level::err) = red;
     colors_.at(spdlog::level::critical) = red;
@@ -135,8 +131,7 @@ void TerminalConsoleAppender::sink_it_(const spdlog::details::log_msg &msg)
     msg.color_range_end = 0;
 
     spdlog::memory_buf_t formatted;
-    auto &formatter = std::string_view(msg.logger_name).starts_with("endgate::") ? formatters_[1] : formatters_[0];
-    formatter.format(msg, formatted);
+    formatter_.format(msg, formatted);
 
     std::string out;
     const auto &color = colors_.at(static_cast<std::size_t>(msg.level));

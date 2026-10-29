@@ -39,7 +39,7 @@ private:
     std::FILE *target_file_;
     bool should_do_colors_;
     std::array<std::string, spdlog::level::n_levels> colors_;
-    std::array<spdlog::pattern_formatter, 2> formatters_;
+    spdlog::pattern_formatter formatter_;
 };
 
 /**

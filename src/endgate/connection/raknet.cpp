@@ -40,7 +40,7 @@ void setDontFragment(asio::ip::udp::socket &socket, bool dont_fragment)
 RakNetConnection::RakNetConnection(Endpoint &endpoint, const raknet::SystemAddress &address,
                                    const raknet::OpenConnectionRequest2 &request, std::uint64_t guid,
                                    std::uint16_t system_index, raknet::TimePoint now)
-    : MinecraftConnection(endpoint, toString(address)), logger_(LogManager::getLogger("endgate::RakNetConnection")),
+    : MinecraftConnection(endpoint, toString(address)), logger_(LogManager::getLogger("RakNetConnection")),
       endpoint_socket_(endpoint.getSocket()), socket_(eventLoop().getExecutor()), address_(address),
       timer_(eventLoop().getExecutor()), connection_(*this, {.guid = guid}, address, request, system_index, now)
 {
@@ -48,7 +48,7 @@ RakNetConnection::RakNetConnection(Endpoint &endpoint, const raknet::SystemAddre
 
 RakNetConnection::RakNetConnection(Endpoint &endpoint, const raknet::SystemAddress &address, std::uint64_t guid,
                                    raknet::TimePoint now)
-    : MinecraftConnection(endpoint, toString(address)), logger_(LogManager::getLogger("endgate::RakNetConnection")),
+    : MinecraftConnection(endpoint, toString(address)), logger_(LogManager::getLogger("RakNetConnection")),
       socket_(eventLoop().getExecutor()), address_(address), timer_(eventLoop().getExecutor()),
       connection_(*this, {.guid = guid}, address, now)
 {

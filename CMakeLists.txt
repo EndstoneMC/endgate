@@ -21,7 +21,7 @@ find_package(GTest REQUIRED)
 
 enable_testing()
 
-add_library(endgate_eventloop STATIC src/endgate/network/eventloop.cpp)
+add_library(endgate_eventloop STATIC src/endgate/network/eventloop.cpp src/endgate/thread.cpp)
 add_library(endgate::eventloop ALIAS endgate_eventloop)
 target_include_directories(endgate_eventloop PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(endgate_eventloop PUBLIC asio::asio)

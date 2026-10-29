@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -13,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include "endgate/network/eventloop.h"
+#include "endgate/thread.h"
 
 namespace endgate {
 
@@ -20,6 +22,18 @@ TEST(EventLoop, IsNotInTheEventLoopFromOutside)
 {
     EventLoop loop;
     EXPECT_FALSE(loop.inEventLoop());
+}
+
+TEST(EventLoopGroup, NamesEachLoopThreadAfterTheGroup)
+{
+    EventLoopGroup group(2, "Test Worker");
+    std::vector<std::string> names;
+    for (auto &loop : group) {
+        std::promise<std::string> name;
+        loop.execute([&] { name.set_value(Thread::getName()); });
+        names.push_back(name.get_future().get());
+    }
+    EXPECT_EQ(names, (std::vector<std::string>{"Test Worker #0", "Test Worker #1"}));
 }
 
 TEST(EventLoop, ExecuteRunsTheTaskOnTheLoopThread)
@@ -105,7 +119,7 @@ TEST(EventLoop, CancelledScheduleNeverRuns)
 
 TEST(EventLoopGroup, NextCyclesThroughEveryLoop)
 {
-    EventLoopGroup group(3);
+    EventLoopGroup group(3, "Test Worker");
     ASSERT_EQ(group.size(), 3U);
     std::set<EventLoop *> seen;
     for (int i = 0; i < 3; ++i) {
@@ -116,7 +130,7 @@ TEST(EventLoopGroup, NextCyclesThroughEveryLoop)
 
 TEST(EventLoopGroup, NextWrapsAround)
 {
-    EventLoopGroup group(2);
+    EventLoopGroup group(2, "Test Worker");
     auto &first = group.next();
     auto &second = group.next();
     EXPECT_NE(&first, &second);
@@ -126,7 +140,7 @@ TEST(EventLoopGroup, NextWrapsAround)
 
 TEST(EventLoopGroup, EveryLoopRunsOnItsOwnThread)
 {
-    EventLoopGroup group(4);
+    EventLoopGroup group(4, "Test Worker");
     std::set<std::thread::id> threads;
     std::mutex mutex;
     std::latch done(4);
@@ -143,7 +157,7 @@ TEST(EventLoopGroup, EveryLoopRunsOnItsOwnThread)
 
 TEST(EventLoopGroup, ShutdownDrainsQueuedTasks)
 {
-    EventLoopGroup group(2);
+    EventLoopGroup group(2, "Test Worker");
     std::atomic<int> ran{0};
     for (auto &loop : group) {
         loop.execute([&] { ++ran; });

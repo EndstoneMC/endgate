@@ -120,7 +120,7 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
 
 spdlog::logger &ProxyConfig::logger()
 {
-    static spdlog::logger &logger = LogManager::getLogger("endgate::ProxyConfig");
+    static spdlog::logger &logger = LogManager::getLogger("ProxyConfig");
     return logger;
 }
 

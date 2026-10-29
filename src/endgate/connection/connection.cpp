@@ -10,9 +10,8 @@
 namespace endgate {
 
 MinecraftConnection::MinecraftConnection(Endpoint &endpoint, std::string remote_address)
-    : endpoint_(endpoint), event_loop_(endpoint.getEventLoop()),
-      logger_(LogManager::getLogger("endgate::MinecraftConnection")), remote_address_(std::move(remote_address)),
-      sink_(*this), pipeline_(sink_)
+    : endpoint_(endpoint), event_loop_(endpoint.getEventLoop()), logger_(LogManager::getLogger("MinecraftConnection")),
+      remote_address_(std::move(remote_address)), sink_(*this), pipeline_(sink_)
 {
 }
 
