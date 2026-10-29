@@ -40,7 +40,7 @@ public:
     Echo(endgate::EventLoop &event_loop, const asio::ip::address &address)
         : event_loop_(event_loop), io_context_(event_loop.getIoContext()), socket_(io_context_, {address, 0}),
           timer_(io_context_), certificate_(endgate::rtc::Certificate::generate()),
-          identity_(endgate::nethernet::PrivateKey{EVP_EC_gen("P-384"), EVP_PKEY_free},
+          identity_(endgate::PrivateKey{EVP_EC_gen("P-384"), EVP_PKEY_free},
                     endgate::nethernet::ServerIdentityAssertionGenerator::Config{})
     {
         socket_.non_blocking(true);

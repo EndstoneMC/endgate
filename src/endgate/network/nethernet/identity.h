@@ -11,38 +11,9 @@
 
 #include <openssl/evp.h>
 
+#include "endgate/crypto/jose.h"
+
 namespace endgate::nethernet {
-
-using PublicKey = std::shared_ptr<EVP_PKEY>;
-using PrivateKey = std::shared_ptr<EVP_PKEY>;
-
-/**
- * A compact JSON Web Token split into its parts, signature unchecked until verify is called.
- *
- * @see RFC 7519
- * @see RFC 7515 section 7.1
- */
-struct JsonWebToken {
-    std::string header;
-    std::string claims;
-    std::string algorithm;
-    std::string signing_input;
-    std::vector<std::byte> signature;
-
-    [[nodiscard]] static std::optional<JsonWebToken> decode(std::string_view token);
-
-    /**
-     * @see RFC 7518 section 3.4
-     */
-    [[nodiscard]] bool verify(EVP_PKEY *key) const;
-
-    [[nodiscard]] PublicKey publicKey() const;
-};
-
-/**
- * @see RFC 7515 appendix F
- */
-[[nodiscard]] bool verifyDetachedJws(std::string_view jws, std::string_view payload, EVP_PKEY *key);
 
 enum class CpkEncoding {
     JsonWebKey,

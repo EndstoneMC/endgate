@@ -1,6 +1,5 @@
 #include <unistd.h>
 
-#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -12,7 +11,6 @@
 #include <openssl/ec.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
-#include <openssl/rsa.h>
 
 #include "endgate/network/nethernet/identity.h"
 
@@ -153,31 +151,6 @@ TEST(IdentityAssertionTest, CanCarryTheKeyAsSubjectPublicKeyInfo)
     EXPECT_TRUE(identity->verifyFingerprints(cpk.get()));
 }
 
-TEST(IdentityAssertionTest, VerifiesTheRfc7515Es256Example)
-{
-    const JsonWebToken holder{.claims = R"({"cpk":{"kty":"EC","crv":"P-256",)"
-                                        R"("x":"f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",)"
-                                        R"("y":"x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"}})"};
-    const auto key = holder.publicKey();
-    ASSERT_TRUE(key);
-
-    const auto token = JsonWebToken::decode("eyJhbGciOiJFUzI1NiJ9"
-                                            ".eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFt"
-                                            "cGxlLmNvbS9pc19yb290Ijp0cnVlfQ"
-                                            ".DtEhU3ljbEg8L38VWAfUAqOyKAM6-Xx-F4GawxaepmXFCgfTjDxw5djxLa8ISlSA"
-                                            "pmWQxfKTUJqPP3-Kg6NU1Q");
-    ASSERT_TRUE(token);
-    EXPECT_EQ(token->claims, "{\"iss\":\"joe\",\r\n \"exp\":1300819380,\r\n \"http://example.com/is_root\":true}");
-    EXPECT_TRUE(token->verify(key.get()));
-
-    const std::string detached = "eyJhbGciOiJFUzI1NiJ9..DtEhU3ljbEg8L38VWAfUAqOyKAM6-Xx-F4GawxaepmXFCgfTjDxw5djxLa8"
-                                 "ISlSApmWQxfKTUJqPP3-Kg6NU1Q";
-    EXPECT_TRUE(verifyDetachedJws(detached, token->claims, key.get()));
-    EXPECT_FALSE(verifyDetachedJws(detached, token->claims + " ", key.get()));
-    EXPECT_FALSE(verifyDetachedJws(token->signing_input + ".x", token->claims, key.get()));
-    EXPECT_FALSE(verifyDetachedJws(detached, token->claims, generateKey("P-384").get()));
-}
-
 TEST(IdentityAssertionTest, RejectsBrokenEnvelopes)
 {
     const auto with = [](std::string_view value) {
@@ -191,50 +164,6 @@ TEST(IdentityAssertionTest, RejectsBrokenEnvelopes)
     EXPECT_TRUE(IdentityAssertion::extractFromSdp(with(envelope)));
     EXPECT_FALSE(IdentityAssertion::extractFromSdp("v=0\r\na=identity:" + std::string(envelope) + "\r\n"));
     EXPECT_FALSE(IdentityAssertion::extractFromSdp(with(envelope))->getToken());
-}
-
-TEST(JsonWebTokenTest, RejectsMalformedTokens)
-{
-    EXPECT_FALSE(JsonWebToken::decode(""));
-    EXPECT_FALSE(JsonWebToken::decode("a.b"));
-    EXPECT_FALSE(JsonWebToken::decode("a.b.c.d"));
-    EXPECT_FALSE(JsonWebToken::decode("e30.e30.AA"));
-    EXPECT_FALSE(JsonWebToken::decode("eyJhbGciOiJFUzI1NiJ9.e3+.AA"));
-    const JsonWebToken no_cpk{.claims = "{}"};
-    EXPECT_FALSE(no_cpk.publicKey());
-    const JsonWebToken bad_jwk{.claims = R"({"cpk":{"kty":"EC","crv":"P-256","x":"AA","y":"AA"}})"};
-    EXPECT_FALSE(bad_jwk.publicKey());
-}
-
-TEST(JsonWebTokenTest, VerifiesAnRs256Signature)
-{
-    const PublicKey key(EVP_RSA_gen(2048), EVP_PKEY_free);
-    ASSERT_TRUE(key);
-    const std::string header = "eyJhbGciOiJSUzI1NiJ9";
-    const std::string payload = R"({"fingerprint":[]})";
-    const std::string signing_input = header + ".eyJmaW5nZXJwcmludCI6W119";
-    const std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> context(EVP_MD_CTX_new(), EVP_MD_CTX_free);
-    std::size_t length = 0;
-    ASSERT_EQ(EVP_DigestSignInit(context.get(), nullptr, EVP_sha256(), nullptr, key.get()), 1);
-    ASSERT_EQ(EVP_DigestSign(context.get(), nullptr, &length,
-                             reinterpret_cast<const unsigned char *>(signing_input.data()), signing_input.size()),
-              1);
-    std::string signature(length, '\0');
-    ASSERT_EQ(EVP_DigestSign(context.get(), reinterpret_cast<unsigned char *>(signature.data()), &length,
-                             reinterpret_cast<const unsigned char *>(signing_input.data()), signing_input.size()),
-              1);
-    std::string encoded(((length + 2) / 3) * 4, '\0');
-    encoded.resize(static_cast<std::size_t>(EVP_EncodeBlock(reinterpret_cast<unsigned char *>(encoded.data()),
-                                                            reinterpret_cast<const unsigned char *>(signature.data()),
-                                                            static_cast<int>(length))));
-    std::ranges::replace(encoded, '+', '-');
-    std::ranges::replace(encoded, '/', '_');
-    std::erase(encoded, '=');
-
-    EXPECT_TRUE(verifyDetachedJws(header + ".." + encoded, payload, key.get()));
-    EXPECT_FALSE(verifyDetachedJws(header + ".." + encoded, payload + " ", key.get()));
-    EXPECT_FALSE(verifyDetachedJws("eyJhbGciOiJSUzM4NCJ9.." + encoded, payload, key.get()));
-    EXPECT_FALSE(verifyDetachedJws("eyJhbGciOiJFUzI1NiJ9.." + encoded, payload, key.get()));
 }
 
 TEST(ClientIdentityAssertionVerifierTest, AcceptsAnOfferSignedUnderItsBase64DerCpk)
