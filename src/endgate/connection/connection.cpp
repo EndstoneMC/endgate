@@ -13,8 +13,9 @@ MinecraftConnection::MinecraftConnection(Endpoint &endpoint, std::string remote_
     : endpoint_(endpoint), event_loop_(endpoint.getEventLoop()), logger_(LogManager::getLogger("MinecraftConnection")),
       remote_address_(std::move(remote_address)), sink_(*this),
       pipeline_(sink_, MinecraftCipherDecoder{}, MinecraftCipherEncoder{}, MinecraftCompressDecoder{},
-                MinecraftCompressEncoder{}, MinecraftVarintFrameDecoder{}, MinecraftVarintLengthEncoder{},
-                MinecraftDecoder{direction}, MinecraftEncoder{})
+                MinecraftCompressEncoder{endpoint.getServer().getConfiguration().getCompressionLevel()},
+                MinecraftVarintFrameDecoder{}, MinecraftVarintLengthEncoder{}, MinecraftDecoder{direction},
+                MinecraftEncoder{})
 {
 }
 
@@ -74,6 +75,29 @@ void MinecraftConnection::shutdown()
 void MinecraftConnection::setSessionHandler(std::shared_ptr<MinecraftSessionHandler> handler)
 {
     handler_ = std::move(handler);
+}
+
+void MinecraftConnection::setState(StateRegistry state)
+{
+    state_ = state;
+    pipeline_.get<MinecraftVarintFrameDecoder>().setEnabled(true);
+    pipeline_.get<MinecraftVarintLengthEncoder>().setEnabled(true);
+    auto &decoder = pipeline_.get<MinecraftDecoder>();
+    decoder.setEnabled(true);
+    decoder.setState(state);
+}
+
+void MinecraftConnection::setProtocolVersion(ProtocolVersion version)
+{
+    protocol_version_ = version;
+    pipeline_.get<MinecraftDecoder>().setProtocolVersion(version);
+    pipeline_.get<MinecraftEncoder>().setProtocolVersion(version);
+}
+
+void MinecraftConnection::setCompressionThreshold(std::uint16_t threshold, PacketCompressionAlgorithm algorithm)
+{
+    pipeline_.get<MinecraftCompressDecoder>().setCompressionEnabled(true, algorithm);
+    pipeline_.get<MinecraftCompressEncoder>().setCompressionEnabled(true, algorithm, threshold);
 }
 
 void MinecraftConnection::channelActive()

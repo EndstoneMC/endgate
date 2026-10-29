@@ -168,6 +168,41 @@ public:
     void setSessionHandler(std::shared_ptr<MinecraftSessionHandler> handler);
 
     /**
+     * Turns framing and decoding on, decoding what the state registers. Call on the connection's event
+     * loop.
+     *
+     * @see com.velocitypowered.proxy.connection.MinecraftConnection#setState
+     */
+    void setState(StateRegistry state);
+
+    /**
+     * @see com.velocitypowered.proxy.connection.MinecraftConnection#getState
+     */
+    [[nodiscard]] StateRegistry getState() const { return state_; }
+
+    /**
+     * Call on the connection's event loop.
+     *
+     * @see com.velocitypowered.proxy.connection.MinecraftConnection#setProtocolVersion
+     */
+    void setProtocolVersion(ProtocolVersion version);
+
+    /**
+     * @see com.velocitypowered.proxy.connection.MinecraftConnection#getProtocolVersion
+     */
+    [[nodiscard]] ProtocolVersion getProtocolVersion() const { return protocol_version_; }
+
+    /**
+     * Compresses every batch from here on with the algorithm NetworkSettings names, those under the
+     * threshold stored uncompressed, and decompresses each batch that arrives. Call on the connection's
+     * event loop.
+     *
+     * @see com.velocitypowered.proxy.connection.MinecraftConnection#setCompressionThreshold
+     * @see NetworkSettingsPacket
+     */
+    void setCompressionThreshold(std::uint16_t threshold, PacketCompressionAlgorithm algorithm);
+
+    /**
      * @see io.netty.channel.Channel#eventLoop
      */
     [[nodiscard]] EventLoop &eventLoop() const { return event_loop_; }
@@ -247,6 +282,8 @@ private:
     Sink sink_;
     Pipeline pipeline_;
     std::shared_ptr<MinecraftSessionHandler> handler_;
+    StateRegistry state_{StateRegistry::Login};
+    ProtocolVersion protocol_version_{MINIMUM_VERSION};
 };
 
 }  // namespace endgate
