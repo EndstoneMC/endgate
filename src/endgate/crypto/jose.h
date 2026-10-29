@@ -78,10 +78,14 @@ struct JsonWebToken {
     std::string claims;
     std::string algorithm;
     std::string key_id;
+    std::string x5u;
     std::string signing_input;
     std::vector<std::byte> signature;
 
-    [[nodiscard]] static std::optional<JsonWebToken> decode(std::string_view token);
+    static constexpr std::size_t DEFAULT_MAX_SIZE = 64 * 1024;
+
+    [[nodiscard]] static std::optional<JsonWebToken> decode(std::string_view token,
+                                                            std::size_t max_size = DEFAULT_MAX_SIZE);
 
     /**
      * @see RFC 7518 section 3.3

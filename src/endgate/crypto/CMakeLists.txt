@@ -1,4 +1,4 @@
-add_library(endgate_crypto STATIC jose.cpp)
+add_library(endgate_crypto STATIC encryption.cpp jose.cpp)
 add_library(endgate::crypto ALIAS endgate_crypto)
 
 target_include_directories(endgate_crypto PUBLIC ${PROJECT_SOURCE_DIR}/src)

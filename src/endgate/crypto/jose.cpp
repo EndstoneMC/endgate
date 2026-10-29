@@ -22,10 +22,11 @@ namespace {
 struct JwsHeader {
     std::string alg;
     std::optional<std::string> kid;
+    std::optional<std::string> x5u;
 
     struct glaze {
         using T = JwsHeader;
-        static constexpr auto value = glz::object("alg", &T::alg, "kid", &T::kid);
+        static constexpr auto value = glz::object("alg", &T::alg, "kid", &T::kid, "x5u", &T::x5u);
     };
 };
 
@@ -205,7 +206,7 @@ std::optional<std::vector<std::byte>> base64Decode(std::string_view text)
     const auto valid = std::ranges::all_of(text.substr(0, text.size() - padding), [](char c) {
         return std::isalnum(static_cast<unsigned char>(c)) || c == '+' || c == '/';
     });
-    if (text.size() % 4 != 0 || !valid || text.size() > 1U << 20U) {
+    if (text.size() % 4 != 0 || !valid || text.size() > 16U << 20U) {
         return std::nullopt;
     }
     std::vector<std::byte> decoded(text.size() / 4 * 3);
@@ -303,12 +304,12 @@ PublicKey decodeSubjectPublicKeyInfo(std::string_view base64)
     return {d2i_PUBKEY(nullptr, &cursor, static_cast<std::int64_t>(der->size())), EVP_PKEY_free};
 }
 
-std::optional<JsonWebToken> JsonWebToken::decode(std::string_view token)
+std::optional<JsonWebToken> JsonWebToken::decode(std::string_view token, std::size_t max_size)
 {
     const auto first = token.find('.');
     const auto second = first == std::string_view::npos ? std::string_view::npos : token.find('.', first + 1);
     if (second == std::string_view::npos || token.find('.', second + 1) != std::string_view::npos ||
-        token.size() > 1U << 16U) {
+        token.size() > max_size) {
         return std::nullopt;
     }
     const auto header = base64UrlDecode(token.substr(0, first));
@@ -322,6 +323,7 @@ std::optional<JsonWebToken> JsonWebToken::decode(std::string_view token)
                         .claims = textOf(*claims),
                         .algorithm = parsed.alg,
                         .key_id = parsed.kid.value_or(""),
+                        .x5u = parsed.x5u.value_or(""),
                         .signing_input = std::string(token.substr(0, second)),
                         .signature = *signature};
 }
