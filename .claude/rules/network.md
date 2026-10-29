@@ -49,7 +49,7 @@ Netty's channel pipeline, 1:1: `ChannelPipeline`, `ChannelHandlerContext`, `Chan
 - A registered packet reaches the handler's `handle` overload for its type. One no overload takes reaches `handleGeneric` as the bytes it arrived in, which by default go to `handleUnknown`.
 - Decoded packets own their fields, as Velocity's do. Forwarding never decodes.
 - Flush at the end of each inbound batch, in `channelReadComplete`, so a forwarded batch leaves with the packets it arrived with.
-- Forward an unchanged batch whose two legs share a compression setting as the compressed bytes that arrived.
+- Every forwarded batch is decompressed and compressed again, as Velocity does with every packet it forwards.
 - Stages push; nothing polls. Deadlines belong to the transport engines, not the pipeline.
 
 Deviations from Netty, all for performance:
