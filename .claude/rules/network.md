@@ -15,7 +15,7 @@ paths:
 - Bound every length and count read from the wire before using it.
 - No RakNet, libdatachannel, libjuice, usrsctp or dcsctp source goes in the tree, not even adapted. They are references for behaviour; write our own from the RFC or the observed wire format.
 - OpenSSL (DTLS, HMAC) is the only protocol dependency. SCTP is ours.
-- No hard connection limit. `show-max-players` is only what the ping announces; bound only half-open handshakes and ICE negotiation.
+- No hard connection limit. `show-max-players` is only what the ping announces; bound only half-open handshakes (1024 for the whole server) and ICE negotiation (pending joins, 1024).
 - NetherNet carries no `0xFE` batch prefix. RakNet does.
 - A NetherNet client's offer must carry an `a=identity` that passes BDS's check whatever `online-mode` says, or it is refused with `ConnectError` 37 (`eSessionErrorIdentityNotAllowed`). The check is `ClientIdentityAssertionVerifier::verify`: the assertion's `token` is a three-part JWT of at most 16 KiB with a string `cpk` (base64 DER), and its `fingerprints` field is a detached JWS over the offer's `a=fingerprint` set that verifies under that `cpk`.
 - With `online-mode = true`, the offer token is also validated the way BDS validates a login token (`GameServerToken::validate`): Minecraft Services' key for its `kid`, the multiplayer `aud`, expiry. At login, the login token's `xid` and `cpk` must equal the offer token's, or the player is disconnected.
