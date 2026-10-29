@@ -10,8 +10,9 @@
 
 namespace endgate {
 
-Player::Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection)
-    : server_(server), logger_(LogManager::getLogger("Player")), connection_(std::move(connection))
+Player::Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection, GameProfile profile)
+    : server_(server), logger_(LogManager::getLogger("Player")), connection_(std::move(connection)),
+      profile_(std::move(profile))
 {
 }
 
@@ -56,18 +57,13 @@ ClientPlaySessionHandler::ClientPlaySessionHandler(std::shared_ptr<Player> playe
 {
 }
 
-void ClientPlaySessionHandler::connected()
+void ClientPlaySessionHandler::activated()
 {
     connected_ = true;
     if (player_->getConnection().getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
-        logger_.info("[initial connection] {} has connected", player_->getConnection().getRemoteAddress());
+        logger_.info("[connected player] {} ({}) has connected", player_->getGameProfile().name,
+                     player_->getConnection().getRemoteAddress());
     }
-    auto *const server = player_->getNextServerToTry();
-    if (server == nullptr) {
-        player_->disconnect();
-        return;
-    }
-    player_->createConnectionRequest(*server);
 }
 
 void ClientPlaySessionHandler::handleUnknown(ByteBufView batch)
@@ -91,7 +87,8 @@ void ClientPlaySessionHandler::readCompleted()
 void ClientPlaySessionHandler::disconnected()
 {
     if (connected_ && player_->getConnection().getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
-        logger_.info("[initial connection] {} has disconnected", player_->getConnection().getRemoteAddress());
+        logger_.info("[connected player] {} ({}) has disconnected", player_->getGameProfile().name,
+                     player_->getConnection().getRemoteAddress());
     }
     player_->teardown();
 }

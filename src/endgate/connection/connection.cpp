@@ -1,6 +1,7 @@
 #include "endgate/connection/connection.h"
 
 #include <utility>
+#include <variant>
 
 #include "endgate/config.h"
 #include "endgate/logging/manager.h"
@@ -17,29 +18,6 @@ MinecraftConnection::MinecraftConnection(Endpoint &endpoint, std::string remote_
                 MinecraftVarintFrameDecoder{}, MinecraftVarintLengthEncoder{}, MinecraftDecoder{direction},
                 MinecraftEncoder{})
 {
-}
-
-void MinecraftConnection::write(ByteBuf batch)
-{
-    if (event_loop_.inEventLoop()) {
-        const auto self = shared_from_this();
-        pipeline_.writeAndFlush(std::move(batch));
-        return;
-    }
-    event_loop_.execute([self = shared_from_this(), batch = std::move(batch)]() mutable {
-        self->pipeline_.writeAndFlush(std::move(batch));
-    });
-}
-
-void MinecraftConnection::delayedWrite(ByteBuf batch)
-{
-    if (event_loop_.inEventLoop()) {
-        const auto self = shared_from_this();
-        pipeline_.write(std::move(batch));
-        return;
-    }
-    event_loop_.execute(
-        [self = shared_from_this(), batch = std::move(batch)]() mutable { self->pipeline_.write(std::move(batch)); });
 }
 
 void MinecraftConnection::flush()
@@ -75,6 +53,9 @@ void MinecraftConnection::shutdown()
 void MinecraftConnection::setSessionHandler(std::shared_ptr<MinecraftSessionHandler> handler)
 {
     handler_ = std::move(handler);
+    if (const auto activated = handler_) {
+        activated->activated();
+    }
 }
 
 void MinecraftConnection::setState(StateRegistry state)
@@ -100,6 +81,23 @@ void MinecraftConnection::enableEncryption(std::span<const std::byte, MinecraftC
     pipeline_.get<MinecraftCipherEncoder>().enableEncryption(key);
 }
 
+void MinecraftConnection::closeWith(DisconnectFailReason reason, const std::string &message)
+{
+    visitProtocolVersion(protocol_version_.getProtocol(), [&]<int Version>() {
+        bp::DisconnectPacket_<Version> packet;
+        packet.reason = static_cast<decltype(packet.reason)>(reason);
+        if (message.empty()) {
+            packet.messages = std::monostate{};
+        }
+        else {
+            packet.messages = bp::DisconnectPacketMessages{.message = message, .filtered_message = message};
+        }
+        write(std::move(packet));
+        return true;
+    });
+    close();
+}
+
 void MinecraftConnection::setCompressionThreshold(std::uint16_t threshold, PacketCompressionAlgorithm algorithm)
 {
     pipeline_.get<MinecraftCompressDecoder>().setCompressionEnabled(true, algorithm);
@@ -114,6 +112,9 @@ void MinecraftConnection::channelActive()
 void MinecraftConnection::channelRead(ByteBufView batch)
 {
     pipeline_.fireChannelRead(batch);
+    if (std::exchange(received_bad_packet_, false)) {
+        closeWith(DisconnectFailReason::BadPacket);
+    }
 }
 
 void MinecraftConnection::channelReadComplete()
@@ -129,22 +130,22 @@ void MinecraftConnection::channelInactive()
 void MinecraftConnection::Sink::channelActive()
 {
     connection_.endpoint_.activated(connection_.shared_from_this());
-    if (connection_.handler_) {
-        connection_.handler_->connected();
+    if (const auto handler = connection_.handler_) {
+        handler->connected();
     }
 }
 
 void MinecraftConnection::Sink::channelRead(ByteBufView batch)
 {
-    if (connection_.handler_) {
-        connection_.handler_->handleUnknown(batch);
+    if (const auto handler = connection_.handler_) {
+        handler->handleUnknown(batch);
     }
 }
 
 void MinecraftConnection::Sink::channelReadComplete()
 {
-    if (connection_.handler_) {
-        connection_.handler_->readCompleted();
+    if (const auto handler = connection_.handler_) {
+        handler->readCompleted();
     }
 }
 
@@ -160,15 +161,17 @@ void MinecraftConnection::Sink::exceptionCaught(const std::exception &cause)
 {
     if (dynamic_cast<const DecoderException *>(&cause) == nullptr) {
         connection_.logger_.error("{}: exception encountered: {}", connection_.remote_address_, cause.what());
+        connection_.disconnect(true);
+        return;
     }
-    else if (connection_.endpoint_.getServer().getConfiguration().isPacketDecodeLogging()) {
+    if (connection_.endpoint_.getServer().getConfiguration().isPacketDecodeLogging()) {
         connection_.logger_.error("{}: invalid packet received: {}", connection_.remote_address_, cause.what());
     }
     else {
         connection_.logger_.warn(
             "Invalid packet received. Turn on packet-decode-logging under [debug] in endgate.toml to see more.");
     }
-    connection_.disconnect(true);
+    connection_.received_bad_packet_ = true;
 }
 
 void MinecraftConnection::Sink::write(ByteBuf batch)

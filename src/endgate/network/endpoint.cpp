@@ -20,6 +20,7 @@
 
 #include "endgate/auth/token.h"
 #include "endgate/awaitable.h"
+#include "endgate/connection/handshake.h"
 #include "endgate/connection/nethernet.h"
 #include "endgate/connection/player.h"
 #include "endgate/connection/raknet.h"
@@ -117,7 +118,7 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::i
                 *this, join->network_id, join->offer, std::move(join->credentials), certificate_, session_config_,
                 join->created);
             connection->setSessionHandler(
-                std::make_shared<ClientPlaySessionHandler>(std::make_shared<Player>(server_, connection)));
+                std::make_shared<HandshakeSessionHandler>(server_, connection, std::move(join->identity)));
             connections_.emplace(connection, Registration{.ufrag = ufrag});
             ufrags_.emplace(ufrag, connection);
             forwards_.erase(sender);
@@ -217,8 +218,7 @@ void Endpoint::accept(std::span<const std::byte> datagram, const raknet::SystemA
     const auto system_index = getFreeSystemIndex();
     const auto connection = std::make_shared<RakNetConnection>(*this, sender, *request, offline_.getGuid(),
                                                                system_index, raknet::Clock::now());
-    connection->setSessionHandler(
-        std::make_shared<ClientPlaySessionHandler>(std::make_shared<Player>(server_, connection)));
+    connection->setSessionHandler(std::make_shared<HandshakeSessionHandler>(server_, connection, std::nullopt));
     const auto half_open = next_half_open_++;
     connections_.emplace(
         connection,
@@ -340,13 +340,16 @@ Awaitable<void> Endpoint::join(nethernet::JoinRequest request, nethernet::JoinRe
         response.reject(static_cast<std::uint32_t>(nethernet::ESessionError::IdentityNotAllowed));
         co_return;
     }
+    std::optional<GameServerToken> identity;
     if (auto *const keys = server_.getMinecraftServiceKeyManager()) {
-        if (const auto identity = GameServerToken::validate(*token, *keys); !identity) {
+        auto validated = GameServerToken::validate(*token, *keys);
+        if (!validated) {
             logger_.debug("Refusing NetherNet network {}: its token fails validation ({})", request.network_id,
-                          static_cast<int>(identity.error()));
+                          bp::enum_name(validated.error()));
             response.reject(static_cast<std::uint32_t>(nethernet::ESessionError::IdentityNotAllowed));
             co_return;
         }
+        identity = std::move(*validated);
     }
     const auto offer = rtc::Description::parse(nethernet::IdentityAssertion::stripFromSdp(request.offer));
     if (!offer) {
@@ -403,9 +406,11 @@ Awaitable<void> Endpoint::join(nethernet::JoinRequest request, nethernet::JoinRe
     const auto created = MinecraftConnection::Clock::now();
     auto credentials = rtc::IceCredentials::generate();
     auto added = Registry::AddPending::Collision;
-    while ((added = registry_.addPending(PendingJoin{
-                .offer = *offer, .credentials = credentials, .network_id = request.network_id, .created = created})) ==
-           Registry::AddPending::Collision) {
+    while ((added = registry_.addPending(PendingJoin{.offer = *offer,
+                                                     .credentials = credentials,
+                                                     .network_id = request.network_id,
+                                                     .created = created,
+                                                     .identity = identity})) == Registry::AddPending::Collision) {
         credentials = rtc::IceCredentials::generate();
     }
     if (added == Registry::AddPending::Full) {

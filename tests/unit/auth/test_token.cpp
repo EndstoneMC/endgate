@@ -213,7 +213,7 @@ TEST(MinecraftServiceKeyManagerTest, HasNoKeysWhenTheServiceIsDown)
         signRs256(services.key(), "primary",
                   claims(std::chrono::system_clock::now() + 1h, R"("api://auth-minecraft-services/multiplayer")")));
     ASSERT_TRUE(token);
-    EXPECT_EQ(GameServerToken::validate(*token, *keys).error(), GameServerToken::Error::HostWithoutKeys);
+    EXPECT_EQ(GameServerToken::validate(*token, *keys).error(), DisconnectFailReason::HostWithoutKeys);
     keys->shutdown();
 }
 
@@ -239,19 +239,19 @@ TEST(GameServerTokenTest, ValidatesAsBdsDoes)
 
     const auto past_by_local_time = std::chrono::system_clock::now() + 1h;
     EXPECT_EQ(validate(signRs256(services.key(), "primary", claims(past_by_local_time, multiplayer))).error(),
-              GameServerToken::Error::ExpiredToken);
+              DisconnectFailReason::ExpiredToken);
     EXPECT_EQ(validate(signRs256(services.other(), "primary", claims(service_now + 1min, multiplayer))).error(),
-              GameServerToken::Error::NotAuthenticated);
+              DisconnectFailReason::NotAuthenticated);
     EXPECT_EQ(validate(signRs256(services.key(), "unknown", claims(service_now + 1min, multiplayer))).error(),
-              GameServerToken::Error::NotAuthenticated);
+              DisconnectFailReason::NotAuthenticated);
     EXPECT_EQ(validate(signRs256(services.key(), "primary", claims(service_now + 1min, R"("other")"))).error(),
-              GameServerToken::Error::NotAuthenticated);
+              DisconnectFailReason::NotAuthenticated);
     EXPECT_EQ(
         validate(signRs256(services.key(), "primary", claims(service_now + 1min, R"("other")", "https://dev.test/")))
             .error(),
-        GameServerToken::Error::DiscoveryEnvironmentMismatch);
+        DisconnectFailReason::DiscoveryEnvironmentMismatch);
     EXPECT_EQ(validate(signRs256(services.key(), "primary", R"({"aud":"x"})")).error(),
-              GameServerToken::Error::NotAuthenticated);
+              DisconnectFailReason::NotAuthenticated);
     EXPECT_EQ(services.keySetRequests(), 1);
     keys->shutdown();
 }

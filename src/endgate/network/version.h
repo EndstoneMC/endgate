@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <optional>
 #include <string_view>
+#include <utility>
 
 namespace endgate {
 
@@ -45,6 +47,16 @@ inline constexpr ProtocolVersion MAXIMUM_VERSION = SUPPORTED_VERSIONS.back();
         return std::nullopt;
     }
     return *found;
+}
+
+template <typename Visitor>
+bool visitProtocolVersion(int protocol, Visitor &&visitor)
+{
+    return [&]<std::size_t... I>(std::index_sequence<I...>) {
+        return ((SUPPORTED_VERSIONS.at(I).getProtocol() == protocol &&
+                 visitor.template operator()<SUPPORTED_VERSIONS.at(I).getProtocol()>()) ||
+                ...);
+    }(std::make_index_sequence<SUPPORTED_VERSIONS.size()>{});
 }
 
 }  // namespace endgate

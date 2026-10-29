@@ -32,6 +32,8 @@ enum class StateRegistry : std::uint8_t {
     Play,
 };
 
+using DisconnectFailReason = bp::DisconnectFailReason_<MAXIMUM_VERSION.getProtocol()>;
+
 template <typename... Packets>
 struct TypeList {};
 
@@ -105,7 +107,7 @@ using ProtocolRegistryOf =
 template <typename Visitor>
 bool getProtocolRegistry(StateRegistry state, Direction direction, int version, Visitor &&visitor)
 {
-    const auto at = [&]<int Version>() {
+    return visitProtocolVersion(version, [&]<int Version>() {
         switch (state) {
         case StateRegistry::Login:
             return direction == Direction::Serverbound
@@ -121,22 +123,14 @@ bool getProtocolRegistry(StateRegistry state, Direction direction, int version, 
                        operator()<ProtocolRegistryOf<StateRegistry::Play, Direction::Clientbound, Version>>();
         }
         return false;
-    };
-    return [&]<std::size_t... I>(std::index_sequence<I...>) {
-        return ((SUPPORTED_VERSIONS.at(I).getProtocol() == version &&
-                 at.template operator()<SUPPORTED_VERSIONS.at(I).getProtocol()>()) ||
-                ...);
-    }(std::make_index_sequence<SUPPORTED_VERSIONS.size()>{});
+    });
 }
 
 template <typename Packet>
 bool isPacketOf(int version)
 {
-    return [&]<std::size_t... I>(std::index_sequence<I...>) {
-        return ((SUPPORTED_VERSIONS.at(I).getProtocol() == version &&
-                 std::is_same_v<bp::packet_of_t<SUPPORTED_VERSIONS.at(I).getProtocol(), Packet::Id>, Packet>) ||
-                ...);
-    }(std::make_index_sequence<SUPPORTED_VERSIONS.size()>{});
+    return visitProtocolVersion(
+        version, []<int Version>() { return std::is_same_v<bp::packet_of_t<Version, Packet::Id>, Packet>; });
 }
 
 template <typename List, typename Packet>

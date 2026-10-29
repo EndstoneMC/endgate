@@ -65,6 +65,34 @@ private:
 };
 
 /**
+ * Logs the proxy in to a backend on the player's behalf: network settings, a login self-signed with the
+ * proxy's key that carries the player's client data, and the backend's encryption handshake, until the
+ * backend reports the login succeeded. A Disconnect or failed PlayStatus before then goes on to the
+ * player.
+ *
+ * @see com.velocitypowered.proxy.connection.backend.LoginSessionHandler
+ */
+class LoginSessionHandler final : public MinecraftSessionHandler {
+public:
+    explicit LoginSessionHandler(std::shared_ptr<ServerConnection> server_connection);
+
+    using MinecraftSessionHandler::handle;
+
+    void connected() override;
+    bool handle(const bp::NetworkSettingsPacket &packet) override;
+    bool handle(const bp::ServerToClientHandshakePacket &packet) override;
+    bool handle(const bp::PlayStatusPacket &packet) override;
+    void handleGeneric(ByteBufView packet) override;
+    void handleUnknown(ByteBufView packet) override;
+    void disconnected() override;
+
+private:
+    spdlog::logger &logger_;
+    std::shared_ptr<ServerConnection> server_connection_;
+    bool logged_in_{false};
+};
+
+/**
  * Forwards what the backend sends to the player, and takes the player down with it.
  *
  * @see com.velocitypowered.proxy.connection.backend.BackendPlaySessionHandler
@@ -73,7 +101,8 @@ class BackendPlaySessionHandler final : public MinecraftSessionHandler {
 public:
     explicit BackendPlaySessionHandler(std::shared_ptr<ServerConnection> server_connection);
 
-    void connected() override;
+    void activated() override;
+    void connected() override {}
     void handleUnknown(ByteBufView batch) override;
     void readCompleted() override;
     void disconnected() override;

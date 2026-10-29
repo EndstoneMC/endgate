@@ -95,6 +95,13 @@ public:
     virtual void readCompleted() {}
 
     /**
+     * Called when the handler becomes the connection's active one.
+     *
+     * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler#activated
+     */
+    virtual void activated() {}
+
+    /**
      * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler#disconnected
      */
     virtual void disconnected() = 0;
@@ -127,14 +134,36 @@ public:
      *
      * @see com.velocitypowered.proxy.connection.MinecraftConnection#write
      */
-    void write(ByteBuf batch);
+    template <typename Message>
+    void write(Message message)
+    {
+        if (event_loop_.inEventLoop()) {
+            const auto self = shared_from_this();
+            pipeline_.writeAndFlush(std::move(message));
+            return;
+        }
+        event_loop_.execute([self = shared_from_this(), message = std::move(message)]() mutable {
+            self->pipeline_.writeAndFlush(std::move(message));
+        });
+    }
 
     /**
      * Writes without flushing.
      *
      * @see com.velocitypowered.proxy.connection.MinecraftConnection#delayedWrite
      */
-    void delayedWrite(ByteBuf batch);
+    template <typename Message>
+    void delayedWrite(Message message)
+    {
+        if (event_loop_.inEventLoop()) {
+            const auto self = shared_from_this();
+            pipeline_.write(std::move(message));
+            return;
+        }
+        event_loop_.execute([self = shared_from_this(), message = std::move(message)]() mutable {
+            self->pipeline_.write(std::move(message));
+        });
+    }
 
     /**
      * @see com.velocitypowered.proxy.connection.MinecraftConnection#flush
@@ -159,6 +188,8 @@ public:
      * @see io.netty.channel.ChannelInboundHandler#channelRead
      */
     virtual void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender) = 0;
+
+    [[nodiscard]] virtual bool isTransportEncrypted() const { return false; }
 
     /**
      * Call before the connection starts or on its event loop.
@@ -210,6 +241,14 @@ public:
      * @see EncryptedNetworkPeer::enableEncryption
      */
     void enableEncryption(std::span<const std::byte, MinecraftCipher::KEY_SIZE> key);
+
+    /**
+     * Sends a Disconnect with the reason, and the message when there is one, then closes. Call on the
+     * connection's event loop.
+     *
+     * @see com.velocitypowered.proxy.connection.MinecraftConnection#closeWith
+     */
+    void closeWith(DisconnectFailReason reason, const std::string &message = {});
 
     /**
      * @see io.netty.channel.Channel#eventLoop
@@ -266,8 +305,9 @@ private:
         template <typename Packet>
         void channelRead(const DecodedPacket<Packet> &decoded)
         {
-            if (connection_.handler_ && !connection_.handler_->handle(decoded.packet)) {
-                connection_.handler_->handleGeneric(decoded.bytes);
+            const auto handler = connection_.handler_;
+            if (handler && !handler->handle(decoded.packet)) {
+                handler->handleGeneric(decoded.bytes);
             }
         }
         void channelReadComplete();
@@ -292,6 +332,7 @@ private:
     Pipeline pipeline_;
     std::shared_ptr<MinecraftSessionHandler> handler_;
     StateRegistry state_{StateRegistry::Login};
+    bool received_bad_packet_{false};
     ProtocolVersion protocol_version_{MINIMUM_VERSION};
 };
 

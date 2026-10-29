@@ -4,12 +4,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <variant>
 
+#include "endgate/auth/token.h"
 #include "endgate/buffer/bytebuf.h"
 #include "endgate/network/rtc/description.h"
 #include "endgate/network/rtc/ice.h"
@@ -24,6 +26,7 @@ struct PendingJoin {
     rtc::IceCredentials credentials;
     std::string network_id;
     std::chrono::steady_clock::time_point created;
+    std::optional<GameServerToken> identity;
 };
 
 /**

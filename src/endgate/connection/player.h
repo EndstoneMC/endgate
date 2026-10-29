@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 #include <spdlog/logger.h>
 
@@ -9,6 +10,15 @@
 namespace endgate {
 
 class ProxyServer;
+
+/**
+ * @see com.velocitypowered.api.util.GameProfile
+ */
+struct GameProfile {
+    std::string xuid;
+    std::string name;
+    std::string client_data;
+};
 class BackendServer;
 class ServerConnection;
 
@@ -20,7 +30,12 @@ class ServerConnection;
  */
 class Player : public std::enable_shared_from_this<Player> {
 public:
-    Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection);
+    Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection, GameProfile profile = {});
+
+    /**
+     * @see com.velocitypowered.api.proxy.Player#getGameProfile
+     */
+    [[nodiscard]] const GameProfile &getGameProfile() const { return profile_; }
 
     [[nodiscard]] MinecraftConnection &getConnection() const { return *connection_; }
 
@@ -58,6 +73,7 @@ private:
     ProxyServer &server_;
     spdlog::logger &logger_;
     std::shared_ptr<MinecraftConnection> connection_;
+    GameProfile profile_;
     std::shared_ptr<ServerConnection> connected_server_;
     bool active_{true};
 };
@@ -71,7 +87,8 @@ class ClientPlaySessionHandler final : public MinecraftSessionHandler {
 public:
     explicit ClientPlaySessionHandler(std::shared_ptr<Player> player);
 
-    void connected() override;
+    void activated() override;
+    void connected() override {}
     void handleUnknown(ByteBufView batch) override;
     void readCompleted() override;
     void disconnected() override;

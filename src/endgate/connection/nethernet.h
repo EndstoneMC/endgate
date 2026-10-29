@@ -69,6 +69,7 @@ public:
         requires DIALING;
 
     void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender) override;
+    [[nodiscard]] bool isTransportEncrypted() const override { return true; }
 
 protected:
     void send(ByteBuf batch) override;
