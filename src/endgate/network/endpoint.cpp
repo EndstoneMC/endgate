@@ -56,6 +56,7 @@ void Endpoint::listen(const asio::ip::tcp::endpoint &endpoint)
 
 void Endpoint::start()
 {
+    signaling_->start();
     asio::co_spawn(event_loop_.getExecutor(), receive(), asio::detached);
 }
 

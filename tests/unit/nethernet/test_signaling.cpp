@@ -72,6 +72,7 @@ protected:
     {
         server_ = HttpSignalingServer::create(loop_, handler_, config, std::move(tls));
         server_->listen({asio::ip::make_address("127.0.0.1"), 0});
+        server_->start();
         endpoint_ = server_->getLocalEndpoint();
     }
 

@@ -105,6 +105,7 @@ public:
                                                                      const std::filesystem::path &private_key);
 
     void listen(const asio::ip::tcp::endpoint &endpoint);
+    void start();
     void close();
 
     [[nodiscard]] asio::ip::tcp::endpoint getLocalEndpoint() const { return acceptor_.local_endpoint(); }

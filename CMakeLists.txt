@@ -34,14 +34,12 @@ add_subdirectory(src/endgate/network/nethernet)
 
 add_subdirectory(tests/unit/buffer)
 add_subdirectory(tests/unit/nethernet)
-add_subdirectory(tests/unit/network)
 add_subdirectory(tests/unit/raknet)
 add_subdirectory(tests/unit/rtc)
 add_subdirectory(tests/unit/sctp)
 add_subdirectory(tests/interop)
 
-add_executable(endgate
-        src/main.cpp
+add_library(endgate_proxy STATIC
         src/endgate/config.cpp
         src/endgate/console.cpp
         src/endgate/server.cpp
@@ -59,11 +57,12 @@ add_executable(endgate
         src/endgate/network/ping.cpp
         src/endgate/backend.cpp
 )
+add_library(endgate::proxy ALIAS endgate_proxy)
 
-target_include_directories(endgate PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}/generated)
-target_compile_definitions(endgate PRIVATE ENDGATE_VERSION="${PROJECT_VERSION}")
+target_include_directories(endgate_proxy PUBLIC src ${CMAKE_CURRENT_BINARY_DIR}/generated)
+target_compile_definitions(endgate_proxy PUBLIC ENDGATE_VERSION="${PROJECT_VERSION}")
 
-target_link_libraries(endgate PRIVATE
+target_link_libraries(endgate_proxy PUBLIC
         endgate::eventloop
         endgate::nethernet
         endgate::raknet
@@ -74,3 +73,8 @@ target_link_libraries(endgate PRIVATE
         libdeflate::libdeflate
         Snappy::snappy
 )
+
+add_executable(endgate src/main.cpp)
+target_link_libraries(endgate PRIVATE endgate::proxy)
+
+add_subdirectory(tests/unit/network)

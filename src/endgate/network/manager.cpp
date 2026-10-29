@@ -1,7 +1,9 @@
 #include "endgate/network/manager.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <exception>
+#include <latch>
 #include <memory>
 #include <system_error>
 #include <thread>
@@ -42,6 +44,18 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
     asio::error_code ec;
 
     const bool dual_stack = address.is_v6() && address.is_unspecified();
+    if (port != 0) {
+        asio::ip::udp::socket udp_probe(group_.begin()->getExecutor());
+        asio::ip::tcp::acceptor tcp_probe(group_.begin()->getExecutor());
+        const asio::ip::udp::endpoint game{address, port};
+        if (udp_probe.open(game.protocol(), ec) || (dual_stack && udp_probe.set_option(asio::ip::v6_only(false), ec)) ||
+            udp_probe.bind(game, ec) || tcp_probe.open(asio::ip::tcp::endpoint{address, port}.protocol(), ec) ||
+            tcp_probe.set_option(asio::socket_base::reuse_address(true), ec) ||
+            (dual_stack && tcp_probe.set_option(asio::ip::v6_only(false), ec)) || tcp_probe.bind({address, port}, ec)) {
+            logger_.error("Can't bind to {}:{}: {}", address.to_string(), port, ec.message());
+            return false;
+        }
+    }
     std::vector<std::shared_ptr<asio::ip::udp::socket>> sockets;
     for (auto &loop : group_) {
         auto &socket = sockets.emplace_back(std::make_shared<asio::ip::udp::socket>(loop.getExecutor()));
@@ -87,6 +101,14 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
     }
     catch (const std::system_error &e) {
         logger_.error("Can't bind to {}:{}: {}", address.to_string(), port, e.code().message());
+        std::latch closed(static_cast<std::ptrdiff_t>(endpoints_.size()));
+        for (auto &endpoint : endpoints_) {
+            endpoint.getEventLoop().execute([&endpoint, &closed] {
+                endpoint.close();
+                closed.count_down();
+            });
+        }
+        closed.wait();
         endpoints_.clear();
         return false;
     }

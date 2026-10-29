@@ -131,6 +131,10 @@ void HttpSignalingServer::listen(const asio::ip::tcp::endpoint &endpoint)
     }
     acceptor_.bind(endpoint);
     acceptor_.listen();
+}
+
+void HttpSignalingServer::start()
+{
     asio::co_spawn(event_loop_.getExecutor(), accept(shared_from_this()), [](const std::exception_ptr &) {});
 }
 

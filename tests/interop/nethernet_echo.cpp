@@ -46,6 +46,7 @@ public:
         socket_.non_blocking(true);
         signaling_ = endgate::nethernet::HttpSignalingServer::create(event_loop, *this, {}, nullptr);
         signaling_->listen({address, socket_.local_endpoint().port()});
+        signaling_->start();
         receive();
     }
 
