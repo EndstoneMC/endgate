@@ -1,11 +1,15 @@
 #include "endgate/network/manager.h"
 
 #include <algorithm>
+#include <exception>
 #include <memory>
+#include <system_error>
+#include <utility>
 
 #include <asio/dispatch.hpp>
 #include <asio/ip/udp.hpp>
 #include <asio/ip/v6_only.hpp>
+#include <asio/ssl/context.hpp>
 
 #include "endgate/config.h"
 #include "endgate/logging/manager.h"
@@ -44,9 +48,38 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
         return false;
     }
 
-    offline_.setPingResponder(socket->local_endpoint().port());
-    auto &endpoint =
-        endpoints_.emplace_back(server_, io_context_, socket, offline_.getGuid(), offline_.getOfflinePingResponse());
+    constexpr auto identity_key_path = "keys/server_identity_key.pem";
+
+    const auto &configuration = server_.getConfiguration();
+    std::shared_ptr<asio::ssl::context> tls;
+    try {
+        if (!identity_) {
+            identity_ = std::make_shared<const nethernet::ServerIdentityAssertionGenerator>(
+                nethernet::ServerIdentityAssertionGenerator::loadOrCreateKey(identity_key_path),
+                nethernet::ServerIdentityAssertionGenerator::Config{});
+        }
+        if (!configuration.getTlsCertificate().empty()) {
+            tls = nethernet::HttpSignalingServer::loadTls(configuration.getTlsCertificate(),
+                                                          configuration.getTlsCertificateKey());
+        }
+    }
+    catch (const std::exception &e) {
+        logger_.error("Can't set up NetherNet signalling: {}", e.what());
+        return false;
+    }
+
+    const auto local_port = socket->local_endpoint().port();
+    offline_.setPingResponder(local_port);
+    auto &endpoint = endpoints_.emplace_back(server_, io_context_, socket, offline_.getGuid(),
+                                             offline_.getOfflinePingResponse(), identity_, std::move(tls));
+    try {
+        endpoint.listen({address, local_port});
+    }
+    catch (const std::system_error &e) {
+        logger_.error("Can't bind to {}:{}: {}", address.to_string(), local_port, e.code().message());
+        endpoints_.pop_back();
+        return false;
+    }
 
     logger_.info("Listening on {}", endpoint.getLocalAddress());
     asio::dispatch(endpoint.getExecutor(), [&endpoint] { endpoint.start(); });

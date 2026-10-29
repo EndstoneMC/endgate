@@ -4,7 +4,6 @@ add_library(endgate_nethernet STATIC
         dns.cpp
         framing.cpp
         identity.cpp
-        manager.cpp
         session.cpp
         signaling.cpp
 )

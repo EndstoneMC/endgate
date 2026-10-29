@@ -39,6 +39,7 @@ add_executable(endgate
         src/endgate/server.cpp
         src/endgate/connection/backend.cpp
         src/endgate/connection/connection.cpp
+        src/endgate/connection/nethernet.cpp
         src/endgate/connection/player.cpp
         src/endgate/connection/raknet.cpp
         src/endgate/logging/appender.cpp
@@ -56,6 +57,7 @@ target_include_directories(endgate PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}/gener
 target_compile_definitions(endgate PRIVATE ENDGATE_VERSION="${PROJECT_VERSION}")
 
 target_link_libraries(endgate PRIVATE
+        endgate::nethernet
         endgate::raknet
         asio::asio
         glaze::glaze
