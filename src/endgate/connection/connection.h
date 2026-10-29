@@ -203,6 +203,15 @@ public:
     void setCompressionThreshold(std::uint16_t threshold, PacketCompressionAlgorithm algorithm);
 
     /**
+     * Encrypts and decrypts every batch from here on under the key the handshake derived. Call on the
+     * connection's event loop.
+     *
+     * @see com.velocitypowered.proxy.connection.MinecraftConnection#enableEncryption
+     * @see EncryptedNetworkPeer::enableEncryption
+     */
+    void enableEncryption(std::span<const std::byte, MinecraftCipher::KEY_SIZE> key);
+
+    /**
      * @see io.netty.channel.Channel#eventLoop
      */
     [[nodiscard]] EventLoop &eventLoop() const { return event_loop_; }

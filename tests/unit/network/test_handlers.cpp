@@ -1,7 +1,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <exception>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -9,6 +11,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <openssl/evp.h>
 
 #include "endgate/buffer/bytebuf.h"
 #include "endgate/network/pipeline.h"
@@ -449,20 +452,120 @@ TEST(MinecraftCompressDecoder, StopsABatchThatExpandsBeyondThePermittedSize)
     EXPECT_EQ(wire.errors, (std::vector<std::string>{"batch expands beyond the permitted size"}));
 }
 
-TEST(MinecraftCipher, FailsLoudlyOnceEnabledSinceEncryptionIsNotImplemented)
+std::array<std::byte, MinecraftCipher::KEY_SIZE> testKey()
+{
+    std::array<std::byte, MinecraftCipher::KEY_SIZE> key{};
+    for (std::size_t i = 0; i < key.size(); ++i) {
+        key.at(i) = static_cast<std::byte>(i * 7 + 3);
+    }
+    return key;
+}
+
+std::string textOf(const ByteBuf &buf)
+{
+    const auto bytes = buf.nioBuffer();
+    return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
+}
+
+TEST(MinecraftCipher, SealsAsAesCtrFromTheFirstTwelveKeyBytesWithAChecksumBehind)
+{
+    const auto key = testKey();
+    const std::string plaintext = "\x00a batch the cipher seals";
+    MinecraftCipher cipher(key, MinecraftCipher::Mode::Encrypt);
+    auto batch = copyOf(plaintext);
+
+    cipher.seal(batch);
+
+    std::array<unsigned char, 8> counter{};
+    std::array<unsigned char, EVP_MAX_MD_SIZE> digest{};
+    unsigned int digest_length = 0;
+    const std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> md(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+    EVP_DigestInit_ex(md.get(), EVP_sha256(), nullptr);
+    EVP_DigestUpdate(md.get(), counter.data(), counter.size());
+    EVP_DigestUpdate(md.get(), plaintext.data(), plaintext.size());
+    EVP_DigestUpdate(md.get(), key.data(), key.size());
+    EVP_DigestFinal_ex(md.get(), digest.data(), &digest_length);
+    auto sealed = plaintext + std::string(reinterpret_cast<const char *>(digest.data()), 8);
+
+    std::array<unsigned char, 16> iv{};
+    std::memcpy(iv.data(), key.data(), 12);
+    iv.at(15) = 2;
+    const std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)> ctr(EVP_CIPHER_CTX_new(),
+                                                                              EVP_CIPHER_CTX_free);
+    int produced = 0;
+    EVP_EncryptInit_ex(ctr.get(), EVP_aes_256_ctr(), nullptr, reinterpret_cast<const unsigned char *>(key.data()),
+                       iv.data());
+    EVP_EncryptUpdate(ctr.get(), reinterpret_cast<unsigned char *>(sealed.data()), &produced,
+                      reinterpret_cast<const unsigned char *>(sealed.data()), static_cast<int>(sealed.size()));
+
+    EXPECT_EQ(textOf(batch), sealed);
+}
+
+TEST(MinecraftCipher, OpensWhatItSealsBatchAfterBatch)
+{
+    const auto key = testKey();
+    MinecraftCipher encrypt(key, MinecraftCipher::Mode::Encrypt);
+    MinecraftCipher decrypt(key, MinecraftCipher::Mode::Decrypt);
+
+    std::vector<std::string> sealed;
+    for (const auto *const plaintext : {"same", "same", std::string(5000, 'x').c_str()}) {
+        auto batch = copyOf(plaintext);
+        encrypt.seal(batch);
+        sealed.push_back(textOf(batch));
+        EXPECT_EQ(textOf(decrypt.open(batch.slice())), plaintext);
+    }
+    EXPECT_NE(sealed[0], sealed[1]);
+}
+
+TEST(MinecraftCipher, RejectsATamperedOrShortBatch)
+{
+    const auto key = testKey();
+    MinecraftCipher encrypt(key, MinecraftCipher::Mode::Encrypt);
+    auto batch = copyOf("a batch someone changed on the way");
+    encrypt.seal(batch);
+    batch.setByte(3, batch.getUnsignedByte(3) ^ 0x01U);
+
+    MinecraftCipher tampered(key, MinecraftCipher::Mode::Decrypt);
+    EXPECT_THROW(
+        {
+            try {
+                (void)tampered.open(batch.slice());
+            }
+            catch (const DecoderException &cause) {
+                EXPECT_STREQ(cause.what(), "batch checksum does not match");
+                throw;
+            }
+        },
+        DecoderException);
+    MinecraftCipher short_batch(key, MinecraftCipher::Mode::Decrypt);
+    EXPECT_THROW((void)short_batch.open(copyOf("seven").slice()), DecoderException);
+}
+
+TEST(Pipeline, AnEncryptedCompressedBatchComesBackAsTheSamePackets)
 {
     Wire wire;
     auto chain = chainOf(wire);
-    chain.get<MinecraftCipherDecoder>().setEnabled(true);
-    chain.get<MinecraftCipherEncoder>().setEnabled(true);
+    switchOn(chain);
+    compressWith(chain, PacketCompressionAlgorithm::ZLib, 16);
+    const auto key = testKey();
+    chain.get<MinecraftCipherDecoder>().enableEncryption(key);
+    chain.get<MinecraftCipherEncoder>().enableEncryption(key);
+    const std::string repetitive(400, 'a');
 
-    chain.fireChannelRead(copyOf("secret").slice());
-    chain.write(copyOf("secret"));
+    for (int round = 0; round < 2; ++round) {
+        chain.write(bp::RequestNetworkSettingsPacket{.client_network_version = 2225});
+        chain.write(copyOf(repetitive));
+        chain.flush();
+    }
+    ASSERT_EQ(wire.sent.size(), 2U);
+    EXPECT_NE(wire.sent[0], wire.sent[1]);
+    for (const auto &batch : wire.sent) {
+        chain.fireChannelRead(batch.slice());
+    }
 
-    EXPECT_TRUE(wire.unknown.empty());
-    EXPECT_TRUE(wire.sent.empty());
-    EXPECT_EQ(wire.errors,
-              (std::vector<std::string>{"encryption is not supported yet", "encryption is not supported yet"}));
+    EXPECT_EQ(wire.versions, (std::vector<std::int32_t>{2225, 2225}));
+    EXPECT_EQ(wire.unknown, (std::vector<std::string>{repetitive, repetitive}));
+    EXPECT_TRUE(wire.errors.empty());
 }
 
 }  // namespace

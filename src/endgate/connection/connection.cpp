@@ -94,6 +94,12 @@ void MinecraftConnection::setProtocolVersion(ProtocolVersion version)
     pipeline_.get<MinecraftEncoder>().setProtocolVersion(version);
 }
 
+void MinecraftConnection::enableEncryption(std::span<const std::byte, MinecraftCipher::KEY_SIZE> key)
+{
+    pipeline_.get<MinecraftCipherDecoder>().enableEncryption(key);
+    pipeline_.get<MinecraftCipherEncoder>().enableEncryption(key);
+}
+
 void MinecraftConnection::setCompressionThreshold(std::uint16_t threshold, PacketCompressionAlgorithm algorithm)
 {
     pipeline_.get<MinecraftCompressDecoder>().setCompressionEnabled(true, algorithm);
