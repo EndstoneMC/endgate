@@ -1,6 +1,7 @@
 # Architecture
 
 - Follow Velocity's structural design: its module layout, connection lifecycle and event model. Settle a structural question by asking how Velocity answers it first.
+- Velocity's packages are directories under `src/endgate`: `proxy.network` is `network/`, `proxy.protocol` and `proxy.protocol.netty` are `protocol/`, `proxy.connection` is `connection/`.
 - Endgate reads like Velocity on Netty, not like BDS. Take Netty's and Velocity's names and API shapes; BDS is a source of facts about Bedrock, not of design.
 - Where endgate implements a Netty concept (`ByteBuf`, the channel pipeline, event loops), match Netty's API 1:1: class names, method names, signatures and semantics. Deviate only where C++ forces it or performance demands it, and list each deviation in the rule that covers it.
 - Java's standard types map to their C++ standard counterparts (`IndexOutOfBoundsException` to `std::out_of_range`, `byte[]` to `std::span<std::byte>`).
