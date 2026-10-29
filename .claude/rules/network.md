@@ -24,8 +24,8 @@ Netty's `io.netty.buffer.ByteBuf`, 1:1: `readerIndex`, `writerIndex`, `capacity`
 
 - Netty's integers are big-endian; Bedrock's are mostly little-endian, so reach for the `LE` methods.
 - Bedrock's varints and strings are free functions in `ProtocolUtils` over a `ByteBuf` or `ByteBufView`, as Velocity's are. Every length they read has a cap.
-- Allocate through `ByteBufAllocator` (`ctx.alloc()`), so a pooled allocator can replace the unpooled one without touching callers.
-- `buffer.h`'s chained, shared `ByteBuf` predates these rules: replace it, don't extend it.
+- Allocate with `Unpooled`, Netty's static factory, until a pooled `ByteBufAllocator` exists; callers move to `ctx.alloc()` when it does.
+- `network/buffer.h`'s chained, shared `ByteBuf` predates these rules: replace it, don't extend it.
 
 Deviations from Netty:
 
@@ -34,6 +34,7 @@ Deviations from Netty:
 - Write the read surface once for `ByteBuf` and `ByteBufView` with deducing `this`, not virtuals.
 - Memory is never zero-filled. A socket, decompressor or compressor writes straight into the writable region after `ensureWritable(n)`, then advances `writerIndex`.
 - No `CompositeByteBuf`. Compressors, ciphers and datagram assembly all want contiguous bytes.
+- `getBytes` returns nothing instead of the buffer, since returning the const reference trips clang-tidy.
 
 ## Pipeline
 

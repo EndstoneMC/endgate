@@ -21,11 +21,13 @@ find_package(GTest REQUIRED)
 
 enable_testing()
 
+add_subdirectory(src/endgate/buffer)
 add_subdirectory(src/endgate/network/raknet)
 add_subdirectory(src/endgate/network/rtc)
 add_subdirectory(src/endgate/network/rtc/sctp)
 add_subdirectory(src/endgate/network/nethernet)
 
+add_subdirectory(tests/unit/buffer)
 add_subdirectory(tests/unit/nethernet)
 add_subdirectory(tests/unit/raknet)
 add_subdirectory(tests/unit/rtc)

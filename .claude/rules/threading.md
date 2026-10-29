@@ -17,4 +17,5 @@ Netty's event loop model, 1:1, as Velocity uses it: `EventLoopGroup` (`next`, `s
 - Never block a loop. Resolve hostnames, connect and wait asynchronously.
 - asio allows concurrent synchronous `send_to` on one socket, but not concurrent asynchronous operations.
 - The shared endpoint strand on main and the per-connection strands in the phase 2 endpoint work predate this model: replace them, don't extend them.
-- Which loop owns a NetherNet session before its first datagram arrives, and how an ICE check that lands on another loop's socket reaches it, are undecided. Ask before choosing.
+- A NetherNet join only writes the answer and records the ICE credentials in a pending-joins table, the one structure shared across loops. The session is created on the loop whose socket receives the client's first valid STUN check.
+- A check from another of the client's candidate addresses that lands on a different loop is handed to the owner with `execute()`, and that loop caches which loop owns the address.
