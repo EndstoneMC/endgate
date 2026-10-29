@@ -25,32 +25,35 @@ BDS's `MinecraftServiceKeyManager` fetches them; https://gist.github.com/wu-vinc
 
 1. Discovery (`getDiscoveryServiceURL`): `GET https://client.discovery.minecraft-services.net/api/v1.0/discovery/MinecraftDedicatedServer/builds/{version}`, where `{version}` is `Common::getGameVersionStringNet()`. The auth service is `result.serviceEnvironments.auth.prod.serviceUri`, without its trailing `/`. Dev, perf and stage environments use other discovery hosts.
 2. `GET {auth}/.well-known/openid-configuration` gives `jwks_uri` and `issuer`. Both must be non-empty or the fetch counts as failed. The response's `date` header is the service's clock.
-3. `GET {jwks_uri}` gives `keys`. They are stored by `kid`.
+3. `GET {jwks_uri}` must answer 2xx with `keys`.
+   - Each entry with a `kid` is parsed: RSA with a 1024, 2048 or 4096-bit modulus, or EC on P-256, P-384 or P-521.
+   - Entries that don't parse are skipped, and the first of a duplicate `kid` wins.
+   - A fetch that ends with no keys fails.
 4. Send a User-Agent on every request, as the gist does.
 5. Time correction: the offset between local time and the `date` header is added to local time wherever a token's expiry is checked. BDS logs a warning when the two differ by 601 s or more.
 
-Renewal (`onTick`, driven by `Minecraft::update`):
+Renewal:
 
-- The keys are fetched again once 7 days have passed since the last fetch started, or when the clock has gone backwards past it. A failed fetch keeps the old keys and still waits the full 7 days.
-- An unknown `kid` never triggers a fetch; the lookup just finds no key.
+- `onTick`, driven by `Minecraft::update`, fetches again once 7 days have passed since the last fetch started, or when the clock has gone backwards past it.
+- A token whose signature fails, an unknown `kid` included, forces a fetch when the last one started more than 600 s ago.
+- A failed fetch keeps the old keys.
 - At startup the server fetches until it has keys. When it can't reach MCS it reports "Could not connect to Minecraft services. This is required to accept connections in online mode."
 - The trusted keys are MCS's keys plus the server's own host key under `kid` `host`.
 
 ### Validating a login
 
-This is `ServerConnectionAuthValidator::_validateBase`, called from `ServerNetworkHandler::_validateLoginPacket`. Failures name a `DisconnectFailReason`:
+This is `ServerConnectionAuthValidator::_validateBase`, called from `ServerNetworkHandler::_validateLoginPacket`. Failures name a `DisconnectFailReason`, in this order:
 
-- A malformed request fails with 46 `NotAuthenticated`, and an empty token with 53 `LoginPacketNoCert`.
-- A token that isn't self-signed goes through `GameServerToken::_validate`:
-  - `exp` must not have passed in corrected time; the login path always checks expiry;
-  - `aud` must be `api://auth-minecraft-services/multiplayer`;
-  - the signature must verify under the trusted key for the token's `kid`.
-- When that fails, the reason is:
-  - 124 `HostWithoutKeys` if the server has no MCS keys;
-  - otherwise 123 `DiscoveryEnvironmentMismatch` if the token's `iss` differs from the OpenID `issuer`;
-  - otherwise 46.
-  - `iss` is compared only to choose this reason, never on success.
-  - An expired token therefore fails as 124, 123 or 46, not 144 `ExpiredToken`.
-- A self-signed token is accepted only when the validator's `mAllowSelfSigned` is set, otherwise it fails with 46. It is checked for expiry and verified under its own `cpk`. What sets `mAllowSelfSigned` is unverified.
-- The client-data JWT must verify under the token's public key (`WebToken::verifyWithIncludedKey`), or the login fails with 46.
-- The player's UUID comes from `mce::makePlayerUUIDForXUID`: `pocket-auth-1-xuid:{xid}`, with PSN and Nintendo variants.
+1. A malformed request fails with 46 `NotAuthenticated`, and an empty token with 53 `LoginPacketNoCert`.
+2. A token that isn't self-signed goes through `GameServerToken::validate`:
+   - an expired `exp` (in corrected time) fails with 144 `ExpiredToken`; the login path always checks expiry;
+   - any other failure while the server holds no MCS keys fails with 124 `HostWithoutKeys`;
+   - a signature that doesn't verify under the trusted key for the token's `kid` fails with 46, after the forced fetch above;
+   - an `aud` other than `api://auth-minecraft-services/multiplayer` fails with 123 `DiscoveryEnvironmentMismatch` when the token's `iss` differs from the OpenID `issuer`, else with 46. `iss` is consulted only here.
+3. A self-signed token needs `mAllowSelfSigned`, else 46. It is then checked for expiry (144) and verified under its own `cpk` (46).
+   - `mAllowSelfSigned` is the level's LAN broadcast intent and not `requireTrustedAuthentication`, which follows `online-mode`.
+   - So with `online-mode = true`, a self-signed login is refused.
+4. The client-data JWT's `x5u` must equal the token's `cpk` and verify under it (`WebToken::verifyWithIncludedKey`), else 46.
+5. An empty display name fails with 143 `InvalidName`.
+
+The player's UUID comes from `mce::makePlayerUUIDForXUID`: `pocket-auth-1-xuid:{xid}`, with PSN and Nintendo variants.
