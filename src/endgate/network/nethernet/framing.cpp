@@ -1,7 +1,6 @@
 #include "endgate/network/nethernet/framing.h"
 
 #include <algorithm>
-#include <array>
 #include <utility>
 
 namespace endgate::nethernet {
@@ -20,53 +19,42 @@ bool PacketQueue::setMaxMessageSize(std::size_t max_message_size)
     return true;
 }
 
-bool PacketQueue::push(const LegacyByteBuf &packet, ESendType type)
+bool PacketQueue::push(ByteBufView packet, ESendType type)
 {
-    const auto size = packet.length();
-    if (size <= fragment_size_) {
-        sendFragment(0, packet.retainedSlice(0, size), type);
-        return true;
-    }
-    if (size > MAX_FRAGMENTS * fragment_size_) {
-        return false;
-    }
-    if (type != ESendType::Reliable) {
+    const auto size = packet.readableBytes();
+    if (size > fragment_size_ && (size > MAX_FRAGMENTS * fragment_size_ || type != ESendType::Reliable)) {
         return false;
     }
 
-    auto fragments = static_cast<std::uint8_t>((size - 1) / fragment_size_ + 1);
+    auto fragments = static_cast<std::uint8_t>(size <= fragment_size_ ? 1 : (size - 1) / fragment_size_ + 1);
     std::size_t offset = 0;
     while (fragments > 0) {
         --fragments;
         const auto length = std::min(size - offset, fragment_size_);
-        sendFragment(fragments, packet.retainedSlice(offset, length), ESendType::Reliable);
+        auto fragment = Unpooled::buffer(1 + length);
+        fragment.writeByte(fragments).writeBytes(packet.nioBuffer(packet.readerIndex() + offset, length));
+        listener_.sendFragment(type, std::move(fragment));
         offset += length;
     }
     return true;
 }
 
-void PacketQueue::sendFragment(std::uint8_t header, LegacyByteBuf payload, ESendType type)
+void PacketQueue::onOrderedMessage(ByteBufView message)
 {
-    const std::array header_byte{static_cast<std::byte>(header)};
-    auto fragment = LegacyByteBuf::copyBuffer(header_byte);
-    fragment.appendToChain(std::move(payload));
-    listener_.sendFragment(type, std::move(fragment));
-}
-
-void PacketQueue::onOrderedMessage(const LegacyByteBuf &message)
-{
-    if (message.length() <= 1) {
+    if (message.readableBytes() <= 1) {
         partial_receive_.reset();
         listener_.closeChannel(ESendType::Reliable);
         return;
     }
 
-    std::array<std::byte, 1> header_byte{};
-    message.copyTo(header_byte);
-    const auto header = std::to_integer<std::uint8_t>(header_byte.front());
+    const auto header = message.readUnsignedByte();
+    if (!partial_receive_ && header == 0 && message.readableBytes() <= max_packet_size_) {
+        listener_.onPacket(message);
+        return;
+    }
 
     if (!partial_receive_) {
-        partial_receive_.emplace(header, LegacyByteBuf{});
+        partial_receive_.emplace(header, ByteBuf{});
     }
     else if (header != partial_receive_->expected_header) {
         partial_receive_.reset();
@@ -74,13 +62,13 @@ void PacketQueue::onOrderedMessage(const LegacyByteBuf &message)
         return;
     }
 
-    if (partial_receive_->data.length() + message.length() - 1 > max_packet_size_) {
+    if (partial_receive_->data.readableBytes() + message.readableBytes() > max_packet_size_) {
         partial_receive_.reset();
         listener_.closeChannel(ESendType::Reliable);
         return;
     }
 
-    partial_receive_->data.appendToChain(message.retainedSlice(1, message.length() - 1));
+    partial_receive_->data.writeBytes(message.nioBuffer());
     if (header != 0) {
         --partial_receive_->expected_header;
         return;
@@ -88,16 +76,17 @@ void PacketQueue::onOrderedMessage(const LegacyByteBuf &message)
 
     auto packet = std::move(partial_receive_->data);
     partial_receive_.reset();
-    listener_.onPacket(std::move(packet));
+    listener_.onPacket(packet.slice());
 }
 
-void PacketQueue::onUnorderedMessage(const LegacyByteBuf &message)
+void PacketQueue::onUnorderedMessage(ByteBufView message)
 {
-    if (message.length() <= 1) {
+    if (message.readableBytes() <= 1) {
         listener_.closeChannel(ESendType::Unreliable);
         return;
     }
-    listener_.onPacket(message.retainedSlice(1, message.length() - 1));
+    message.skipBytes(1);
+    listener_.onPacket(message);
 }
 
 }  // namespace endgate::nethernet

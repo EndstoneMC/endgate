@@ -17,6 +17,7 @@
 #include <asio/steady_timer.hpp>
 #include <openssl/evp.h>
 
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/nethernet/candidates.h"
 #include "endgate/network/nethernet/identity.h"
 #include "endgate/network/nethernet/session.h"
@@ -27,7 +28,7 @@
 
 namespace {
 
-using endgate::LegacyByteBuf;
+using endgate::ByteBufView;
 using endgate::nethernet::ESendType;
 using endgate::nethernet::ESessionError;
 using endgate::nethernet::NetworkSession;
@@ -109,10 +110,10 @@ private:
         {
         }
 
-        void sendDatagram(const asio::ip::udp::endpoint &remote, std::span<const std::byte> datagram) override
+        void sendDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram) override
         {
             asio::error_code ignored;
-            echo.socket_.send_to(asio::buffer(datagram.data(), datagram.size()), remote, 0, ignored);
+            echo.socket_.send_to(asio::buffer(datagram.nioBuffer()), remote, 0, ignored);
         }
 
         void onRouteAdded(const asio::ip::udp::endpoint &remote) override { echo.routes_[remote] = id; }
@@ -126,7 +127,7 @@ private:
 
         void onOpen() override { std::cout << "open " << id << " " << network_id << '\n'; }
 
-        void onPacket(LegacyByteBuf packet) override { session.send(packet, ESendType::Reliable, Clock::now()); }
+        void onPacket(ByteBufView packet) override { session.send(packet, ESendType::Reliable, Clock::now()); }
 
         void onClosed(ESessionError reason) override { closed = reason; }
 
@@ -146,19 +147,18 @@ private:
                     return;
                 }
                 if (!error) {
-                    const auto datagram = std::span{buffer_}.first(size);
+                    const auto view = endgate::Unpooled::wrappedBuffer(std::span{buffer_}.first(size));
                     std::optional<std::uint64_t> owner;
                     if (const auto route = routes_.find(sender_); route != routes_.end()) {
                         owner = route->second;
                     }
-                    else if (const auto ufrag = endgate::rtc::StunMessage::peekLocalUfrag(
-                                 endgate::Unpooled::wrappedBuffer(datagram))) {
+                    else if (const auto ufrag = endgate::rtc::StunMessage::peekLocalUfrag(view)) {
                         if (const auto known = ufrags_.find(std::string(*ufrag)); known != ufrags_.end()) {
                             owner = known->second;
                         }
                     }
                     if (const auto entry = owner ? sessions_.find(*owner) : sessions_.end(); entry != sessions_.end()) {
-                        entry->second->session.handleDatagram(Clock::now(), sender_, datagram);
+                        entry->second->session.handleDatagram(Clock::now(), sender_, view);
                     }
                     settle();
                 }

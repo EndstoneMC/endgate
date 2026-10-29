@@ -22,25 +22,24 @@ NetworkSession::NetworkSession(Listener &listener, const rtc::Description &offer
 {
 }
 
-void NetworkSession::handleDatagram(Clock::time_point now, const asio::ip::udp::endpoint &remote,
-                                    std::span<const std::byte> datagram)
+void NetworkSession::handleDatagram(Clock::time_point now, const asio::ip::udp::endpoint &remote, ByteBufView datagram)
 {
     now_ = now;
     ++depth_;
-    if (!closed_ && !datagram.empty()) {
-        const auto first = std::to_integer<std::uint8_t>(datagram.front());
+    if (!closed_ && datagram.isReadable()) {
+        const auto first = datagram.getUnsignedByte(datagram.readerIndex());
         if (first <= 3) {
-            ice_.handleDatagram(now, remote, Unpooled::wrappedBuffer(datagram));
+            ice_.handleDatagram(now, remote, datagram);
         }
         else if (first >= 20 && first <= 63 && std::ranges::contains(pairs_, remote)) {
-            dtls_.handleDatagram(now, Unpooled::wrappedBuffer(datagram));
+            dtls_.handleDatagram(now, datagram);
         }
     }
     --depth_;
     advance();
 }
 
-bool NetworkSession::send(const LegacyByteBuf &packet, ESendType type, Clock::time_point now)
+bool NetworkSession::send(ByteBufView packet, ESendType type, Clock::time_point now)
 {
     if (!isOpen()) {
         return false;
@@ -96,7 +95,7 @@ void NetworkSession::handleTimeout(Clock::time_point now)
 
 void NetworkSession::sendIceDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram)
 {
-    listener_.sendDatagram(remote, datagram.nioBuffer());
+    listener_.sendDatagram(remote, datagram);
 }
 
 void NetworkSession::onCandidatePairAdded(const asio::ip::udp::endpoint &remote)
@@ -142,8 +141,7 @@ void NetworkSession::onDtlsStateChanged(rtc::DtlsTransport::State state)
 
 void NetworkSession::sendPacket(ByteBufView packet)
 {
-    const auto bytes = packet.nioBuffer();
-    outbox_.emplace_back(bytes.begin(), bytes.end());
+    outbox_.push_back(packet.copy());
 }
 
 void NetworkSession::onStateChange(rtc::SctpTransport::State state)
@@ -168,10 +166,10 @@ void NetworkSession::onChannelOpen(const rtc::DataChannel &channel)
 void NetworkSession::onChannelMessage(const rtc::DataChannel &channel, ByteBufView message, bool)
 {
     if (channel.stream == reliable_stream_) {
-        queue_.onOrderedMessage(LegacyByteBuf::copyBuffer(message.nioBuffer()));
+        queue_.onOrderedMessage(message);
     }
     else if (channel.stream == unreliable_stream_) {
-        queue_.onUnorderedMessage(LegacyByteBuf::copyBuffer(message.nioBuffer()));
+        queue_.onUnorderedMessage(message);
     }
 }
 
@@ -182,24 +180,21 @@ void NetworkSession::onChannelClosed(const rtc::DataChannel &channel)
     }
 }
 
-void NetworkSession::sendFragment(ESendType type, LegacyByteBuf fragment)
+void NetworkSession::sendFragment(ESendType type, ByteBuf fragment)
 {
     const auto stream = type == ESendType::Reliable ? reliable_stream_ : unreliable_stream_;
     if (!stream || closed_) {
         return;
     }
-    auto message = Unpooled::buffer(fragment.length());
-    message.writeZero(fragment.length());
-    fragment.copyTo(message.nioBuffer());
-    if (!sctp_.send(*stream, std::move(message), true, now_) && type == ESendType::Reliable) {
+    if (!sctp_.send(*stream, std::move(fragment), true, now_) && type == ESendType::Reliable) {
         fail(ESessionError::GenericFailure);
     }
 }
 
-void NetworkSession::onPacket(LegacyByteBuf packet)
+void NetworkSession::onPacket(ByteBufView packet)
 {
     if (!closed_) {
-        listener_.onPacket(std::move(packet));
+        listener_.onPacket(packet);
     }
 }
 
@@ -239,7 +234,7 @@ void NetworkSession::advance()
         }
         if (dtls_.getState() == rtc::DtlsTransport::State::Connected && !outbox_.empty()) {
             for (const auto &packet : std::exchange(outbox_, {})) {
-                dtls_.send(Unpooled::wrappedBuffer(packet));
+                dtls_.send(packet.slice());
             }
             progressed = true;
         }
@@ -264,7 +259,7 @@ void NetworkSession::advance()
     const auto dtls_state = dtls_.getState();
     if (dtls_state == rtc::DtlsTransport::State::Connected) {
         for (const auto &packet : std::exchange(outbox_, {})) {
-            dtls_.send(Unpooled::wrappedBuffer(packet));
+            dtls_.send(packet.slice());
         }
     }
     if (dtls_state == rtc::DtlsTransport::State::Connecting || dtls_state == rtc::DtlsTransport::State::Connected) {
@@ -312,25 +307,24 @@ DialerSession::DialerSession(Listener &listener, const rtc::Description &answer,
     }
 }
 
-void DialerSession::handleDatagram(Clock::time_point now, const asio::ip::udp::endpoint &remote,
-                                   std::span<const std::byte> datagram)
+void DialerSession::handleDatagram(Clock::time_point now, const asio::ip::udp::endpoint &remote, ByteBufView datagram)
 {
     now_ = now;
     ++depth_;
-    if (!closed_ && !datagram.empty()) {
-        const auto first = std::to_integer<std::uint8_t>(datagram.front());
+    if (!closed_ && datagram.isReadable()) {
+        const auto first = datagram.getUnsignedByte(datagram.readerIndex());
         if (first <= 3) {
-            ice_.handleDatagram(now, remote, Unpooled::wrappedBuffer(datagram));
+            ice_.handleDatagram(now, remote, datagram);
         }
         else if (first >= 20 && first <= 63 && std::ranges::contains(candidates_, remote)) {
-            dtls_.handleDatagram(now, Unpooled::wrappedBuffer(datagram));
+            dtls_.handleDatagram(now, datagram);
         }
     }
     --depth_;
     advance();
 }
 
-bool DialerSession::send(const LegacyByteBuf &packet, ESendType type, Clock::time_point now)
+bool DialerSession::send(ByteBufView packet, ESendType type, Clock::time_point now)
 {
     if (!isOpen()) {
         return false;
@@ -386,7 +380,7 @@ void DialerSession::handleTimeout(Clock::time_point now)
 
 void DialerSession::sendIceDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram)
 {
-    listener_.sendDatagram(remote, datagram.nioBuffer());
+    listener_.sendDatagram(remote, datagram);
 }
 
 void DialerSession::onSelectedPairChanged(const std::optional<asio::ip::udp::endpoint> &) {}
@@ -420,8 +414,7 @@ void DialerSession::onDtlsStateChanged(rtc::DtlsTransport::State state)
 
 void DialerSession::sendPacket(ByteBufView packet)
 {
-    const auto bytes = packet.nioBuffer();
-    outbox_.emplace_back(bytes.begin(), bytes.end());
+    outbox_.push_back(packet.copy());
 }
 
 void DialerSession::onStateChange(rtc::SctpTransport::State state)
@@ -436,10 +429,10 @@ void DialerSession::onChannelOpen(const rtc::DataChannel &) {}
 void DialerSession::onChannelMessage(const rtc::DataChannel &channel, ByteBufView message, bool)
 {
     if (channel.stream == reliable_stream_) {
-        queue_.onOrderedMessage(LegacyByteBuf::copyBuffer(message.nioBuffer()));
+        queue_.onOrderedMessage(message);
     }
     else if (channel.stream == unreliable_stream_) {
-        queue_.onUnorderedMessage(LegacyByteBuf::copyBuffer(message.nioBuffer()));
+        queue_.onUnorderedMessage(message);
     }
 }
 
@@ -450,24 +443,21 @@ void DialerSession::onChannelClosed(const rtc::DataChannel &channel)
     }
 }
 
-void DialerSession::sendFragment(ESendType type, LegacyByteBuf fragment)
+void DialerSession::sendFragment(ESendType type, ByteBuf fragment)
 {
     const auto stream = type == ESendType::Reliable ? reliable_stream_ : unreliable_stream_;
     if (!stream || closed_) {
         return;
     }
-    auto message = Unpooled::buffer(fragment.length());
-    message.writeZero(fragment.length());
-    fragment.copyTo(message.nioBuffer());
-    if (!sctp_.send(*stream, std::move(message), true, now_) && type == ESendType::Reliable) {
+    if (!sctp_.send(*stream, std::move(fragment), true, now_) && type == ESendType::Reliable) {
         fail(ESessionError::GenericFailure);
     }
 }
 
-void DialerSession::onPacket(LegacyByteBuf packet)
+void DialerSession::onPacket(ByteBufView packet)
 {
     if (!closed_) {
-        listener_.onPacket(std::move(packet));
+        listener_.onPacket(packet);
     }
 }
 
@@ -507,7 +497,7 @@ void DialerSession::advance()
         }
         if (dtls_.getState() == rtc::DtlsTransport::State::Connected && !outbox_.empty()) {
             for (const auto &packet : std::exchange(outbox_, {})) {
-                dtls_.send(Unpooled::wrappedBuffer(packet));
+                dtls_.send(packet.slice());
             }
             progressed = true;
         }
@@ -542,7 +532,7 @@ void DialerSession::advance()
     const auto dtls_state = dtls_.getState();
     if (dtls_state == rtc::DtlsTransport::State::Connected) {
         for (const auto &packet : std::exchange(outbox_, {})) {
-            dtls_.send(Unpooled::wrappedBuffer(packet));
+            dtls_.send(packet.slice());
         }
     }
     if (dtls_state == rtc::DtlsTransport::State::Connecting || dtls_state == rtc::DtlsTransport::State::Connected) {

@@ -26,11 +26,10 @@ namespace {
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
 
-std::vector<std::byte> bytesOf(const LegacyByteBuf &buf)
+std::vector<std::byte> bytesOf(ByteBufView buf)
 {
-    std::vector<std::byte> bytes(buf.length());
-    buf.copyTo(bytes);
-    return bytes;
+    const auto bytes = buf.nioBuffer();
+    return {bytes.begin(), bytes.end()};
 }
 
 std::vector<std::byte> payloadOf(std::size_t size, std::uint8_t seed)
@@ -44,14 +43,14 @@ std::vector<std::byte> payloadOf(std::size_t size, std::uint8_t seed)
 
 class Recorder : public NetworkSession::Listener {
 public:
-    void sendDatagram(const asio::ip::udp::endpoint &remote, std::span<const std::byte> datagram) override
+    void sendDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram) override
     {
-        outgoing.emplace_back(remote, std::vector<std::byte>(datagram.begin(), datagram.end()));
+        outgoing.emplace_back(remote, bytesOf(datagram));
     }
     void onRouteAdded(const asio::ip::udp::endpoint &remote) override { routes.push_back(remote); }
     void onRouteRemoved(const asio::ip::udp::endpoint &remote) override { std::erase(routes, remote); }
     void onOpen() override { ++opened; }
-    void onPacket(LegacyByteBuf packet) override { packets.push_back(bytesOf(packet)); }
+    void onPacket(ByteBufView packet) override { packets.push_back(bytesOf(packet)); }
     void onClosed(ESessionError reason) override { closed.push_back(reason); }
 
     std::deque<std::pair<asio::ip::udp::endpoint, std::vector<std::byte>>> outgoing;
@@ -119,22 +118,19 @@ private:
     void onChannelMessage(const rtc::DataChannel &channel, ByteBufView message, bool) override
     {
         if (channel.stream == reliable) {
-            queue.onOrderedMessage(LegacyByteBuf::copyBuffer(message.nioBuffer()));
+            queue.onOrderedMessage(message);
         }
         else if (channel.stream == unreliable) {
-            queue.onUnorderedMessage(LegacyByteBuf::copyBuffer(message.nioBuffer()));
+            queue.onUnorderedMessage(message);
         }
     }
     void onChannelClosed(const rtc::DataChannel &) override {}
 
-    void sendFragment(ESendType type, LegacyByteBuf fragment) override
+    void sendFragment(ESendType type, ByteBuf fragment) override
     {
-        auto message = Unpooled::buffer(fragment.length());
-        message.writeZero(fragment.length());
-        fragment.copyTo(message.nioBuffer());
-        sctp.send(type == ESendType::Reliable ? *reliable : *unreliable, std::move(message), true, now);
+        sctp.send(type == ESendType::Reliable ? *reliable : *unreliable, std::move(fragment), true, now);
     }
-    void onPacket(LegacyByteBuf packet) override { packets.push_back(bytesOf(packet)); }
+    void onPacket(ByteBufView packet) override { packets.push_back(bytesOf(packet)); }
     void closeChannel(ESendType) override {}
 };
 
@@ -165,7 +161,7 @@ protected:
         check.priority = 1845501695;
         check.ice_controlling = 0x1122334455667788ULL;
         check.use_candidate = true;
-        session_.handleDatagram(now_, client_address_, check.encode(local_.pwd).nioBuffer());
+        session_.handleDatagram(now_, client_address_, check.encode(local_.pwd).slice());
     }
 
     void pump()
@@ -186,7 +182,7 @@ protected:
                 auto datagram = std::move(client_.outgoing.front());
                 client_.outgoing.pop_front();
                 moved = true;
-                session_.handleDatagram(now_, client_address_, datagram);
+                session_.handleDatagram(now_, client_address_, Unpooled::wrappedBuffer(datagram));
             }
             if (!moved) {
                 return;
@@ -227,9 +223,9 @@ TEST_F(NetworkSessionTest, CarriesPacketsBothWaysOnBothChannels)
     ASSERT_TRUE(session_.isOpen());
 
     const auto hello = payloadOf(100, 1);
-    client_.queue.push(LegacyByteBuf::copyBuffer(hello), ESendType::Reliable);
+    client_.queue.push(Unpooled::wrappedBuffer(hello), ESendType::Reliable);
     const auto movement = payloadOf(40, 2);
-    client_.queue.push(LegacyByteBuf::copyBuffer(movement), ESendType::Unreliable);
+    client_.queue.push(Unpooled::wrappedBuffer(movement), ESendType::Unreliable);
     client_.drive(now_);
     pump();
     ASSERT_EQ(recorder_.packets.size(), 2U);
@@ -237,9 +233,9 @@ TEST_F(NetworkSessionTest, CarriesPacketsBothWaysOnBothChannels)
     EXPECT_TRUE(std::ranges::contains(recorder_.packets, movement));
 
     const auto chunk = payloadOf(300000, 3);
-    EXPECT_TRUE(session_.send(LegacyByteBuf::copyBuffer(chunk), ESendType::Reliable, now_));
+    EXPECT_TRUE(session_.send(Unpooled::wrappedBuffer(chunk), ESendType::Reliable, now_));
     const auto update = payloadOf(60, 4);
-    EXPECT_TRUE(session_.send(LegacyByteBuf::copyBuffer(update), ESendType::Unreliable, now_));
+    EXPECT_TRUE(session_.send(Unpooled::wrappedBuffer(update), ESendType::Unreliable, now_));
     pump();
     ASSERT_EQ(client_.packets.size(), 2U);
     EXPECT_TRUE(std::ranges::contains(client_.packets, chunk));
@@ -248,14 +244,14 @@ TEST_F(NetworkSessionTest, CarriesPacketsBothWaysOnBothChannels)
 
 TEST_F(NetworkSessionTest, RefusesToSendBeforeItOpens)
 {
-    EXPECT_FALSE(session_.send(LegacyByteBuf::copyBuffer(payloadOf(10, 5)), ESendType::Reliable, now_));
+    EXPECT_FALSE(session_.send(Unpooled::wrappedBuffer(payloadOf(10, 5)), ESendType::Reliable, now_));
 }
 
 TEST_F(NetworkSessionTest, IgnoresDtlsFromAnAddressWithoutAPair)
 {
     const asio::ip::udp::endpoint stranger{asio::ip::make_address("198.51.100.66"), 4000};
     const std::vector<std::byte> record{std::byte{22}, std::byte{0xFE}, std::byte{0xFD}, std::byte{0}, std::byte{0}};
-    session_.handleDatagram(now_, stranger, record);
+    session_.handleDatagram(now_, stranger, Unpooled::wrappedBuffer(record));
     EXPECT_TRUE(recorder_.outgoing.empty());
     connect();
     EXPECT_TRUE(session_.isOpen());
@@ -279,7 +275,7 @@ TEST_F(NetworkSessionTest, ReportsALocalCloseOnce)
     session_.close(now_);
     EXPECT_EQ(recorder_.closed, std::vector{ESessionError::None});
     EXPECT_FALSE(session_.isOpen());
-    EXPECT_FALSE(session_.send(LegacyByteBuf::copyBuffer(payloadOf(10, 6)), ESendType::Reliable, now_));
+    EXPECT_FALSE(session_.send(Unpooled::wrappedBuffer(payloadOf(10, 6)), ESendType::Reliable, now_));
 }
 
 TEST_F(NetworkSessionTest, ClosesWhenTheClientClosesItsReliableChannel)
@@ -322,14 +318,14 @@ protected:
                 auto [destination, datagram] = std::move(dialer_recorder_.outgoing.front());
                 dialer_recorder_.outgoing.pop_front();
                 if (destination == answerer_address_) {
-                    answerer_.handleDatagram(now_, dialer_address_, datagram);
+                    answerer_.handleDatagram(now_, dialer_address_, Unpooled::wrappedBuffer(datagram));
                 }
             }
             while (!answerer_recorder_.outgoing.empty()) {
                 auto [destination, datagram] = std::move(answerer_recorder_.outgoing.front());
                 answerer_recorder_.outgoing.pop_front();
                 if (destination == dialer_address_) {
-                    dialer_.handleDatagram(now_, answerer_address_, datagram);
+                    dialer_.handleDatagram(now_, answerer_address_, Unpooled::wrappedBuffer(datagram));
                 }
             }
         }
@@ -396,16 +392,16 @@ TEST_F(DialerSessionTest, CarriesPacketsBothWaysOnBothChannels)
     ASSERT_TRUE(answerer_.isOpen());
 
     const auto reliable = payloadOf(300000, 11);
-    EXPECT_TRUE(dialer_.send(LegacyByteBuf::copyBuffer(reliable), ESendType::Reliable, now_));
+    EXPECT_TRUE(dialer_.send(Unpooled::wrappedBuffer(reliable), ESendType::Reliable, now_));
     const auto unreliable = payloadOf(40, 12);
-    EXPECT_TRUE(dialer_.send(LegacyByteBuf::copyBuffer(unreliable), ESendType::Unreliable, now_));
+    EXPECT_TRUE(dialer_.send(Unpooled::wrappedBuffer(unreliable), ESendType::Unreliable, now_));
     pump();
     ASSERT_EQ(answerer_recorder_.packets.size(), 2U);
     EXPECT_TRUE(std::ranges::contains(answerer_recorder_.packets, reliable));
     EXPECT_TRUE(std::ranges::contains(answerer_recorder_.packets, unreliable));
 
     const auto back = payloadOf(1200, 13);
-    EXPECT_TRUE(answerer_.send(LegacyByteBuf::copyBuffer(back), ESendType::Reliable, now_));
+    EXPECT_TRUE(answerer_.send(Unpooled::wrappedBuffer(back), ESendType::Reliable, now_));
     pump();
     ASSERT_EQ(dialer_recorder_.packets.size(), 1U);
     EXPECT_EQ(dialer_recorder_.packets.front(), back);
@@ -419,7 +415,7 @@ TEST_F(DialerSessionTest, ReportsALocalCloseOnceAndStopsSending)
     dialer_.close(now_);
     EXPECT_EQ(dialer_recorder_.closed, std::vector{ESessionError::None});
     EXPECT_FALSE(dialer_.isOpen());
-    EXPECT_FALSE(dialer_.send(LegacyByteBuf::copyBuffer(payloadOf(10, 14)), ESendType::Reliable, now_));
+    EXPECT_FALSE(dialer_.send(Unpooled::wrappedBuffer(payloadOf(10, 14)), ESendType::Reliable, now_));
     EXPECT_TRUE(dialer_recorder_.routes.empty());
 }
 

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <chrono>
@@ -20,7 +21,7 @@
 #include <openssl/evp.h>
 
 #include "endgate/awaitable.h"
-#include "endgate/network/buffer.h"
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/nethernet/client.h"
 #include "endgate/network/nethernet/identity.h"
 #include "endgate/network/nethernet/session.h"
@@ -29,7 +30,8 @@
 
 namespace {
 
-using endgate::LegacyByteBuf;
+using endgate::ByteBufView;
+using endgate::Unpooled;
 using endgate::nethernet::DialerSession;
 using endgate::nethernet::ESendType;
 using endgate::nethernet::ESessionError;
@@ -99,10 +101,10 @@ public:
         rearm();
     }
 
-    void sendDatagram(const asio::ip::udp::endpoint &remote, std::span<const std::byte> datagram) override
+    void sendDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram) override
     {
         asio::error_code ignored;
-        socket_.send_to(asio::buffer(datagram.data(), datagram.size()), remote, 0, ignored);
+        socket_.send_to(asio::buffer(datagram.nioBuffer()), remote, 0, ignored);
     }
     void onRouteAdded(const asio::ip::udp::endpoint &) override {}
     void onRouteRemoved(const asio::ip::udp::endpoint &) override {}
@@ -110,15 +112,14 @@ public:
     void onOpen() override
     {
         std::cout << "open\n";
-        session_->send(LegacyByteBuf::copyBuffer(payload_), ESendType::Reliable, Clock::now());
+        session_->send(Unpooled::wrappedBuffer(payload_), ESendType::Reliable, Clock::now());
         rearm();
     }
 
-    void onPacket(LegacyByteBuf packet) override
+    void onPacket(ByteBufView packet) override
     {
-        std::vector<std::byte> bytes(packet.length());
-        packet.copyTo(bytes);
-        if (bytes == payload_) {
+        const auto bytes = packet.nioBuffer();
+        if (std::ranges::equal(bytes, payload_)) {
             std::cout << "echo-ok\n";
             succeeded_ = true;
         }
@@ -143,7 +144,8 @@ private:
                     return;
                 }
                 if (!error && session_) {
-                    session_->handleDatagram(Clock::now(), sender_, std::span{buffer_}.first(size));
+                    session_->handleDatagram(Clock::now(), sender_,
+                                             Unpooled::wrappedBuffer(std::span{buffer_}.first(size)));
                     rearm();
                 }
                 receive();

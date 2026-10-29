@@ -5,12 +5,11 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <span>
 #include <vector>
 
 #include <asio/ip/udp.hpp>
 
-#include "endgate/network/buffer.h"
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/nethernet/framing.h"
 #include "endgate/network/rtc/certificate.h"
 #include "endgate/network/rtc/description.h"
@@ -87,11 +86,11 @@ public:
     class Listener {
     public:
         virtual ~Listener() = default;
-        virtual void sendDatagram(const asio::ip::udp::endpoint &remote, std::span<const std::byte> datagram) = 0;
+        virtual void sendDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram) = 0;
         virtual void onRouteAdded(const asio::ip::udp::endpoint &remote) = 0;
         virtual void onRouteRemoved(const asio::ip::udp::endpoint &remote) = 0;
         virtual void onOpen() = 0;
-        virtual void onPacket(LegacyByteBuf packet) = 0;
+        virtual void onPacket(ByteBufView packet) = 0;
         virtual void onClosed(ESessionError reason) = 0;
     };
 
@@ -103,13 +102,12 @@ public:
     NetworkSession &operator=(NetworkSession &&) = delete;
     ~NetworkSession() override = default;
 
-    void handleDatagram(Clock::time_point now, const asio::ip::udp::endpoint &remote,
-                        std::span<const std::byte> datagram);
+    void handleDatagram(Clock::time_point now, const asio::ip::udp::endpoint &remote, ByteBufView datagram);
 
     /**
      * @see NetherNet::NetworkSession::sendPacket
      */
-    bool send(const LegacyByteBuf &packet, ESendType type, Clock::time_point now);
+    bool send(ByteBufView packet, ESendType type, Clock::time_point now);
 
     void close(Clock::time_point now);
 
@@ -137,8 +135,8 @@ private:
     void onChannelMessage(const rtc::DataChannel &channel, ByteBufView message, bool binary) override;
     void onChannelClosed(const rtc::DataChannel &channel) override;
 
-    void sendFragment(ESendType type, LegacyByteBuf fragment) override;
-    void onPacket(LegacyByteBuf packet) override;
+    void sendFragment(ESendType type, ByteBuf fragment) override;
+    void onPacket(ByteBufView packet) override;
     void closeChannel(ESendType type) override;
 
     void fail(ESessionError reason);
@@ -151,7 +149,7 @@ private:
     rtc::SctpTransport sctp_;
     PacketQueue queue_;
     std::vector<asio::ip::udp::endpoint> pairs_;
-    std::vector<std::vector<std::byte>> outbox_;
+    std::vector<ByteBuf> outbox_;
     std::optional<std::uint16_t> reliable_stream_;
     std::optional<std::uint16_t> unreliable_stream_;
     unsigned depth_{0};
@@ -192,13 +190,12 @@ public:
     DialerSession &operator=(DialerSession &&) = delete;
     ~DialerSession() override = default;
 
-    void handleDatagram(Clock::time_point now, const asio::ip::udp::endpoint &remote,
-                        std::span<const std::byte> datagram);
+    void handleDatagram(Clock::time_point now, const asio::ip::udp::endpoint &remote, ByteBufView datagram);
 
     /**
      * @see NetherNet::NetworkSession::sendPacket
      */
-    bool send(const LegacyByteBuf &packet, ESendType type, Clock::time_point now);
+    bool send(ByteBufView packet, ESendType type, Clock::time_point now);
 
     void close(Clock::time_point now);
 
@@ -227,8 +224,8 @@ private:
     void onChannelMessage(const rtc::DataChannel &channel, ByteBufView message, bool binary) override;
     void onChannelClosed(const rtc::DataChannel &channel) override;
 
-    void sendFragment(ESendType type, LegacyByteBuf fragment) override;
-    void onPacket(LegacyByteBuf packet) override;
+    void sendFragment(ESendType type, ByteBuf fragment) override;
+    void onPacket(ByteBufView packet) override;
     void closeChannel(ESendType type) override;
 
     void fail(ESessionError reason);
@@ -241,7 +238,7 @@ private:
     rtc::DtlsTransport dtls_;
     rtc::SctpTransport sctp_;
     PacketQueue queue_;
-    std::vector<std::vector<std::byte>> outbox_;
+    std::vector<ByteBuf> outbox_;
     std::optional<std::uint16_t> reliable_stream_;
     std::optional<std::uint16_t> unreliable_stream_;
     unsigned depth_{0};

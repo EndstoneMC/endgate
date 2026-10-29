@@ -1,3 +1,4 @@
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -6,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/nethernet/framing.h"
 
 namespace endgate::nethernet {
@@ -14,11 +16,12 @@ namespace {
 constexpr std::size_t FRAGMENT_SIZE = PacketQueue::DEFAULT_MAX_MESSAGE_SIZE - 1;
 constexpr std::size_t MAX_PACKET_SIZE = 8 * 1024 * 1024;
 
-std::vector<std::byte> bytesOf(const LegacyByteBuf &buf)
+template <typename Buf>
+    requires std::derived_from<Buf, AbstractByteBuf>
+std::vector<std::byte> bytesOf(const Buf &buf)
 {
-    std::vector<std::byte> bytes(buf.length());
-    buf.copyTo(bytes);
-    return bytes;
+    const auto bytes = buf.nioBuffer();
+    return {bytes.begin(), bytes.end()};
 }
 
 std::vector<std::byte> payloadOf(std::size_t size, std::uint8_t seed)
@@ -37,11 +40,11 @@ struct Fragment {
 
 class Recorder : public PacketQueue::Listener {
 public:
-    void sendFragment(ESendType type, LegacyByteBuf fragment) override
+    void sendFragment(ESendType type, ByteBuf fragment) override
     {
         fragments.push_back({.type = type, .bytes = bytesOf(fragment)});
     }
-    void onPacket(LegacyByteBuf packet) override { packets.push_back(bytesOf(packet)); }
+    void onPacket(ByteBufView packet) override { packets.push_back(bytesOf(packet)); }
     void closeChannel(ESendType type) override { closed.push_back(type); }
 
     std::vector<Fragment> fragments;
@@ -54,7 +57,7 @@ protected:
     void deliverEverySentFragment()
     {
         for (const auto &fragment : recorder_.fragments) {
-            const auto message = LegacyByteBuf::copyBuffer(fragment.bytes);
+            const auto message = Unpooled::wrappedBuffer(fragment.bytes);
             if (fragment.type == ESendType::Reliable) {
                 queue_.onOrderedMessage(message);
             }
@@ -71,7 +74,7 @@ protected:
 TEST_F(PacketQueueTest, SendsASmallPacketAsOneFragmentWithHeaderZero)
 {
     const std::vector payload{std::byte{'A'}};
-    ASSERT_TRUE(queue_.push(LegacyByteBuf::copyBuffer(payload), ESendType::Reliable));
+    ASSERT_TRUE(queue_.push(Unpooled::wrappedBuffer(payload), ESendType::Reliable));
 
     ASSERT_EQ(recorder_.fragments.size(), 1U);
     EXPECT_EQ(recorder_.fragments[0].type, ESendType::Reliable);
@@ -81,7 +84,7 @@ TEST_F(PacketQueueTest, SendsASmallPacketAsOneFragmentWithHeaderZero)
 TEST_F(PacketQueueTest, SendsAnUnreliablePacketOnTheUnorderedChannel)
 {
     const std::vector payload{std::byte{'h'}, std::byte{'i'}};
-    ASSERT_TRUE(queue_.push(LegacyByteBuf::copyBuffer(payload), ESendType::Unreliable));
+    ASSERT_TRUE(queue_.push(Unpooled::wrappedBuffer(payload), ESendType::Unreliable));
 
     ASSERT_EQ(recorder_.fragments.size(), 1U);
     EXPECT_EQ(recorder_.fragments[0].type, ESendType::Unreliable);
@@ -90,7 +93,7 @@ TEST_F(PacketQueueTest, SendsAnUnreliablePacketOnTheUnorderedChannel)
 
 TEST_F(PacketQueueTest, KeepsAPacketOfExactlyOneFragmentWhole)
 {
-    ASSERT_TRUE(queue_.push(LegacyByteBuf::copyBuffer(payloadOf(FRAGMENT_SIZE, 1)), ESendType::Reliable));
+    ASSERT_TRUE(queue_.push(Unpooled::wrappedBuffer(payloadOf(FRAGMENT_SIZE, 1)), ESendType::Reliable));
 
     ASSERT_EQ(recorder_.fragments.size(), 1U);
     EXPECT_EQ(recorder_.fragments[0].bytes.size(), FRAGMENT_SIZE + 1);
@@ -100,7 +103,7 @@ TEST_F(PacketQueueTest, KeepsAPacketOfExactlyOneFragmentWhole)
 TEST_F(PacketQueueTest, CountsFragmentsDownToZero)
 {
     const auto payload = payloadOf(FRAGMENT_SIZE * 2 + 5, 2);
-    ASSERT_TRUE(queue_.push(LegacyByteBuf::copyBuffer(payload), ESendType::Reliable));
+    ASSERT_TRUE(queue_.push(Unpooled::wrappedBuffer(payload), ESendType::Reliable));
 
     ASSERT_EQ(recorder_.fragments.size(), 3U);
     EXPECT_EQ(recorder_.fragments[0].bytes.front(), std::byte{2});
@@ -114,7 +117,7 @@ TEST_F(PacketQueueTest, CountsFragmentsDownToZero)
 TEST_F(PacketQueueTest, SplitsOneByteOverAFragmentIntoTwo)
 {
     const auto payload = payloadOf(FRAGMENT_SIZE + 1, 3);
-    ASSERT_TRUE(queue_.push(LegacyByteBuf::copyBuffer(payload), ESendType::Reliable));
+    ASSERT_TRUE(queue_.push(Unpooled::wrappedBuffer(payload), ESendType::Reliable));
 
     ASSERT_EQ(recorder_.fragments.size(), 2U);
     EXPECT_EQ(recorder_.fragments[0].bytes.front(), std::byte{1});
@@ -127,7 +130,7 @@ TEST_F(PacketQueueTest, ReassemblesWhatItSent)
          {std::size_t{1}, std::size_t{1000}, FRAGMENT_SIZE, FRAGMENT_SIZE + 1, FRAGMENT_SIZE * 3 + 17}) {
         recorder_ = {};
         const auto payload = payloadOf(size, static_cast<std::uint8_t>(size));
-        ASSERT_TRUE(queue_.push(LegacyByteBuf::copyBuffer(payload), ESendType::Reliable));
+        ASSERT_TRUE(queue_.push(Unpooled::wrappedBuffer(payload), ESendType::Reliable));
         deliverEverySentFragment();
         ASSERT_EQ(recorder_.packets.size(), 1U) << size;
         EXPECT_EQ(recorder_.packets[0], payload) << size;
@@ -137,18 +140,18 @@ TEST_F(PacketQueueTest, ReassemblesWhatItSent)
 
 TEST_F(PacketQueueTest, DeliversNothingBeforeTheLastFragment)
 {
-    ASSERT_TRUE(queue_.push(LegacyByteBuf::copyBuffer(payloadOf(FRAGMENT_SIZE * 2 + 1, 4)), ESendType::Reliable));
-    queue_.onOrderedMessage(LegacyByteBuf::copyBuffer(recorder_.fragments[0].bytes));
-    queue_.onOrderedMessage(LegacyByteBuf::copyBuffer(recorder_.fragments[1].bytes));
+    ASSERT_TRUE(queue_.push(Unpooled::wrappedBuffer(payloadOf(FRAGMENT_SIZE * 2 + 1, 4)), ESendType::Reliable));
+    queue_.onOrderedMessage(Unpooled::wrappedBuffer(recorder_.fragments[0].bytes));
+    queue_.onOrderedMessage(Unpooled::wrappedBuffer(recorder_.fragments[1].bytes));
     EXPECT_TRUE(recorder_.packets.empty());
 
-    queue_.onOrderedMessage(LegacyByteBuf::copyBuffer(recorder_.fragments[2].bytes));
+    queue_.onOrderedMessage(Unpooled::wrappedBuffer(recorder_.fragments[2].bytes));
     EXPECT_EQ(recorder_.packets.size(), 1U);
 }
 
 TEST_F(PacketQueueTest, RefusesToFragmentAnUnreliablePacket)
 {
-    EXPECT_FALSE(queue_.push(LegacyByteBuf::copyBuffer(payloadOf(FRAGMENT_SIZE + 1, 5)), ESendType::Unreliable));
+    EXPECT_FALSE(queue_.push(Unpooled::wrappedBuffer(payloadOf(FRAGMENT_SIZE + 1, 5)), ESendType::Unreliable));
     EXPECT_TRUE(recorder_.fragments.empty());
 }
 
@@ -156,12 +159,12 @@ TEST_F(PacketQueueTest, RefusesAPacketBeyondTheFragmentCount)
 {
     ASSERT_TRUE(queue_.setMaxMessageSize(3));
     EXPECT_TRUE(
-        queue_.push(LegacyByteBuf::copyBuffer(payloadOf(PacketQueue::MAX_FRAGMENTS * 2, 6)), ESendType::Reliable));
+        queue_.push(Unpooled::wrappedBuffer(payloadOf(PacketQueue::MAX_FRAGMENTS * 2, 6)), ESendType::Reliable));
     EXPECT_EQ(recorder_.fragments.size(), PacketQueue::MAX_FRAGMENTS);
 
     recorder_ = {};
     EXPECT_FALSE(
-        queue_.push(LegacyByteBuf::copyBuffer(payloadOf(PacketQueue::MAX_FRAGMENTS * 2 + 1, 7)), ESendType::Reliable));
+        queue_.push(Unpooled::wrappedBuffer(payloadOf(PacketQueue::MAX_FRAGMENTS * 2 + 1, 7)), ESendType::Reliable));
     EXPECT_TRUE(recorder_.fragments.empty());
 }
 
@@ -169,7 +172,7 @@ TEST_F(PacketQueueTest, FragmentsToTheNegotiatedMessageSize)
 {
     EXPECT_FALSE(queue_.setMaxMessageSize(1));
     ASSERT_TRUE(queue_.setMaxMessageSize(5));
-    ASSERT_TRUE(queue_.push(LegacyByteBuf::copyBuffer(payloadOf(9, 8)), ESendType::Reliable));
+    ASSERT_TRUE(queue_.push(Unpooled::wrappedBuffer(payloadOf(9, 8)), ESendType::Reliable));
 
     ASSERT_EQ(recorder_.fragments.size(), 3U);
     EXPECT_EQ(recorder_.fragments[0].bytes.size(), 5U);
@@ -179,33 +182,33 @@ TEST_F(PacketQueueTest, FragmentsToTheNegotiatedMessageSize)
 
 TEST_F(PacketQueueTest, StripsTheHeaderFromAnUnorderedMessage)
 {
-    queue_.onUnorderedMessage(LegacyByteBuf::copyBuffer(std::vector{std::byte{0}, std::byte{0xAB}}));
+    queue_.onUnorderedMessage(Unpooled::wrappedBuffer(std::vector{std::byte{0}, std::byte{0xAB}}));
     ASSERT_EQ(recorder_.packets.size(), 1U);
     EXPECT_EQ(recorder_.packets[0], (std::vector{std::byte{0xAB}}));
 }
 
 TEST_F(PacketQueueTest, ClosesTheOrderedChannelOnAHeaderOnlyMessage)
 {
-    queue_.onOrderedMessage(LegacyByteBuf::copyBuffer(std::vector{std::byte{0}}));
+    queue_.onOrderedMessage(Unpooled::wrappedBuffer(std::vector{std::byte{0}}));
     EXPECT_TRUE(recorder_.packets.empty());
     EXPECT_EQ(recorder_.closed, (std::vector{ESendType::Reliable}));
 }
 
 TEST_F(PacketQueueTest, ClosesTheUnorderedChannelOnAnEmptyMessage)
 {
-    queue_.onUnorderedMessage(LegacyByteBuf{});
+    queue_.onUnorderedMessage(ByteBufView{});
     EXPECT_TRUE(recorder_.packets.empty());
     EXPECT_EQ(recorder_.closed, (std::vector{ESendType::Unreliable}));
 }
 
 TEST_F(PacketQueueTest, ClosesOnAFragmentOutOfCountdown)
 {
-    queue_.onOrderedMessage(LegacyByteBuf::copyBuffer(std::vector{std::byte{2}, std::byte{0x01}}));
-    queue_.onOrderedMessage(LegacyByteBuf::copyBuffer(std::vector{std::byte{0}, std::byte{0x02}}));
+    queue_.onOrderedMessage(Unpooled::wrappedBuffer(std::vector{std::byte{2}, std::byte{0x01}}));
+    queue_.onOrderedMessage(Unpooled::wrappedBuffer(std::vector{std::byte{0}, std::byte{0x02}}));
     EXPECT_TRUE(recorder_.packets.empty());
     EXPECT_EQ(recorder_.closed, (std::vector{ESendType::Reliable}));
 
-    queue_.onOrderedMessage(LegacyByteBuf::copyBuffer(std::vector{std::byte{0}, std::byte{0x03}}));
+    queue_.onOrderedMessage(Unpooled::wrappedBuffer(std::vector{std::byte{0}, std::byte{0x03}}));
     ASSERT_EQ(recorder_.packets.size(), 1U);
     EXPECT_EQ(recorder_.packets[0], (std::vector{std::byte{0x03}}));
 }
@@ -215,18 +218,17 @@ TEST_F(PacketQueueTest, ClosesWhenReassemblyOutgrowsTheBound)
     Recorder bounded_recorder;
     PacketQueue bounded{bounded_recorder, 4};
     bounded.onOrderedMessage(
-        LegacyByteBuf::copyBuffer(std::vector{std::byte{1}, std::byte{1}, std::byte{2}, std::byte{3}}));
-    bounded.onOrderedMessage(LegacyByteBuf::copyBuffer(std::vector{std::byte{0}, std::byte{4}, std::byte{5}}));
+        Unpooled::wrappedBuffer(std::vector{std::byte{1}, std::byte{1}, std::byte{2}, std::byte{3}}));
+    bounded.onOrderedMessage(Unpooled::wrappedBuffer(std::vector{std::byte{0}, std::byte{4}, std::byte{5}}));
 
     EXPECT_TRUE(bounded_recorder.packets.empty());
     EXPECT_EQ(bounded_recorder.closed, (std::vector{ESendType::Reliable}));
 }
 
-TEST_F(PacketQueueTest, ReadsAMessageSpreadOverSegments)
+TEST_F(PacketQueueTest, ReadsAMessageOfSeveralBytes)
 {
-    auto message = LegacyByteBuf::copyBuffer(std::vector{std::byte{0}, std::byte{0x10}});
-    message.appendToChain(LegacyByteBuf::copyBuffer(std::vector{std::byte{0x11}, std::byte{0x12}}));
-    queue_.onOrderedMessage(message);
+    const std::vector message{std::byte{0}, std::byte{0x10}, std::byte{0x11}, std::byte{0x12}};
+    queue_.onOrderedMessage(Unpooled::wrappedBuffer(message));
 
     ASSERT_EQ(recorder_.packets.size(), 1U);
     EXPECT_EQ(recorder_.packets[0], (std::vector{std::byte{0x10}, std::byte{0x11}, std::byte{0x12}}));
