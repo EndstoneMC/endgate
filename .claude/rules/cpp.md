@@ -19,6 +19,7 @@ paths:
 
 - Prefer short file names. A file need not be named after its class, and one file may hold several related classes.
 - Let the directory carry the context: `ProxyServer` lives in `server.h`, `RollingRandomAccessFileAppender` in `logging/appender.h`.
+- A one-line alias or constant gets no file of its own. Declare it where it's used, inside the function when one function uses it.
 
 ## Comments
 

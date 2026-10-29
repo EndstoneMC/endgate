@@ -13,14 +13,15 @@
 #include <asio/as_tuple.hpp>
 #include <asio/cancel_after.hpp>
 #include <asio/co_spawn.hpp>
+#include <asio/detail/socket_option.hpp>
 #include <asio/ip/v6_only.hpp>
 #include <asio/ssl/stream.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/write.hpp>
 #include <glaze/json.hpp>
+#include <sys/socket.h>
 
 #include "endgate/awaitable.h"
-#include "endgate/network/reuseport.h"
 
 namespace endgate::nethernet {
 
@@ -123,6 +124,8 @@ std::shared_ptr<asio::ssl::context> HttpSignalingServer::loadTls(const std::file
 
 void HttpSignalingServer::listen(const asio::ip::tcp::endpoint &endpoint)
 {
+    using ReusePort = asio::detail::socket_option::boolean<SOL_SOCKET, SO_REUSEPORT>;
+
     acceptor_.open(endpoint.protocol());
     acceptor_.set_option(asio::socket_base::reuse_address(true));
     acceptor_.set_option(ReusePort(true));

@@ -10,13 +10,14 @@
 #include <utility>
 #include <vector>
 
+#include <asio/detail/socket_option.hpp>
 #include <asio/ip/udp.hpp>
 #include <asio/ip/v6_only.hpp>
 #include <asio/ssl/context.hpp>
+#include <sys/socket.h>
 
 #include "endgate/config.h"
 #include "endgate/logging/manager.h"
-#include "endgate/network/reuseport.h"
 #include "endgate/server.h"
 
 namespace endgate {
@@ -46,6 +47,8 @@ HttpClient ConnectionManager::createHttpClient()
 
 bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t port)
 {
+    using ReusePort = asio::detail::socket_option::boolean<SOL_SOCKET, SO_REUSEPORT>;
+
     asio::error_code ec;
 
     const bool dual_stack = address.is_v6() && address.is_unspecified();
