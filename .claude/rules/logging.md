@@ -5,18 +5,15 @@ paths:
 
 # Logging
 
-Log what Velocity logs, when it logs it, at the same level. Word each line the way BDS words the same event.
+Log what Velocity logs, when it logs it, at the same level and in the same words. Adapt only where Bedrock differs.
 
 - Name each logger after its class, as Velocity's `LogManager.getLogger(X.class)` does, and hold it as a member.
 - The layout is Velocity's `log4j2.xml`:
   - console: `[HH:mm:ss LEVEL]: message` for endgate's own loggers, `[HH:mm:ss LEVEL] [logger]: message` for any other;
   - file: `logs/latest.log` as `[HH:mm:ss] [thread/LEVEL] [logger]: message`, rolled to `logs/yyyy-MM-dd-N.log.gz` daily and at startup.
-- Where BDS logs the same event, use its words:
-  - startup: `Starting Server`, `Version: {}`, `IPv4 supported, port: {}` or `IPv6 supported, port: {}` per bound socket, `Server started.`;
-  - a port already taken: `Network port occupied, can't start server.`;
-  - players: `Player connected: {}, xuid: {}` and `Player disconnected: {}, xuid: {}, pfid: {}`;
-  - shutdown: `Server stop requested.`, `Stopping server...`, `Quit correctly`.
-- For a proxy event BDS never logs, such as a backend connection, a server switch or the channel summary, write it in BDS's style: what happened, a colon, then the facts as `key: value` pairs.
+- Startup and shutdown use Velocity's lines: `Booting up {} {}...`, `Connections will use {} channels, {} compression, {} ciphers`, `Listening on {}`, `Done ({}s)!`, `Shutting down the proxy...`.
+- A connection names itself as Velocity's `toString` does: `[initial connection] {address}`, `[connected player] {name} ({address})`, `[server connection] {name} -> {server}`. Its lifecycle lines are `{} has connected` and `{} has disconnected`.
+- Where Velocity has no counterpart, such as a RakNet or NetherNet event, write the line in the same style.
 - Velocity's logging keys sit in `[advanced]` of `endgate.toml` with Velocity's names, defaults and comments, read through `ProxyConfig`:
   - `log-player-connections = true`: log players connecting, switching servers and disconnecting;
   - `log-command-executions = false`: log every command a player runs.
