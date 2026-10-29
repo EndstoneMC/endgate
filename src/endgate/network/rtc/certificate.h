@@ -36,9 +36,6 @@ class Certificate {
 public:
     [[nodiscard]] static std::shared_ptr<const Certificate> generate();
 
-    /**
-     * The certificate shared by every PeerConnection in this process, generated on first use.
-     */
     [[nodiscard]] static const std::shared_ptr<const Certificate> &shared();
 
     [[nodiscard]] X509 *getX509() const { return x509_.get(); }

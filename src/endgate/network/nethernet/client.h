@@ -46,25 +46,18 @@ struct SignalingClient {
         bool verified{false};
     };
 
-    /**
-     * What `GET /v1/join` revealed: whether the target speaks NetherNet signalling, and the ping it
-     * announced when the capability body was present.
-     */
     struct Probe {
         bool supported{false};
         std::optional<ServerPing> ping;
     };
 
-    /**
-     * The answer to an offer: its SDP with `a=identity` stripped, and the server identity it carried.
-     */
     struct Answer {
         std::string sdp;
         std::optional<ServerAssertion> identity;
     };
 
     /**
-     * Does the target speak NetherNet HTTP signalling? A 2xx to `GET /v1/join` means yes. This is the
+     * Does the target support NetherNet HTTP signalling? A 2xx to `GET /v1/join` means yes. This is the
      * reusable backend-transport detector; it costs one request and returns the ping too.
      *
      * @see NetherNet::NetworkSessionManager::_discover

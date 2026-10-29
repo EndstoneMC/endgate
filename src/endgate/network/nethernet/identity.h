@@ -36,9 +36,6 @@ struct JsonWebToken {
      */
     [[nodiscard]] bool verify(EVP_PKEY *key) const;
 
-    /**
-     * Reads the cpk claim, accepting both a JSON Web Key and a base64 DER SubjectPublicKeyInfo.
-     */
     [[nodiscard]] PublicKey publicKey() const;
 };
 
@@ -115,9 +112,6 @@ public:
 
     [[nodiscard]] static std::string stripFromSdp(std::string_view sdp);
 
-    /**
-     * The canonical JSON over an SDP's a=fingerprint lines that the assertion signs.
-     */
     [[nodiscard]] static std::string fingerprintsOf(std::string_view sdp);
 
     [[nodiscard]] const std::string &getAssertion() const { return assertion_; }
@@ -125,16 +119,9 @@ public:
     [[nodiscard]] const std::string &getIdpProtocol() const { return idp_protocol_; }
     [[nodiscard]] const std::string &getFingerprints() const { return fingerprints_; }
 
-    /**
-     * The JWT and detached fingerprints JWS the assertion carries, as Mojang's onboarding guide
-     * section 5 defines them.
-     */
     [[nodiscard]] std::optional<std::string> getToken() const;
     [[nodiscard]] std::optional<std::string> getSignedFingerprints() const;
 
-    /**
-     * Checks the assertion's fingerprints JWS against the SDP's fingerprints under the given key.
-     */
     [[nodiscard]] bool verifyFingerprints(EVP_PKEY *key) const;
 
 private:

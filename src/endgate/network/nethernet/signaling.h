@@ -50,19 +50,12 @@ private:
     std::shared_ptr<Pending> pending_;
 };
 
-/**
- * One GET /v1/join, with what the client says about itself in the query string.
- */
 struct PingRequest {
     std::optional<int> protocol;
     std::string version;
     std::string network_id;
 };
 
-/**
- * One POST /v1/join/{networkId}, with the address the client reached the proxy at, taken from its Host
- * header.
- */
 struct JoinRequest {
     std::string network_id;
     std::string offer;
@@ -70,9 +63,6 @@ struct JoinRequest {
     std::optional<std::uint16_t> port;
 };
 
-/**
- * What the signalling server needs from the proxy: the ping it shows, and an answer to every offer.
- */
 class JoinHandler {
 public:
     virtual ~JoinHandler() = default;
