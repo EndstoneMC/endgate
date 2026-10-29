@@ -6,3 +6,6 @@ logs/
 .cache/
 .console_history
 CMakeUserPresets.json
+.claude/worktrees/
+.claude/settings.local.json
+CLAUDE.local.md
