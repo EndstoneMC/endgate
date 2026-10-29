@@ -60,6 +60,11 @@ public:
     [[nodiscard]] asio::io_context &getIoContext() const { return io_context_; }
     [[nodiscard]] const std::shared_ptr<asio::ip::udp::socket> &getSocket() const { return socket_; }
     [[nodiscard]] ProxyServer &getServer() const { return server_; }
+    [[nodiscard]] const std::shared_ptr<const rtc::Certificate> &getCertificate() const { return certificate_; }
+    [[nodiscard]] const std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> &getIdentity() const
+    {
+        return identity_;
+    }
 
     void listen(const asio::ip::tcp::endpoint &endpoint);
     void start();

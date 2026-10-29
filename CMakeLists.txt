@@ -39,7 +39,6 @@ add_executable(endgate
         src/endgate/server.cpp
         src/endgate/connection/backend.cpp
         src/endgate/connection/connection.cpp
-        src/endgate/connection/nethernet.cpp
         src/endgate/connection/player.cpp
         src/endgate/connection/raknet.cpp
         src/endgate/logging/appender.cpp

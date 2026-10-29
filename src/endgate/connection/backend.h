@@ -39,10 +39,6 @@ public:
     void disconnect();
 
     void write(ByteBuf batch);
-
-    /**
-     * Sends what waited for the leg to come up, and everything after it straight through.
-     */
     void connected();
 
     [[nodiscard]] RegisteredServer &getServer() const { return server_; }

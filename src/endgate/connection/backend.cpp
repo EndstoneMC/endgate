@@ -15,6 +15,7 @@
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 
+#include "endgate/connection/nethernet.h"
 #include "endgate/connection/player.h"
 #include "endgate/connection/raknet.h"
 #include "endgate/logging/manager.h"
@@ -39,6 +40,7 @@ asio::awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> s
 
     const auto &info = self->server_.getServerInfo();
     auto &player = *self->player_;
+    auto &endpoint = player.getConnection().getEndpoint();
     const auto &player_address = player.getConnection().getRemoteAddress();
 
     std::optional<asio::ip::udp::endpoint> address;
@@ -58,7 +60,7 @@ asio::awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> s
 
     std::optional<ServerInfo::Transport> transport;
     if (address && player.isActive()) {
-        transport = co_await self->server_.detectTransport(*address);
+        transport = co_await self->server_.detectTransport(endpoint.getIoContext(), *address);
     }
     if (!player.isActive()) {
         co_return;
@@ -69,13 +71,16 @@ asio::awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> s
         co_return;
     }
     if (*transport == ServerInfo::Transport::NetherNet) {
-        self->logger_.warn("Backend {} speaks NetherNet, which endgate can't connect to yet; disconnecting {}",
-                           info.getAddress(), player_address);
-        player.disconnect();
+        const auto connection = std::make_shared<NetherNetConnection<nethernet::DialerSession>>(
+            endpoint, *address, endpoint.getCertificate());
+        connection->setSessionHandler(std::make_shared<BackendPlaySessionHandler>(self));
+        self->connection_ = connection;
+        endpoint.registerConnection(connection, std::nullopt);
+        self->logger_.info("Opening backend {} for {}", info.getAddress(), player_address);
+        connection->connect(info.getHost(), info.getPort(), endpoint.getIdentity());
         co_return;
     }
 
-    auto &endpoint = player.getConnection().getEndpoint();
     const auto guid = std::mt19937_64{std::random_device{}()}();
     const auto connection = std::make_shared<RakNetConnection>(endpoint, *address, guid, raknet::Clock::now());
     connection->setSessionHandler(std::make_shared<BackendPlaySessionHandler>(self));

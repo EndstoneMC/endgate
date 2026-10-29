@@ -8,6 +8,7 @@
 #include <string_view>
 
 #include <asio/awaitable.hpp>
+#include <asio/io_context.hpp>
 #include <asio/ip/udp.hpp>
 #include <spdlog/logger.h>
 
@@ -71,7 +72,7 @@ public:
     [[nodiscard]] const ServerInfo &getServerInfo() const { return info_; }
 
     [[nodiscard]] asio::awaitable<std::optional<ServerInfo::Transport>> detectTransport(
-        asio::ip::udp::endpoint address);
+        asio::io_context &io_context, asio::ip::udp::endpoint address);
 
     void forgetTransport();
 
@@ -82,12 +83,6 @@ public:
      * @see RakNet::RakPeer::Ping
      */
     [[nodiscard]] static asio::awaitable<bool> ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout);
-
-    /**
-     * Asks for the NetherNet capability check, GET /v1/join, as a client sends it.
-     */
-    [[nodiscard]] static asio::awaitable<bool> isNetherNet(std::string host, std::uint16_t port,
-                                                           std::chrono::milliseconds timeout);
 
 private:
     ServerInfo info_;

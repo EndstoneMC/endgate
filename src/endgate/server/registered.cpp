@@ -14,6 +14,7 @@
 #include <asio/use_awaitable.hpp>
 
 #include "endgate/logging/manager.h"
+#include "endgate/network/nethernet/client.h"
 #include "endgate/network/raknet/codec.h"
 #include "endgate/network/raknet/message.h"
 #include "endgate/network/raknet/protocol.h"
@@ -82,7 +83,8 @@ std::optional<ServerInfo> ServerInfo::parse(std::string name, std::string_view a
 
 RegisteredServer::RegisteredServer(ServerInfo info) : info_(std::move(info)), logger_(LogManager::getLogger()) {}
 
-asio::awaitable<std::optional<ServerInfo::Transport>> RegisteredServer::detectTransport(asio::ip::udp::endpoint address)
+asio::awaitable<std::optional<ServerInfo::Transport>> RegisteredServer::detectTransport(asio::io_context &io_context,
+                                                                                        asio::ip::udp::endpoint address)
 {
     constexpr std::chrono::milliseconds signaling_timeout{2000};
     constexpr std::chrono::milliseconds ping_timeout{1000};
@@ -99,7 +101,12 @@ asio::awaitable<std::optional<ServerInfo::Transport>> RegisteredServer::detectTr
         co_return detected;
     }
 
-    if (co_await isNetherNet(info_.getHost(), info_.getPort(), signaling_timeout)) {
+    const auto probe =
+        co_await nethernet::SignalingClient::probeNetherNet(io_context, info_.getHost(), info_.getPort(),
+                                                            {.connect_timeout = signaling_timeout,
+                                                             .request_timeout = signaling_timeout,
+                                                             .tls_handshake_timeout = signaling_timeout});
+    if (probe.supported) {
         detected = ServerInfo::Transport::NetherNet;
     }
     else if (co_await ping(address, ping_timeout)) {
@@ -162,11 +169,6 @@ asio::awaitable<bool> RegisteredServer::ping(asio::ip::udp::endpoint address, st
             }
         }
     }
-    co_return false;
-}
-
-asio::awaitable<bool> RegisteredServer::isNetherNet(std::string, std::uint16_t, std::chrono::milliseconds)
-{
     co_return false;
 }
 

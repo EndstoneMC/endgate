@@ -315,9 +315,9 @@ asio::awaitable<void> Endpoint::join(nethernet::JoinRequest request, nethernet::
         credentials = rtc::IceCredentials::generate();
     }
     const auto ufrag = credentials.ufrag;
-    const auto connection =
-        std::make_shared<NetherNetConnection>(*this, request.network_id, *offer, std::move(credentials), certificate_,
-                                              session_config_, MinecraftConnection::Clock::now());
+    const auto connection = std::make_shared<NetherNetConnection<nethernet::NetworkSession>>(
+        *this, request.network_id, *offer, std::move(credentials), certificate_, session_config_,
+        MinecraftConnection::Clock::now());
     connection->setSessionHandler(
         std::make_shared<ClientPlaySessionHandler>(std::make_shared<Player>(server_, connection)));
     connections_.emplace(connection, Registration{.ufrag = ufrag});
