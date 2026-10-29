@@ -25,7 +25,6 @@ paths:
 Netty's `io.netty.buffer.ByteBuf`, 1:1: `readerIndex`, `writerIndex`, `capacity`, `readableBytes`, `writableBytes`, `isReadable`, `ensureWritable`, `skipBytes`, `discardReadBytes`, `clear`, the `read`, `get`, `set` and `write` families with their `LE` and `Unsigned` forms, `readSlice`, `slice`, `copy`, `nioBuffer`. Netty's growth rule (`calculateNewCapacity`) and `IndexOutOfBoundsException` (as `std::out_of_range`) come with it.
 
 - Netty's integers are big-endian; Bedrock's are mostly little-endian, so reach for the `LE` methods.
-- Bedrock's varints and strings are free functions in `ProtocolUtils` over a `ByteBuf` or `ByteBufView`, as Velocity's are. Every length they read has a cap.
 - Allocate with `Unpooled`, Netty's static factory, until a pooled `ByteBufAllocator` exists; callers move to `ctx.alloc()` when it does.
 - `network/buffer.h`'s chained, shared `ByteBuf` predates these rules: replace it, don't extend it.
 
@@ -34,6 +33,7 @@ Deviations from Netty:
 - Ownership is RAII and moves, not `ReferenceCounted`: no `retain`, `release`, `refCnt`, `retainedSlice` or `retainedDuplicate`. A `ByteBuf` is move-only; where Netty would retain, `copy()`.
 - `slice()`, `readSlice()` and `duplicate()` return a `ByteBufView`: borrowed, read-only bytes with a reader index of their own, which is Netty's unretained slice with the borrow in its type. Store a `ByteBuf`, never a `ByteBufView`; growing a `ByteBuf` invalidates every view into it.
 - Write the read surface once for `ByteBuf` and `ByteBufView` with deducing `this`, not virtuals.
+- Bedrock's encodings are methods on the buffers themselves, because we own `ByteBuf`: `readVarInt`/`writeVarInt` (zigzag), `readUnsignedVarInt`/`writeUnsignedVarInt`, their 64-bit forms `readVarInt64`/`writeVarInt64` and `readUnsignedVarInt64`/`writeUnsignedVarInt64`, and `readString(maxLength)`/`writeString`. There is no `ProtocolUtils`. Every length they read has a cap.
 - Memory is never zero-filled. A socket, decompressor or compressor writes straight into the writable region after `ensureWritable(n)`, then advances `writerIndex`.
 - No `CompositeByteBuf`. Compressors, ciphers and datagram assembly all want contiguous bytes.
 - `getBytes` returns nothing instead of the buffer, since returning the const reference trips clang-tidy.
