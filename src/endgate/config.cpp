@@ -118,47 +118,52 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
     return config;
 }
 
-bool ProxyConfig::validate() const
+spdlog::logger &ProxyConfig::logger()
 {
     static spdlog::logger &logger = LogManager::getLogger("endgate::ProxyConfig");
+    return logger;
+}
+
+bool ProxyConfig::validate() const
+{
 
     bool valid = true;
     if (bind_.empty()) {
-        logger.error("'bind' option is empty.");
+        logger().error("'bind' option is empty.");
         valid = false;
     }
 
     if (!online_mode_) {
-        logger.warn("The proxy is running in offline mode! This is a security risk and you will NOT receive any "
-                    "support!");
+        logger().warn("The proxy is running in offline mode! This is a security risk and you will NOT receive any "
+                      "support!");
     }
 
     if (servers_.empty()) {
-        logger.warn("You don't have any servers configured.");
+        logger().warn("You don't have any servers configured.");
     }
 
     if (compression_level_ < -1 || compression_level_ > 9) {
-        logger.error("Invalid compression level {}", compression_level_);
+        logger().error("Invalid compression level {}", compression_level_);
         valid = false;
     }
     else if (compression_level_ == 0) {
-        logger.warn("ALL packets going through the proxy will be uncompressed. This will increase bandwidth usage.");
+        logger().warn("ALL packets going through the proxy will be uncompressed. This will increase bandwidth usage.");
     }
 
     if (tls_certificate_.empty() != tls_certificate_key_.empty()) {
-        logger.error("HTTPS needs both tls-certificate and tls-certificate-key");
+        logger().error("HTTPS needs both tls-certificate and tls-certificate-key");
         valid = false;
     }
 
     for (const auto &[name, address] : servers_) {
         if (!ServerInfo::parse(name, address)) {
-            logger.error("Server {} does not have a valid IP address.", name);
+            logger().error("Server {} does not have a valid IP address.", name);
             valid = false;
         }
     }
     for (const auto &name : attempt_connection_order_) {
         if (!servers_.contains(name)) {
-            logger.error("Fallback server {} is not registered in your configuration!", name);
+            logger().error("Fallback server {} is not registered in your configuration!", name);
             valid = false;
         }
     }

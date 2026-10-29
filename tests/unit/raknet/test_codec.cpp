@@ -47,21 +47,21 @@ TEST(Codec, IntegersAreBigEndianExceptTheTwentyFourBitCounters)
     EXPECT_FALSE(buffer.isReadable());
 }
 
-TEST(Codec, TwentyFourBitCounterMatchesLegacyPort)
+TEST(Codec, TwentyFourBitCounterMatchesRakNet)
 {
     auto buffer = Unpooled::buffer(3, 3);
     buffer.writeMediumLE(0x123456);
     EXPECT_EQ(toHex(buffer), "563412");
 }
 
-TEST(Codec, Ipv4AddressMatchesLegacyPortAndWirePy)
+TEST(Codec, Ipv4AddressMatchesRakNetAndWirePy)
 {
     EXPECT_EQ(encodeAddress(endpoint("127.0.0.1", 19132)), "0480fffffe4abc");
     EXPECT_EQ(encodeAddress(endpoint("192.168.1.10", 54321)), "043f57fef5d431");
     EXPECT_EQ(encodeAddress(SystemAddress{}), "04ffffffff0000");
 }
 
-TEST(Codec, Ipv6AddressMatchesLegacyPort)
+TEST(Codec, Ipv6AddressMatchesRakNet)
 {
     EXPECT_EQ(encodeAddress(endpoint("fe80::1234:5678", 19132)),
               "060a004abc00000000fe80000000000000000000001234567800000000");

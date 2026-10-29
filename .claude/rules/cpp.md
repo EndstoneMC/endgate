@@ -8,7 +8,7 @@ paths:
 - Target C++23. Reach for ranges, `std::expected`, `std::span`, `constexpr` and deducing `this` instead of older idioms or hand-rolled equivalents.
 - Value semantics and RAII: no raw owning pointers, no manual resource cleanup.
 - A `constexpr` used by one function belongs inside it. Lift it to namespace scope once a second function needs it.
-- Resolve shared services once and hold them. A class that logs takes a `spdlog::logger &` member initialised in its constructor, mirroring Velocity's `private static final Logger logger`. Never look a logger, or anything else, up by name in a method that runs more than once.
+- Resolve shared services once and hold them. A class that logs takes a `spdlog::logger &` member initialised in its constructor, mirroring Velocity's `private static final Logger logger`. A copyable value type, where a reference member would break assignment, resolves its logger once through a private static `logger()` instead. Never initialise a logger at namespace or static-member scope, which runs before `main`. Never look a logger, or anything else, up by name in a method that runs more than once.
 - `#include <...>` for the standard library and third-party headers, `"endgate/..."` for ours.
 - Coroutines return `Awaitable<T>` (`endgate/awaitable.h`), never `asio::awaitable<T>` directly.
 - Spell atomics `std::atomic<T>`, not the `std::atomic_bool` family of aliases.

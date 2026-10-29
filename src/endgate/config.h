@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include <spdlog/logger.h>
+
 namespace endgate {
 
 /**
@@ -35,6 +37,8 @@ public:
     [[nodiscard]] const std::filesystem::path &getTlsCertificateKey() const;
 
 private:
+    [[nodiscard]] static spdlog::logger &logger();
+
     std::string bind_;
     std::string motd_;
     int show_max_players_{};

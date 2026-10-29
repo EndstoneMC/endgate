@@ -37,7 +37,7 @@ test::Bytes bytes(std::string_view hex)
     return fromHex(hex);
 }
 
-TEST(Message, UnconnectedPingMatchesLegacyPortAndWirePy)
+TEST(Message, UnconnectedPingMatchesRakNetAndWirePy)
 {
     constexpr std::string_view golden = "01010203040506070800ffff00fefefefefdfdfdfd123456780123456789abcdef";
     EXPECT_EQ(encode(UnconnectedPing{MessageId::UnconnectedPing, 0x0102030405060708, GUID}), golden);
@@ -68,7 +68,7 @@ TEST(Message, UnconnectedPingRejectsBadMagicAndTruncation)
     EXPECT_FALSE(UnconnectedPing::decode({}));
 }
 
-TEST(Message, UnconnectedPongMatchesLegacyPort)
+TEST(Message, UnconnectedPongMatchesRakNet)
 {
     const auto data = bytes("4d4350453b");
     constexpr std::string_view golden = "1c01020304050607080123456789abcdef00ffff00fefefefefdfdfdfd123456784d4350453b";
@@ -103,7 +103,7 @@ TEST(Message, OpenConnectionRequest1NeedsTheOfflineLength)
                                                       "0b00000000000000")));
 }
 
-TEST(Message, OpenConnectionReply1MatchesLegacyPortAndWirePy)
+TEST(Message, OpenConnectionReply1MatchesRakNetAndWirePy)
 {
     constexpr std::string_view golden = "0600ffff00fefefefefdfdfdfd123456780123456789abcdef000578";
     EXPECT_EQ(encode(OpenConnectionReply1{GUID, std::nullopt, 1400}), golden);
@@ -114,7 +114,7 @@ TEST(Message, OpenConnectionReply1MatchesLegacyPortAndWirePy)
     EXPECT_EQ(decoded->mtu, 1400);
 }
 
-TEST(Message, OpenConnectionReply1WithCookieMatchesLegacyPort)
+TEST(Message, OpenConnectionReply1WithCookieMatchesRakNet)
 {
     constexpr std::string_view golden = "0600ffff00fefefefefdfdfdfd123456780123456789abcdef01cafebabe0578";
     EXPECT_EQ(encode(OpenConnectionReply1{GUID, 0xCAFEBABE, 1400}), golden);
@@ -125,7 +125,7 @@ TEST(Message, OpenConnectionReply1WithCookieMatchesLegacyPort)
     EXPECT_FALSE(OpenConnectionReply1::decode(bytes(golden.substr(0, golden.size() - 4))));
 }
 
-TEST(Message, OpenConnectionRequest2MatchesLegacyPortAndWirePy)
+TEST(Message, OpenConnectionRequest2MatchesRakNetAndWirePy)
 {
     constexpr std::string_view golden = "0700ffff00fefefefefdfdfdfd123456780480fffffe4abc05780123456789abcdef";
     EXPECT_EQ(encode(OpenConnectionRequest2{std::nullopt, endpoint("127.0.0.1", 19132), 1400, GUID}), golden);
@@ -151,7 +151,7 @@ TEST(Message, OpenConnectionRequest2WithoutGuidKeepsTheUnassignedGuid)
     EXPECT_FALSE(OpenConnectionRequest2::decode(bytes("0700ffff00fefefefefdfdfdfd123456780480fffffe4abc04")));
 }
 
-TEST(Message, OpenConnectionReply2MatchesLegacyPortAndWirePy)
+TEST(Message, OpenConnectionReply2MatchesRakNetAndWirePy)
 {
     constexpr std::string_view golden = "0800ffff00fefefefefdfdfdfd123456780123456789abcdef043f57fef5d431057800";
     EXPECT_EQ(encode(OpenConnectionReply2{GUID, endpoint("192.168.1.10", 54321), 1400, false}), golden);
@@ -162,14 +162,14 @@ TEST(Message, OpenConnectionReply2MatchesLegacyPortAndWirePy)
     EXPECT_FALSE(decoded->security);
 }
 
-TEST(Message, OpenConnectionReply2SecurityIsOneBitMatchingLegacyPort)
+TEST(Message, OpenConnectionReply2SecurityIsOneBitMatchingRakNet)
 {
     constexpr std::string_view golden = "0800ffff00fefefefefdfdfdfd123456780123456789abcdef043f57fef5d431057880";
     EXPECT_EQ(encode(OpenConnectionReply2{GUID, endpoint("192.168.1.10", 54321), 1400, true}), golden);
     EXPECT_TRUE(OpenConnectionReply2::decode(bytes(golden))->security);
 }
 
-TEST(Message, IncompatibleProtocolVersionMatchesLegacyPort)
+TEST(Message, IncompatibleProtocolVersionMatchesRakNet)
 {
     constexpr std::string_view golden = "190b00ffff00fefefefefdfdfdfd123456780123456789abcdef";
     EXPECT_EQ(encode(IncompatibleProtocolVersion{11, GUID}), golden);
@@ -180,7 +180,7 @@ TEST(Message, IncompatibleProtocolVersionMatchesLegacyPort)
     EXPECT_FALSE(IncompatibleProtocolVersion::decode(bytes(std::string{golden} + "00")));
 }
 
-TEST(Message, OfflineRejectionsMatchLegacyPort)
+TEST(Message, OfflineRejectionsMatchRakNet)
 {
     const std::array<std::pair<MessageId, std::string_view>, 4> rejections{{
         {MessageId::AlreadyConnected, "12"},
@@ -199,7 +199,7 @@ TEST(Message, OfflineRejectionsMatchLegacyPort)
     EXPECT_FALSE(OfflineRejection::decode(bytes("13" + std::string{MAGIC} + "0123456789abcdef")));
 }
 
-TEST(Message, ConnectionRequestMatchesLegacyPortAndWirePy)
+TEST(Message, ConnectionRequestMatchesRakNetAndWirePy)
 {
     constexpr std::string_view golden = "090123456789abcdef1122334455667788007077";
     const auto password = bytes("7077");
@@ -221,7 +221,7 @@ TEST(Message, ConnectionRequestWithoutSecurityByteHasNoPassword)
     EXPECT_FALSE(ConnectionRequest::decode(bytes("090123456789abcdef11223344556677")));
 }
 
-TEST(Message, ConnectionRequestAcceptedMatchesLegacyPortAndWirePy)
+TEST(Message, ConnectionRequestAcceptedMatchesRakNetAndWirePy)
 {
     std::string golden = "1004f5fffffdc3500000";
     for (std::size_t i = 0; i < MAXIMUM_NUMBER_OF_INTERNAL_IDS; ++i) {
@@ -241,7 +241,7 @@ TEST(Message, ConnectionRequestAcceptedMatchesLegacyPortAndWirePy)
     EXPECT_EQ(decoded->send_pong_time, 0x1213141516171819U);
 }
 
-TEST(Message, NewIncomingConnectionMatchesLegacyPortAndWirePy)
+TEST(Message, NewIncomingConnectionMatchesRakNetAndWirePy)
 {
     std::string golden = "1304f5fffffe4abc";
     for (std::size_t i = 0; i < MAXIMUM_NUMBER_OF_INTERNAL_IDS; ++i) {
@@ -279,7 +279,7 @@ TEST(Message, ShortHandshakeMessagesKeepDefaultsLikeAFailedBitStreamRead)
                                                         "00000000000000000000000000000000")));
 }
 
-TEST(Message, ConnectedPingAndPongMatchLegacyPortAndWirePy)
+TEST(Message, ConnectedPingAndPongMatchRakNetAndWirePy)
 {
     EXPECT_EQ(encode(ConnectedPing{0x0102030405060708}), "000102030405060708");
     EXPECT_EQ(encode(ConnectedPong{0x0102030405060708, 0x1112131415161718}), "0301020304050607081112131415161718");

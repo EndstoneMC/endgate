@@ -35,31 +35,31 @@ std::string encodeHeader(const DatagramHeader &header)
 
 struct GoldenFrame {
     FrameHeader header;
-    std::string_view legacy;
+    std::string_view encoded;
 };
 
 const std::array<GoldenFrame, 8> GOLDEN_FRAMES{{
-    {.header = {.reliability = PacketReliability::Unreliable}, .legacy = "000018fe0102"},
+    {.header = {.reliability = PacketReliability::Unreliable}, .encoded = "000018fe0102"},
     {.header = {.reliability = PacketReliability::UnreliableSequenced,
                 .reliable_message_number = UINT24_MASK,
                 .sequencing_index = 0x010203,
                 .ordering_index = 0x040506,
                 .ordering_channel = 7},
-     .legacy = "20001803020106050407fe0102"},
+     .encoded = "20001803020106050407fe0102"},
     {.header = {.reliability = PacketReliability::Reliable, .reliable_message_number = 0x0A0B0C},
-     .legacy = "4000180c0b0afe0102"},
+     .encoded = "4000180c0b0afe0102"},
     {.header = {.reliability = PacketReliability::ReliableOrdered,
                 .reliable_message_number = 0x0A0B0C,
                 .sequencing_index = 0,
                 .ordering_index = 0x040506,
                 .ordering_channel = 31},
-     .legacy = "6000180c0b0a0605041ffe0102"},
+     .encoded = "6000180c0b0a0605041ffe0102"},
     {.header = {.reliability = PacketReliability::ReliableSequenced,
                 .reliable_message_number = 0x0A0B0C,
                 .sequencing_index = 0x010203,
                 .ordering_index = 0x040506,
                 .ordering_channel = 3},
-     .legacy = "8000180c0b0a03020106050403fe0102"},
+     .encoded = "8000180c0b0a03020106050403fe0102"},
     {.header = {.reliability = PacketReliability::ReliableOrdered,
                 .reliable_message_number = 0x000102,
                 .sequencing_index = 0,
@@ -68,20 +68,20 @@ const std::array<GoldenFrame, 8> GOLDEN_FRAMES{{
                 .split_packet_count = 5,
                 .split_packet_id = 0x1234,
                 .split_packet_index = 4},
-     .legacy = "7000180201000900000000000005123400000004fe0102"},
+     .encoded = "7000180201000900000000000005123400000004fe0102"},
     {.header = {.reliability = PacketReliability::ReliableOrderedWithAckReceipt,
                 .reliable_message_number = 0x0A0B0C,
                 .sequencing_index = 0,
                 .ordering_index = 0x040506,
                 .ordering_channel = 2},
-     .legacy = "6000180c0b0a06050402fe0102"},
-    {.header = {.reliability = PacketReliability::UnreliableWithAckReceipt}, .legacy = "000018fe0102"},
+     .encoded = "6000180c0b0a06050402fe0102"},
+    {.header = {.reliability = PacketReliability::UnreliableWithAckReceipt}, .encoded = "000018fe0102"},
 }};
 
-TEST(Datagram, FramesMatchLegacyPort)
+TEST(Datagram, FramesMatchRakNet)
 {
     for (const auto &frame : GOLDEN_FRAMES) {
-        EXPECT_EQ(encodeFrame(frame.header), frame.legacy);
+        EXPECT_EQ(encodeFrame(frame.header), frame.encoded);
     }
 }
 
@@ -98,10 +98,10 @@ TEST(Datagram, FramesMatchWirePy)
 TEST(Datagram, FramesRoundTrip)
 {
     for (const auto &frame : std::span{GOLDEN_FRAMES}.first(6)) {
-        const auto bytes = fromHex(frame.legacy);
+        const auto bytes = fromHex(frame.encoded);
         ByteBufView reader = bytes;
         const auto decoded = Frame::decode(reader);
-        ASSERT_TRUE(decoded) << frame.legacy;
+        ASSERT_TRUE(decoded) << frame.encoded;
         EXPECT_EQ(decoded->header.reliability, frame.header.reliability);
         EXPECT_EQ(decoded->header.reliable_message_number, frame.header.reliable_message_number);
         EXPECT_EQ(decoded->header.sequencing_index, frame.header.sequencing_index);
@@ -194,7 +194,7 @@ TEST(Datagram, LargestFrameHeaderIsReliableSequencedAndSplit)
     EXPECT_EQ(MAXIMUM_FRAME_HEADER_LENGTH, 23U);
 }
 
-TEST(Datagram, DataHeaderMatchesLegacyPortAndWirePy)
+TEST(Datagram, DataHeaderMatchesRakNetAndWirePy)
 {
     EXPECT_EQ(encodeHeader({.is_continuous_send = true, .needs_b_and_as = true, .datagram_number = 0x123456}),
               "8c563412");
@@ -203,7 +203,7 @@ TEST(Datagram, DataHeaderMatchesLegacyPortAndWirePy)
     EXPECT_EQ(DatagramHeader::DATA_HEADER_BYTE_LENGTH, 9U);
 }
 
-TEST(Datagram, AckAndNakHeadersMatchLegacyPort)
+TEST(Datagram, AckAndNakHeadersMatchRakNet)
 {
     EXPECT_EQ(encodeHeader({.is_ack = true}), "c0");
     EXPECT_EQ(encodeHeader({.is_ack = true, .has_b_and_as = true, .as = 1.5F}), "e03fc00000");
@@ -247,7 +247,7 @@ std::string serialize(RangeList &list, std::size_t max_bits)
     return toHex(buffer);
 }
 
-TEST(Datagram, AckRangesMatchLegacyPortAndWirePy)
+TEST(Datagram, AckRangesMatchRakNetAndWirePy)
 {
     RangeList acks;
     for (const std::uint32_t number : {1U, 2U, 3U, 7U, 9U, 10U, 0x123456U}) {
