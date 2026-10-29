@@ -6,7 +6,8 @@
 #include <cstdint>
 #include <optional>
 #include <span>
-#include <vector>
+
+#include "endgate/buffer/bytebuf.h"
 
 namespace endgate::rtc::sctp {
 
@@ -33,13 +34,12 @@ struct StateCookie {
     bool peer_supports_forward_tsn;
     bool peer_supports_reconfig;
 
-    [[nodiscard]] std::vector<std::byte> seal(const Key &key, std::chrono::steady_clock::time_point now) const;
+    [[nodiscard]] ByteBuf seal(const Key &key, std::chrono::steady_clock::time_point now) const;
 
     /**
      * @see RFC 9260 section 5.1.5
      */
-    static std::optional<Opened> open(const Key &key, std::span<const std::byte> data,
-                                      std::chrono::steady_clock::time_point now,
+    static std::optional<Opened> open(const Key &key, ByteBufView data, std::chrono::steady_clock::time_point now,
                                       std::chrono::steady_clock::duration lifetime);
 };
 

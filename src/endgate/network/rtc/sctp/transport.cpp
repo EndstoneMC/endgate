@@ -18,7 +18,7 @@ void SctpTransport::start(Clock::time_point now)
     association_.connect(now);
 }
 
-void SctpTransport::handlePacket(std::span<const std::byte> packet, Clock::time_point now)
+void SctpTransport::handlePacket(ByteBufView packet, Clock::time_point now)
 {
     now_ = now;
     association_.handlePacket(packet, now);
@@ -46,9 +46,8 @@ std::optional<std::uint16_t> SctpTransport::createDataChannel(std::string label,
         if (channels_.contains(stream)) {
             continue;
         }
-        const auto open = DataChannelOpen::of(label, protocol, reliability, priority).serialize();
-        if (!association_.send(stream, static_cast<std::uint32_t>(Ppid::Dcep), LegacyByteBuf::copyBuffer(open), {},
-                               now)) {
+        if (!association_.send(stream, static_cast<std::uint32_t>(Ppid::Dcep),
+                               DataChannelOpen::of(label, protocol, reliability, priority).serialize(), {}, now)) {
             return std::nullopt;
         }
         channels_.emplace(stream, Channel{
@@ -64,12 +63,12 @@ std::optional<std::uint16_t> SctpTransport::createDataChannel(std::string label,
     return std::nullopt;
 }
 
-bool SctpTransport::send(std::uint16_t stream, LegacyByteBuf message, bool binary, Clock::time_point now)
+bool SctpTransport::send(std::uint16_t stream, ByteBuf message, bool binary, Clock::time_point now)
 {
     now_ = now;
     const auto channel = channels_.find(stream);
     if (state_ != State::Connected || channel == channels_.end() || channel->second.closing ||
-        (config_.remote_max_message_size != 0 && message.length() > config_.remote_max_message_size)) {
+        (config_.remote_max_message_size != 0 && message.readableBytes() > config_.remote_max_message_size)) {
         return false;
     }
     const auto &reliability = channel->second.info.reliability;
@@ -81,10 +80,10 @@ bool SctpTransport::send(std::uint16_t stream, LegacyByteBuf message, bool binar
                              : std::nullopt,
         .lifetime = reliability.max_packet_life_time,
     };
-    if (message.empty()) {
+    if (!message.isReadable()) {
         constexpr std::array<std::byte, 1> placeholder{};
         return association_.send(stream, static_cast<std::uint32_t>(binary ? Ppid::BinaryEmpty : Ppid::StringEmpty),
-                                 LegacyByteBuf::copyBuffer(placeholder), options, now);
+                                 Unpooled::copiedBuffer(placeholder), options, now);
     }
     return association_.send(stream, static_cast<std::uint32_t>(binary ? Ppid::Binary : Ppid::String),
                              std::move(message), options, now);
@@ -138,19 +137,17 @@ void SctpTransport::onClosed(sctp::Association::CloseReason reason)
     closeAll();
 }
 
-void SctpTransport::onMessage(sctp::Message message)
+void SctpTransport::onMessage(std::uint16_t stream, std::uint32_t ppid, bool, ByteBufView payload)
 {
-    const auto channel = channels_.find(message.stream);
-    switch (static_cast<Ppid>(message.ppid)) {
+    const auto channel = channels_.find(stream);
+    switch (static_cast<Ppid>(ppid)) {
     case Ppid::Dcep: {
-        if (message.payload.empty()) {
+        if (!payload.isReadable()) {
             return;
         }
-        std::vector<std::byte> bytes(message.payload.length());
-        message.payload.copyTo(bytes);
-        const auto type = std::to_integer<std::uint8_t>(bytes[0]);
+        const auto type = payload.getUnsignedByte(payload.readerIndex());
         if (type == DataChannelOpen::MESSAGE_TYPE) {
-            handleOpen(message.stream, bytes);
+            handleOpen(stream, payload);
         }
         else if (type == DataChannelAck::MESSAGE_TYPE && channel != channels_.end()) {
             channel->second.acknowledged = true;
@@ -162,24 +159,24 @@ void SctpTransport::onMessage(sctp::Message message)
     case Ppid::StringEmpty:
     case Ppid::BinaryEmpty: {
         if (channel == channels_.end()) {
-            refuse(message.stream);
+            refuse(stream);
             return;
         }
         channel->second.acknowledged = true;
-        const auto ppid = static_cast<Ppid>(message.ppid);
-        const auto empty = ppid == Ppid::StringEmpty || ppid == Ppid::BinaryEmpty;
-        notifying_ = message.stream;
-        listener_.onChannelMessage(channel->second.info, empty ? LegacyByteBuf{} : std::move(message.payload),
-                                   ppid == Ppid::Binary || ppid == Ppid::BinaryEmpty);
+        const auto kind = static_cast<Ppid>(ppid);
+        const auto empty = kind == Ppid::StringEmpty || kind == Ppid::BinaryEmpty;
+        notifying_ = stream;
+        listener_.onChannelMessage(channel->second.info, empty ? ByteBufView{} : payload,
+                                   kind == Ppid::Binary || kind == Ppid::BinaryEmpty);
         notifying_.reset();
         if (std::exchange(finish_after_notify_, false)) {
-            finish(message.stream);
+            finish(stream);
         }
         return;
     }
     default:
         if (channel != channels_.end()) {
-            closeDataChannel(message.stream, now_);
+            closeDataChannel(stream, now_);
         }
         return;
     }
@@ -226,7 +223,7 @@ void SctpTransport::onOutgoingStreamsReset(std::span<const std::uint16_t> stream
     }
 }
 
-void SctpTransport::handleOpen(std::uint16_t stream, std::span<const std::byte> message)
+void SctpTransport::handleOpen(std::uint16_t stream, ByteBufView message)
 {
     const auto open = DataChannelOpen::parse(message);
     const auto reliability = open ? open->reliability() : std::nullopt;
@@ -238,7 +235,7 @@ void SctpTransport::handleOpen(std::uint16_t stream, std::span<const std::byte> 
         return;
     }
     constexpr std::array ack{std::byte{DataChannelAck::MESSAGE_TYPE}};
-    if (!association_.send(stream, static_cast<std::uint32_t>(Ppid::Dcep), LegacyByteBuf::copyBuffer(ack), {}, now_)) {
+    if (!association_.send(stream, static_cast<std::uint32_t>(Ppid::Dcep), Unpooled::copiedBuffer(ack), {}, now_)) {
         refuse(stream);
         return;
     }

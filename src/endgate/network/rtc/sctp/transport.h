@@ -8,7 +8,7 @@
 #include <span>
 #include <string>
 
-#include "endgate/network/buffer.h"
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/rtc/sctp/association.h"
 #include "endgate/network/rtc/sctp/dcep.h"
 
@@ -60,24 +60,24 @@ public:
     public:
         virtual ~Listener() = default;
 
-        virtual void sendPacket(std::span<const std::byte> packet) = 0;
+        virtual void sendPacket(ByteBufView packet) = 0;
         virtual void onStateChange(State state) = 0;
         virtual void onChannelOpen(const DataChannel &channel) = 0;
-        virtual void onChannelMessage(const DataChannel &channel, LegacyByteBuf message, bool binary) = 0;
+        virtual void onChannelMessage(const DataChannel &channel, ByteBufView message, bool binary) = 0;
         virtual void onChannelClosed(const DataChannel &channel) = 0;
     };
 
     SctpTransport(Listener &listener, Config config);
 
     void start(Clock::time_point now);
-    void handlePacket(std::span<const std::byte> packet, Clock::time_point now);
+    void handlePacket(ByteBufView packet, Clock::time_point now);
     void handleTimeout(Clock::time_point now);
     [[nodiscard]] std::optional<Clock::time_point> nextTimeout() const { return association_.nextTimeout(); }
 
     std::optional<std::uint16_t> createDataChannel(std::string label, std::string protocol,
                                                    const Reliability &reliability, std::uint16_t priority,
                                                    Clock::time_point now);
-    bool send(std::uint16_t stream, LegacyByteBuf message, bool binary, Clock::time_point now);
+    bool send(std::uint16_t stream, ByteBuf message, bool binary, Clock::time_point now);
 
     /**
      * @see RFC 8831 section 6.7
@@ -101,15 +101,15 @@ private:
         bool incoming_reset{false};
     };
 
-    void sendPacket(std::span<const std::byte> packet) override { listener_.sendPacket(packet); }
+    void sendPacket(ByteBufView packet) override { listener_.sendPacket(packet); }
     void onEstablished() override;
     void onRestarted() override;
     void onClosed(sctp::Association::CloseReason reason) override;
-    void onMessage(sctp::Message message) override;
+    void onMessage(std::uint16_t stream, std::uint32_t ppid, bool unordered, ByteBufView payload) override;
     void onIncomingStreamsReset(std::span<const std::uint16_t> streams) override;
     void onOutgoingStreamsReset(std::span<const std::uint16_t> streams, bool performed) override;
 
-    void handleOpen(std::uint16_t stream, std::span<const std::byte> message);
+    void handleOpen(std::uint16_t stream, ByteBufView message);
     void refuse(std::uint16_t stream);
     void finish(std::uint16_t stream);
     void closeAll();

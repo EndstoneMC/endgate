@@ -10,7 +10,7 @@
 #include <variant>
 #include <vector>
 
-#include "endgate/network/buffer.h"
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/rtc/sctp/packet.h"
 
 namespace endgate::rtc::sctp {
@@ -22,7 +22,7 @@ struct Message {
     std::uint16_t stream;
     std::uint32_t ppid;
     bool unordered;
-    LegacyByteBuf payload;
+    ByteBuf payload;
 };
 
 /**
@@ -54,7 +54,7 @@ public:
 
     Receiver(const Config &config, std::uint32_t peer_initial_tsn);
 
-    Outcome receive(const DataChunk &chunk, LegacyByteBuf payload, std::vector<Message> &delivered);
+    Outcome receive(const DataChunk &chunk, std::vector<Message> &delivered);
 
     /**
      * @see RFC 9260 section 6.5
@@ -95,7 +95,7 @@ private:
         std::uint16_t ssn;
         std::uint32_t ppid;
         std::uint8_t flags;
-        LegacyByteBuf payload;
+        ByteBuf payload;
     };
 
     struct OrderedStream {

@@ -8,362 +8,306 @@
 namespace endgate::rtc::sctp {
 namespace {
 
-std::uint16_t load16(std::span<const std::byte> data, std::size_t offset)
-{
-    return static_cast<std::uint16_t>(std::to_integer<unsigned>(data[offset]) << 8U |
-                                      std::to_integer<unsigned>(data[offset + 1]));
-}
-
-std::uint32_t load32(std::span<const std::byte> data, std::size_t offset)
-{
-    return static_cast<std::uint32_t>(load16(data, offset)) << 16U | load16(data, offset + 2);
-}
-
 std::size_t padded(std::size_t length)
 {
     return (length + 3) & ~std::size_t{3};
 }
 
-std::optional<std::vector<std::uint16_t>> parseStreams(std::span<const std::byte> data)
+std::optional<std::vector<std::uint16_t>> parseStreams(ByteBufView data)
 {
-    if (data.size() % 2 != 0) {
+    if (data.readableBytes() % 2 != 0) {
         return std::nullopt;
     }
     std::vector<std::uint16_t> streams;
-    streams.reserve(data.size() / 2);
-    for (std::size_t offset = 0; offset < data.size(); offset += 2) {
-        streams.push_back(load16(data, offset));
+    streams.reserve(data.readableBytes() / 2);
+    while (data.isReadable()) {
+        streams.push_back(data.readUnsignedShort());
     }
     return streams;
 }
 
 }  // namespace
 
-std::optional<Packet> Packet::parse(std::span<const std::byte> data)
+std::optional<Packet> Packet::parse(ByteBufView data)
 {
     constexpr std::size_t max_packet_size = 65535;
-    if (data.size() < CommonHeader::SIZE + Chunk::HEADER_SIZE || data.size() > max_packet_size) {
+    if (!data.isReadable(CommonHeader::SIZE + Chunk::HEADER_SIZE) || data.readableBytes() > max_packet_size) {
         return std::nullopt;
     }
 
-    const auto received_checksum =
-        std::to_integer<std::uint32_t>(data[8]) | std::to_integer<std::uint32_t>(data[9]) << 8U |
-        std::to_integer<std::uint32_t>(data[10]) << 16U | std::to_integer<std::uint32_t>(data[11]) << 24U;
+    const auto bytes = data.nioBuffer();
+    const auto source_port = data.readUnsignedShort();
+    const auto destination_port = data.readUnsignedShort();
+    const auto verification_tag = data.readUnsignedInt();
+    const auto received_checksum = data.readUnsignedIntLE();
     constexpr std::array<std::byte, 4> zero_checksum{};
-    auto checksum = crc32c(data.first(8));
+    auto checksum = crc32c(bytes.first(8));
     checksum = crc32c(zero_checksum, checksum);
-    checksum = crc32c(data.subspan(CommonHeader::SIZE), checksum);
+    checksum = crc32c(bytes.subspan(CommonHeader::SIZE), checksum);
     if (checksum != received_checksum) {
         return std::nullopt;
     }
 
     Packet packet{
-        .header = {.source_port = load16(data, 0),
-                   .destination_port = load16(data, 2),
-                   .verification_tag = load32(data, 4)},
+        .header = {.source_port = source_port,
+                   .destination_port = destination_port,
+                   .verification_tag = verification_tag},
         .chunks = {},
     };
-    auto remaining = data.subspan(CommonHeader::SIZE);
-    while (!remaining.empty()) {
-        if (remaining.size() < Chunk::HEADER_SIZE) {
+    while (data.isReadable()) {
+        if (!data.isReadable(Chunk::HEADER_SIZE)) {
             return std::nullopt;
         }
-        const auto length = load16(remaining, 2);
-        if (length < Chunk::HEADER_SIZE || length > remaining.size()) {
+        const auto type = data.readUnsignedByte();
+        const auto flags = data.readUnsignedByte();
+        const std::size_t length = data.readUnsignedShort();
+        if (length < Chunk::HEADER_SIZE || length - Chunk::HEADER_SIZE > data.readableBytes()) {
             return std::nullopt;
         }
-        packet.chunks.push_back({
-            .type = std::to_integer<std::uint8_t>(remaining[0]),
-            .flags = std::to_integer<std::uint8_t>(remaining[1]),
-            .value = remaining.subspan(Chunk::HEADER_SIZE, length - Chunk::HEADER_SIZE),
-        });
-        remaining = remaining.subspan(std::min(padded(length), remaining.size()));
+        packet.chunks.push_back({.type = type, .flags = flags, .value = data.readSlice(length - Chunk::HEADER_SIZE)});
+        data.skipBytes(std::min(padded(length) - length, data.readableBytes()));
     }
     return packet;
 }
 
-std::optional<std::vector<Tlv>> Tlv::parseAll(std::span<const std::byte> data)
+void Packet::seal(ByteBuf &packet)
+{
+    packet.setIntLE(8, crc32c(packet.nioBuffer()));
+}
+
+void CommonHeader::write(ByteBuf &out) const
+{
+    out.writeShort(source_port).writeShort(destination_port).writeInt(verification_tag).writeInt(0);
+}
+
+void Chunk::write(ByteBuf &out) const
+{
+    const auto length = HEADER_SIZE + value.readableBytes();
+    out.writeByte(type)
+        .writeByte(flags)
+        .writeShort(static_cast<std::uint16_t>(length))
+        .writeBytes(value.nioBuffer())
+        .writeZero(padded(length) - length);
+}
+
+std::optional<std::vector<Tlv>> Tlv::parseAll(ByteBufView data)
 {
     std::vector<Tlv> tlvs;
-    while (!data.empty()) {
-        if (data.size() < HEADER_SIZE) {
+    while (data.isReadable()) {
+        if (!data.isReadable(HEADER_SIZE)) {
             return std::nullopt;
         }
-        const auto length = load16(data, 2);
-        if (length < HEADER_SIZE || length > data.size()) {
+        const auto start = data.readerIndex();
+        const auto type = data.readUnsignedShort();
+        const std::size_t length = data.readUnsignedShort();
+        if (length < HEADER_SIZE || length - HEADER_SIZE > data.readableBytes()) {
             return std::nullopt;
         }
-        tlvs.push_back({
-            .type = load16(data, 0),
-            .value = data.subspan(HEADER_SIZE, length - HEADER_SIZE),
-            .raw = data.first(length),
-        });
-        data = data.subspan(std::min(padded(length), data.size()));
+        tlvs.push_back({.type = type, .value = data.readSlice(length - HEADER_SIZE), .raw = data.slice(start, length)});
+        data.skipBytes(std::min(padded(length) - length, data.readableBytes()));
     }
     return tlvs;
+}
+
+void Tlv::write(ByteBuf &out) const
+{
+    out.writeZero(padded(out.writerIndex()) - out.writerIndex())
+        .writeShort(type)
+        .writeShort(static_cast<std::uint16_t>(HEADER_SIZE + value.readableBytes()))
+        .writeBytes(value.nioBuffer());
 }
 
 std::optional<DataChunk> DataChunk::parse(const Chunk &chunk)
 {
     constexpr std::size_t fields_size = HEADER_SIZE - Chunk::HEADER_SIZE;
-    if (chunk.value.size() < fields_size) {
+    if (!chunk.value.isReadable(fields_size)) {
         return std::nullopt;
     }
+    auto value = chunk.value;
+    const auto tsn = value.readUnsignedInt();
+    const auto stream = value.readUnsignedShort();
+    const auto ssn = value.readUnsignedShort();
+    const auto ppid = value.readUnsignedInt();
     return DataChunk{
-        .tsn = load32(chunk.value, 0),
-        .stream = load16(chunk.value, 4),
-        .ssn = load16(chunk.value, 6),
-        .ppid = load32(chunk.value, 8),
-        .flags = chunk.flags,
-        .payload = chunk.value.subspan(fields_size),
-    };
+        .tsn = tsn, .stream = stream, .ssn = ssn, .ppid = ppid, .flags = chunk.flags, .payload = value.slice()};
+}
+
+void DataChunk::write(ByteBuf &out) const
+{
+    const auto length = HEADER_SIZE + payload.readableBytes();
+    out.writeByte(static_cast<std::uint8_t>(ChunkType::Data))
+        .writeByte(flags)
+        .writeShort(static_cast<std::uint16_t>(length))
+        .writeInt(tsn)
+        .writeShort(stream)
+        .writeShort(ssn)
+        .writeInt(ppid)
+        .writeBytes(payload.nioBuffer())
+        .writeZero(padded(length) - length);
 }
 
 std::optional<InitChunk> InitChunk::parse(const Chunk &chunk)
 {
     constexpr std::size_t fields_size = 16;
-    if (chunk.value.size() < fields_size) {
+    if (!chunk.value.isReadable(fields_size)) {
         return std::nullopt;
     }
-    auto parameters = Tlv::parseAll(chunk.value.subspan(fields_size));
+    auto value = chunk.value;
+    const auto initiate_tag = value.readUnsignedInt();
+    const auto a_rwnd = value.readUnsignedInt();
+    const auto outbound_streams = value.readUnsignedShort();
+    const auto inbound_streams = value.readUnsignedShort();
+    const auto initial_tsn = value.readUnsignedInt();
+    auto parameters = Tlv::parseAll(value);
     if (!parameters) {
         return std::nullopt;
     }
     return InitChunk{
-        .initiate_tag = load32(chunk.value, 0),
-        .a_rwnd = load32(chunk.value, 4),
-        .outbound_streams = load16(chunk.value, 8),
-        .inbound_streams = load16(chunk.value, 10),
-        .initial_tsn = load32(chunk.value, 12),
+        .initiate_tag = initiate_tag,
+        .a_rwnd = a_rwnd,
+        .outbound_streams = outbound_streams,
+        .inbound_streams = inbound_streams,
+        .initial_tsn = initial_tsn,
         .parameters = std::move(*parameters),
     };
+}
+
+void InitChunk::write(ByteBuf &out, ChunkType type, ByteBufView encoded_parameters) const
+{
+    const auto length = Chunk::HEADER_SIZE + 16 + encoded_parameters.readableBytes();
+    out.writeByte(static_cast<std::uint8_t>(type))
+        .writeByte(0)
+        .writeShort(static_cast<std::uint16_t>(length))
+        .writeInt(initiate_tag)
+        .writeInt(a_rwnd)
+        .writeShort(outbound_streams)
+        .writeShort(inbound_streams)
+        .writeInt(initial_tsn)
+        .writeBytes(encoded_parameters.nioBuffer())
+        .writeZero(padded(length) - length);
 }
 
 std::optional<SackChunk> SackChunk::parse(const Chunk &chunk)
 {
     constexpr std::size_t fields_size = 12;
-    if (chunk.value.size() < fields_size) {
+    if (!chunk.value.isReadable(fields_size)) {
         return std::nullopt;
     }
-    const std::size_t gap_count = load16(chunk.value, 8);
-    const std::size_t duplicate_count = load16(chunk.value, 10);
-    if (chunk.value.size() != fields_size + 4 * (gap_count + duplicate_count)) {
-        return std::nullopt;
-    }
+    auto value = chunk.value;
     SackChunk sack{
-        .cumulative_tsn_ack = load32(chunk.value, 0),
-        .a_rwnd = load32(chunk.value, 4),
+        .cumulative_tsn_ack = value.readUnsignedInt(),
+        .a_rwnd = value.readUnsignedInt(),
         .gap_blocks = {},
         .duplicate_tsns = {},
     };
+    const std::size_t gap_count = value.readUnsignedShort();
+    const std::size_t duplicate_count = value.readUnsignedShort();
+    if (value.readableBytes() != 4 * (gap_count + duplicate_count)) {
+        return std::nullopt;
+    }
     sack.gap_blocks.reserve(gap_count);
     for (std::size_t i = 0; i < gap_count; ++i) {
-        const auto offset = fields_size + 4 * i;
-        sack.gap_blocks.push_back({.start = load16(chunk.value, offset), .end = load16(chunk.value, offset + 2)});
+        const auto start = value.readUnsignedShort();
+        sack.gap_blocks.push_back({.start = start, .end = value.readUnsignedShort()});
     }
     sack.duplicate_tsns.reserve(duplicate_count);
     for (std::size_t i = 0; i < duplicate_count; ++i) {
-        sack.duplicate_tsns.push_back(load32(chunk.value, fields_size + 4 * (gap_count + i)));
+        sack.duplicate_tsns.push_back(value.readUnsignedInt());
     }
     return sack;
 }
 
+void SackChunk::write(ByteBuf &out) const
+{
+    out.writeByte(static_cast<std::uint8_t>(ChunkType::Sack))
+        .writeByte(0)
+        .writeShort(
+            static_cast<std::uint16_t>(Chunk::HEADER_SIZE + 12 + 4 * (gap_blocks.size() + duplicate_tsns.size())))
+        .writeInt(cumulative_tsn_ack)
+        .writeInt(a_rwnd)
+        .writeShort(static_cast<std::uint16_t>(gap_blocks.size()))
+        .writeShort(static_cast<std::uint16_t>(duplicate_tsns.size()));
+    for (const auto &block : gap_blocks) {
+        out.writeShort(block.start).writeShort(block.end);
+    }
+    for (const auto tsn : duplicate_tsns) {
+        out.writeInt(tsn);
+    }
+}
+
 std::optional<ForwardTsnChunk> ForwardTsnChunk::parse(const Chunk &chunk)
 {
-    if (chunk.value.size() < 4 || chunk.value.size() % 4 != 0) {
+    if (!chunk.value.isReadable(4) || chunk.value.readableBytes() % 4 != 0) {
         return std::nullopt;
     }
-    ForwardTsnChunk forward_tsn{.new_cumulative_tsn = load32(chunk.value, 0), .skipped = {}};
-    forward_tsn.skipped.reserve((chunk.value.size() - 4) / 4);
-    for (std::size_t offset = 4; offset < chunk.value.size(); offset += 4) {
-        forward_tsn.skipped.push_back({.stream = load16(chunk.value, offset), .ssn = load16(chunk.value, offset + 2)});
+    auto value = chunk.value;
+    ForwardTsnChunk forward_tsn{.new_cumulative_tsn = value.readUnsignedInt(), .skipped = {}};
+    forward_tsn.skipped.reserve(value.readableBytes() / 4);
+    while (value.isReadable()) {
+        const auto stream = value.readUnsignedShort();
+        forward_tsn.skipped.push_back({.stream = stream, .ssn = value.readUnsignedShort()});
     }
     return forward_tsn;
 }
 
+void ForwardTsnChunk::write(ByteBuf &out) const
+{
+    out.writeByte(static_cast<std::uint8_t>(ChunkType::ForwardTsn))
+        .writeByte(0)
+        .writeShort(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + 4 + 4 * skipped.size()))
+        .writeInt(new_cumulative_tsn);
+    for (const auto &entry : skipped) {
+        out.writeShort(entry.stream).writeShort(entry.ssn);
+    }
+}
+
 std::optional<OutgoingResetRequest> OutgoingResetRequest::parse(const Tlv &parameter)
 {
-    if (parameter.value.size() < 12) {
+    if (!parameter.value.isReadable(12)) {
         return std::nullopt;
     }
-    auto streams = parseStreams(parameter.value.subspan(12));
+    auto value = parameter.value;
+    const auto request_sequence = value.readUnsignedInt();
+    const auto response_sequence = value.readUnsignedInt();
+    const auto last_assigned_tsn = value.readUnsignedInt();
+    auto streams = parseStreams(value);
     if (!streams) {
         return std::nullopt;
     }
     return OutgoingResetRequest{
-        .request_sequence = load32(parameter.value, 0),
-        .response_sequence = load32(parameter.value, 4),
-        .last_assigned_tsn = load32(parameter.value, 8),
+        .request_sequence = request_sequence,
+        .response_sequence = response_sequence,
+        .last_assigned_tsn = last_assigned_tsn,
         .streams = std::move(*streams),
     };
 }
 
 std::optional<IncomingResetRequest> IncomingResetRequest::parse(const Tlv &parameter)
 {
-    if (parameter.value.size() < 4) {
+    if (!parameter.value.isReadable(4)) {
         return std::nullopt;
     }
-    auto streams = parseStreams(parameter.value.subspan(4));
+    auto value = parameter.value;
+    const auto request_sequence = value.readUnsignedInt();
+    auto streams = parseStreams(value);
     if (!streams) {
         return std::nullopt;
     }
-    return IncomingResetRequest{.request_sequence = load32(parameter.value, 0), .streams = std::move(*streams)};
+    return IncomingResetRequest{.request_sequence = request_sequence, .streams = std::move(*streams)};
 }
 
 std::optional<ReconfigResponse> ReconfigResponse::parse(const Tlv &parameter)
 {
-    if (parameter.value.size() != 8 && parameter.value.size() != 16) {
+    if (parameter.value.readableBytes() != 8 && parameter.value.readableBytes() != 16) {
         return std::nullopt;
     }
-    const auto result = load32(parameter.value, 4);
+    auto value = parameter.value;
+    const auto response_sequence = value.readUnsignedInt();
+    const auto result = value.readUnsignedInt();
     if (result > static_cast<std::uint32_t>(ReconfigResult::InProgress)) {
         return std::nullopt;
     }
-    return ReconfigResponse{
-        .response_sequence = load32(parameter.value, 0),
-        .result = static_cast<ReconfigResult>(result),
-    };
-}
-
-void ByteWriter::write8(std::uint8_t value)
-{
-    out_.push_back(static_cast<std::byte>(value));
-}
-
-void ByteWriter::write16(std::uint16_t value)
-{
-    write8(static_cast<std::uint8_t>(value >> 8U));
-    write8(static_cast<std::uint8_t>(value));
-}
-
-void ByteWriter::write32(std::uint32_t value)
-{
-    write16(static_cast<std::uint16_t>(value >> 16U));
-    write16(static_cast<std::uint16_t>(value));
-}
-
-void ByteWriter::write64(std::uint64_t value)
-{
-    write32(static_cast<std::uint32_t>(value >> 32U));
-    write32(static_cast<std::uint32_t>(value));
-}
-
-void ByteWriter::write(std::span<const std::byte> bytes)
-{
-    out_.insert(out_.end(), bytes.begin(), bytes.end());
-}
-
-void ByteWriter::writeTlv(std::uint16_t type, std::span<const std::byte> value)
-{
-    pad();
-    write16(type);
-    write16(static_cast<std::uint16_t>(Tlv::HEADER_SIZE + value.size()));
-    write(value);
-}
-
-void ByteWriter::pad()
-{
-    out_.resize(padded(out_.size()));
-}
-
-PacketBuilder::PacketBuilder(std::vector<std::byte> &buffer, const CommonHeader &header, std::size_t max_size)
-    : buffer_(buffer), max_size_(max_size & ~std::size_t{3})
-{
-    buffer_.clear();
-    ByteWriter writer(buffer_);
-    writer.write16(header.source_port);
-    writer.write16(header.destination_port);
-    writer.write32(header.verification_tag);
-    writer.write32(0);
-}
-
-std::size_t PacketBuilder::remaining() const
-{
-    return buffer_.size() >= max_size_ ? 0 : max_size_ - buffer_.size();
-}
-
-void PacketBuilder::addChunk(ChunkType type, std::uint8_t flags, std::span<const std::byte> value)
-{
-    ByteWriter writer(buffer_);
-    writer.write8(static_cast<std::uint8_t>(type));
-    writer.write8(flags);
-    writer.write16(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + value.size()));
-    writer.write(value);
-    writer.pad();
-}
-
-void PacketBuilder::addData(const DataChunk &header, const LegacyByteBuf &payload)
-{
-    ByteWriter writer(buffer_);
-    writer.write8(static_cast<std::uint8_t>(ChunkType::Data));
-    writer.write8(header.flags);
-    writer.write16(static_cast<std::uint16_t>(DataChunk::HEADER_SIZE + payload.length()));
-    writer.write32(header.tsn);
-    writer.write16(header.stream);
-    writer.write16(header.ssn);
-    writer.write32(header.ppid);
-    const auto offset = buffer_.size();
-    buffer_.resize(offset + payload.length());
-    payload.copyTo(std::span{buffer_}.subspan(offset));
-    writer.pad();
-}
-
-void PacketBuilder::addInit(ChunkType type, const InitChunk &init, std::span<const std::byte> parameters)
-{
-    ByteWriter writer(buffer_);
-    writer.write8(static_cast<std::uint8_t>(type));
-    writer.write8(0);
-    writer.write16(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + 16 + parameters.size()));
-    writer.write32(init.initiate_tag);
-    writer.write32(init.a_rwnd);
-    writer.write16(init.outbound_streams);
-    writer.write16(init.inbound_streams);
-    writer.write32(init.initial_tsn);
-    writer.write(parameters);
-    writer.pad();
-}
-
-void PacketBuilder::addSack(const SackChunk &sack)
-{
-    ByteWriter writer(buffer_);
-    writer.write8(static_cast<std::uint8_t>(ChunkType::Sack));
-    writer.write8(0);
-    writer.write16(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + 12 +
-                                              4 * (sack.gap_blocks.size() + sack.duplicate_tsns.size())));
-    writer.write32(sack.cumulative_tsn_ack);
-    writer.write32(sack.a_rwnd);
-    writer.write16(static_cast<std::uint16_t>(sack.gap_blocks.size()));
-    writer.write16(static_cast<std::uint16_t>(sack.duplicate_tsns.size()));
-    for (const auto &block : sack.gap_blocks) {
-        writer.write16(block.start);
-        writer.write16(block.end);
-    }
-    for (const auto tsn : sack.duplicate_tsns) {
-        writer.write32(tsn);
-    }
-}
-
-void PacketBuilder::addForwardTsn(const ForwardTsnChunk &forward_tsn)
-{
-    ByteWriter writer(buffer_);
-    writer.write8(static_cast<std::uint8_t>(ChunkType::ForwardTsn));
-    writer.write8(0);
-    writer.write16(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + 4 + 4 * forward_tsn.skipped.size()));
-    writer.write32(forward_tsn.new_cumulative_tsn);
-    for (const auto &skipped : forward_tsn.skipped) {
-        writer.write16(skipped.stream);
-        writer.write16(skipped.ssn);
-    }
-}
-
-std::span<const std::byte> PacketBuilder::build()
-{
-    const auto checksum = crc32c(buffer_);
-    buffer_[8] = static_cast<std::byte>(checksum);
-    buffer_[9] = static_cast<std::byte>(checksum >> 8U);
-    buffer_[10] = static_cast<std::byte>(checksum >> 16U);
-    buffer_[11] = static_cast<std::byte>(checksum >> 24U);
-    return buffer_;
+    return ReconfigResponse{.response_sequence = response_sequence, .result = static_cast<ReconfigResult>(result)};
 }
 
 }  // namespace endgate::rtc::sctp

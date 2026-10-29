@@ -45,7 +45,7 @@ std::vector<std::byte> withChunk(std::uint32_t tag, std::vector<std::byte> chunk
 
 std::uint32_t tagOf(std::span<const std::byte> packet)
 {
-    return Packet::parse(packet)->header.verification_tag;
+    return Packet::parse(Unpooled::wrappedBuffer(packet))->header.verification_tag;
 }
 
 TEST(Association, OpensActivelyAgainstPassivePeer)
@@ -152,7 +152,7 @@ TEST(Association, AnswersCollidingInitWithItsOwnTag)
     std::vector<std::uint32_t> a_init_tags;
     std::vector<std::uint32_t> a_init_ack_tags;
     network.filter = [&](std::span<const std::byte> packet, bool to_b) {
-        const auto parsed = Packet::parse(packet);
+        const auto parsed = Packet::parse(Unpooled::wrappedBuffer(packet));
         if (to_b && parsed->chunks.front().type == static_cast<std::uint8_t>(ChunkType::Init)) {
             a_init_tags.push_back(InitChunk::parse(parsed->chunks.front())->initiate_tag);
         }
@@ -180,10 +180,10 @@ TEST(Association, AnswersCapturedUsrsctpInit)
         0x00, 0x06, 0x00, 0x01, 0x00, 0x00, 0x80, 0x03, 0x00, 0x06, 0x80, 0xc1, 0x00, 0x00,
     });
     Network network;
-    network.b->handlePacket(init, network.now);
+    network.b->handlePacket(Unpooled::wrappedBuffer(init), network.now);
     EXPECT_EQ(network.b->state(), State::Closed);
     ASSERT_EQ(network.endpoint_b.outbox.size(), 1U);
-    const auto packet = Packet::parse(network.endpoint_b.outbox[0]);
+    const auto packet = Packet::parse(Unpooled::wrappedBuffer(network.endpoint_b.outbox[0]));
     ASSERT_TRUE(packet);
     EXPECT_EQ(packet->header.verification_tag, 0x0eddca08U);
     ASSERT_EQ(packet->chunks.size(), 1U);
@@ -196,8 +196,7 @@ TEST(Association, AnswersCapturedUsrsctpInit)
     EXPECT_EQ(init_ack->parameters[0].type, static_cast<std::uint16_t>(ParameterType::StateCookie));
     EXPECT_EQ(init_ack->parameters[1].type, static_cast<std::uint16_t>(ParameterType::ForwardTsnSupported));
     EXPECT_EQ(init_ack->parameters[2].type, static_cast<std::uint16_t>(ParameterType::SupportedExtensions));
-    EXPECT_EQ(std::vector<std::byte>(init_ack->parameters[2].value.begin(), init_ack->parameters[2].value.end()),
-              bytes({0x82, 0xc0}));
+    EXPECT_EQ(bytesOf(init_ack->parameters[2].value), bytes({0x82, 0xc0}));
 }
 
 TEST(Association, ReportsUnrecognizedInitParameters)
@@ -206,32 +205,35 @@ TEST(Association, ReportsUnrecognizedInitParameters)
     auto chunk =
         bytes({0x01, 0x00, 0x00, 0x20, 0x11, 0x22, 0x33, 0x44, 0x00, 0x01, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10,
                0x00, 0x00, 0x00, 0x01, 0xc0, 0x00, 0x00, 0x04, 0xc0, 0x06, 0x00, 0x08, 0x01, 0x02, 0x03, 0x04});
-    network.b->handlePacket(withChunk(0, chunk), network.now);
+    network.b->handlePacket(Unpooled::wrappedBuffer(withChunk(0, chunk)), network.now);
     ASSERT_EQ(network.endpoint_b.outbox.size(), 1U);
-    const auto init_ack = InitChunk::parse(Packet::parse(network.endpoint_b.outbox[0])->chunks[0]);
+    const auto init_ack =
+        InitChunk::parse(Packet::parse(Unpooled::wrappedBuffer(network.endpoint_b.outbox[0]))->chunks[0]);
     ASSERT_TRUE(init_ack);
     ASSERT_EQ(init_ack->parameters.size(), 4U);
     EXPECT_EQ(init_ack->parameters[3].type, static_cast<std::uint16_t>(ParameterType::UnrecognizedParameter));
-    EXPECT_EQ(std::vector<std::byte>(init_ack->parameters[3].value.begin(), init_ack->parameters[3].value.end()),
-              bytes({0xc0, 0x06, 0x00, 0x08, 0x01, 0x02, 0x03, 0x04}));
+    EXPECT_EQ(bytesOf(init_ack->parameters[3].value), bytes({0xc0, 0x06, 0x00, 0x08, 0x01, 0x02, 0x03, 0x04}));
 }
 
 TEST(Association, RefusesInvalidInit)
 {
     Network network;
-    network.b->handlePacket(withChunk(0, bytes({0x01, 0x00, 0x00, 0x14, 0x11, 0x22, 0x33, 0x44, 0x00, 0x01,
-                                                0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x01})),
-                            network.now);
+    network.b->handlePacket(
+        Unpooled::wrappedBuffer(withChunk(0, bytes({0x01, 0x00, 0x00, 0x14, 0x11, 0x22, 0x33, 0x44, 0x00, 0x01,
+                                                    0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x01}))),
+        network.now);
     ASSERT_EQ(network.endpoint_b.outbox.size(), 1U);
     EXPECT_EQ(firstChunk(network.endpoint_b.outbox[0]), static_cast<std::uint8_t>(ChunkType::Abort));
     EXPECT_EQ(tagOf(network.endpoint_b.outbox[0]), 0x11223344U);
     network.endpoint_b.outbox.clear();
-    network.b->handlePacket(withChunk(0, bytes({0x01, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
-                                                0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00, 0x00, 0x00, 0x01})),
-                            network.now);
+    network.b->handlePacket(
+        Unpooled::wrappedBuffer(withChunk(0, bytes({0x01, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+                                                    0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00, 0x00, 0x00, 0x01}))),
+        network.now);
     EXPECT_TRUE(network.endpoint_b.outbox.empty());
-    network.b->handlePacket(withChunk(0x11223344, bytes({0x01, 0x00, 0x00, 0x14, 0x11, 0x22, 0x33, 0x44, 0x00, 0x01,
-                                                         0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00, 0x00, 0x00, 0x01})),
+    network.b->handlePacket(Unpooled::wrappedBuffer(withChunk(
+                                0x11223344, bytes({0x01, 0x00, 0x00, 0x14, 0x11, 0x22, 0x33, 0x44, 0x00, 0x01,
+                                                   0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00, 0x00, 0x00, 0x01}))),
                             network.now);
     EXPECT_TRUE(network.endpoint_b.outbox.empty());
     EXPECT_EQ(network.b->state(), State::Closed);
@@ -281,11 +283,11 @@ TEST(Association, IgnoresTamperedCookie)
     for (std::size_t i = 16; i < 16 + 73; ++i) {
         auto altered = cookie_echo;
         altered[i] ^= std::byte{0x01};
-        network.b->handlePacket(sealed(altered), network.now);
+        network.b->handlePacket(Unpooled::wrappedBuffer(sealed(altered)), network.now);
         EXPECT_EQ(network.b->state(), State::Closed) << i;
     }
     EXPECT_EQ(network.b->droppedPackets(), 73U);
-    network.b->handlePacket(cookie_echo, network.now);
+    network.b->handlePacket(Unpooled::wrappedBuffer(cookie_echo), network.now);
     EXPECT_EQ(network.b->state(), State::Established);
 }
 
@@ -319,7 +321,7 @@ TEST(Association, ShutsDownGracefullyAfterDeliveringEverything)
     network.a->connect(network.now);
     ASSERT_TRUE(network.runUntil([&] { return established(network); }, 1s));
     for (auto i = 0; i < 50; ++i) {
-        ASSERT_TRUE(network.a->send(0, 53, LegacyByteBuf::copyBuffer(std::vector<std::byte>(1000)), {}, network.now));
+        ASSERT_TRUE(network.a->send(0, 53, Unpooled::copiedBuffer(std::vector<std::byte>(1000)), {}, network.now));
     }
     network.a->shutdown(network.now);
     EXPECT_FALSE(network.a->send(0, 53, bufferOf("late"), {}, network.now));
@@ -361,11 +363,12 @@ TEST(Association, DropsPacketsWithWrongTagOrPorts)
     network.a->connect(network.now);
     ASSERT_TRUE(network.runUntil([&] { return established(network); }, 1s));
     const auto dropped = network.b->droppedPackets();
-    network.b->handlePacket(withChunk(0x12345678, bytes({0x0b, 0x00, 0x00, 0x04})), network.now);
+    network.b->handlePacket(Unpooled::wrappedBuffer(withChunk(0x12345678, bytes({0x0b, 0x00, 0x00, 0x04}))),
+                            network.now);
     auto wrong_port = withChunk(0, bytes({0x0b, 0x00, 0x00, 0x04}));
     wrong_port[1] = std::byte{0x89};
-    network.b->handlePacket(sealed(wrong_port), network.now);
-    network.b->handlePacket(bytes({1, 2, 3}), network.now);
+    network.b->handlePacket(Unpooled::wrappedBuffer(sealed(wrong_port)), network.now);
+    network.b->handlePacket(Unpooled::wrappedBuffer(bytes({1, 2, 3})), network.now);
     EXPECT_EQ(network.b->droppedPackets(), dropped + 3);
     EXPECT_EQ(network.b->state(), State::Established);
 }
@@ -389,7 +392,7 @@ TEST(Association, ReportsUnrecognizedChunksByTheirHighBits)
 
     const auto errors = [&](std::vector<std::byte> chunks) {
         network.endpoint_b.outbox.clear();
-        network.b->handlePacket(withChunk(tag, std::move(chunks)), network.now);
+        network.b->handlePacket(Unpooled::wrappedBuffer(withChunk(tag, std::move(chunks))), network.now);
         auto count = 0;
         for (const auto &packet : network.endpoint_b.outbox) {
             count += hasChunk(packet, ChunkType::Error) ? 1 : 0;
@@ -456,14 +459,19 @@ TEST(Association, IgnoresHeartbeatTooLargeToEcho)
     ASSERT_TRUE(network.a->send(0, 51, bufferOf("x"), {}, network.now));
     network.run(1s);
     const auto heartbeat = [&](std::size_t size) {
-        std::vector<std::byte> value;
-        ByteWriter(value).writeTlv(static_cast<std::uint16_t>(ParameterType::HeartbeatInfo),
-                                   std::vector<std::byte>(size));
-        std::vector<std::byte> buffer;
-        PacketBuilder builder(buffer, {.source_port = 5000, .destination_port = 5000, .verification_tag = tag}, 65535);
-        builder.addChunk(ChunkType::Heartbeat, 0, value);
+        const std::vector<std::byte> info(size);
+        auto value = Unpooled::buffer();
+        Tlv{.type = static_cast<std::uint16_t>(ParameterType::HeartbeatInfo),
+            .value = Unpooled::wrappedBuffer(info),
+            .raw = {}}
+            .write(value);
+        auto packet = Unpooled::buffer();
+        CommonHeader{.source_port = 5000, .destination_port = 5000, .verification_tag = tag}.write(packet);
+        Chunk{.type = static_cast<std::uint8_t>(ChunkType::Heartbeat), .flags = 0, .value = value.slice()}.write(
+            packet);
+        Packet::seal(packet);
         network.endpoint_b.outbox.clear();
-        network.b->handlePacket(builder.build(), network.now);
+        network.b->handlePacket(packet.slice(), network.now);
         auto acks = 0;
         for (const auto &packet : network.endpoint_b.outbox) {
             acks += hasChunk(packet, ChunkType::HeartbeatAck) ? 1 : 0;
@@ -521,11 +529,11 @@ TEST(Association, RecognisesRestartedPeer)
     a2.connect(network.now);
     for (auto round = 0; round < 4; ++round) {
         for (auto &packet : restarted.outbox) {
-            network.b->handlePacket(packet, network.now);
+            network.b->handlePacket(Unpooled::wrappedBuffer(packet), network.now);
         }
         restarted.outbox.clear();
         for (auto &packet : network.endpoint_b.outbox) {
-            a2.handlePacket(packet, network.now);
+            a2.handlePacket(Unpooled::wrappedBuffer(packet), network.now);
         }
         network.endpoint_b.outbox.clear();
     }
@@ -535,7 +543,7 @@ TEST(Association, RecognisesRestartedPeer)
 
     ASSERT_TRUE(a2.send(0, 51, bufferOf("again"), {}, network.now));
     for (auto &packet : restarted.outbox) {
-        network.b->handlePacket(packet, network.now);
+        network.b->handlePacket(Unpooled::wrappedBuffer(packet), network.now);
     }
     ASSERT_EQ(network.endpoint_b.messages.size(), 1U);
     EXPECT_EQ(text(network.endpoint_b.messages[0].payload), "again");
@@ -550,7 +558,7 @@ TEST(Association, HonoursOnlyTheLastSackInAPacket)
     std::vector<std::uint32_t> tsns;
     std::uint32_t tag = 0;
     network.filter = [&](std::span<const std::byte> packet, bool to_b) {
-        const auto parsed = Packet::parse(packet);
+        const auto parsed = Packet::parse(Unpooled::wrappedBuffer(packet));
         if (!to_b) {
             tag = parsed->header.verification_tag;
             return false;
@@ -568,11 +576,12 @@ TEST(Association, HonoursOnlyTheLastSackInAPacket)
     ASSERT_EQ(tsns.size(), 2U);
     ASSERT_NE(tag, 0U);
 
-    std::vector<std::byte> buffer;
-    PacketBuilder builder(buffer, {.source_port = 5000, .destination_port = 5000, .verification_tag = tag}, 1200);
-    builder.addSack({.cumulative_tsn_ack = tsns[1], .a_rwnd = 100000, .gap_blocks = {}, .duplicate_tsns = {}});
-    builder.addSack({.cumulative_tsn_ack = tsns[0], .a_rwnd = 100000, .gap_blocks = {}, .duplicate_tsns = {}});
-    network.a->handlePacket(builder.build(), network.now);
+    auto packet = Unpooled::buffer();
+    CommonHeader{.source_port = 5000, .destination_port = 5000, .verification_tag = tag}.write(packet);
+    SackChunk{.cumulative_tsn_ack = tsns[1], .a_rwnd = 100000, .gap_blocks = {}, .duplicate_tsns = {}}.write(packet);
+    SackChunk{.cumulative_tsn_ack = tsns[0], .a_rwnd = 100000, .gap_blocks = {}, .duplicate_tsns = {}}.write(packet);
+    Packet::seal(packet);
+    network.a->handlePacket(packet.slice(), network.now);
     EXPECT_EQ(network.a->sender()->outstandingChunks(), 1U);
 }
 
@@ -596,11 +605,11 @@ TEST(Association, ForgetsItsShutdownWhenThePeerRestarts)
     auto shutdowns = 0;
     for (auto step = 0; step < 600; ++step) {
         for (auto &packet : std::exchange(restarted.outbox, {})) {
-            network.b->handlePacket(packet, network.now);
+            network.b->handlePacket(Unpooled::wrappedBuffer(packet), network.now);
         }
         for (auto &packet : std::exchange(network.endpoint_b.outbox, {})) {
             shutdowns += hasChunk(packet, ChunkType::Shutdown) ? 1 : 0;
-            a2.handlePacket(packet, network.now);
+            a2.handlePacket(Unpooled::wrappedBuffer(packet), network.now);
         }
         network.now += 100ms;
         network.b->handleTimeout(network.now);

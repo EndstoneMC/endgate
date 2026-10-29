@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include "bytes.h"
 #include "endgate/network/rtc/sctp/cookie.h"
 
 namespace endgate::rtc::sctp {
@@ -29,7 +30,7 @@ const auto ISSUED = std::chrono::steady_clock::time_point{} + 1h;
 TEST(StateCookie, RoundTrips)
 {
     const auto sealed = COOKIE.seal(KEY, ISSUED);
-    const auto opened = StateCookie::open(KEY, sealed, ISSUED + 1s, 60s);
+    const auto opened = StateCookie::open(KEY, sealed.slice(), ISSUED + 1s, 60s);
     ASSERT_TRUE(opened);
     EXPECT_FALSE(opened->expired);
     EXPECT_EQ(opened->cookie.local_tag, COOKIE.local_tag);
@@ -46,16 +47,16 @@ TEST(StateCookie, RoundTrips)
 
 TEST(StateCookie, StaysSmall)
 {
-    EXPECT_EQ(COOKIE.seal(KEY, ISSUED).size(), 73U);
+    EXPECT_EQ(COOKIE.seal(KEY, ISSUED).readableBytes(), 73U);
 }
 
 TEST(StateCookie, RejectsAnyAlteredByte)
 {
-    const auto sealed = COOKIE.seal(KEY, ISSUED);
+    const auto sealed = bytesOf(COOKIE.seal(KEY, ISSUED));
     for (std::size_t i = 0; i < sealed.size(); ++i) {
         auto altered = sealed;
         altered[i] ^= std::byte{0x01};
-        EXPECT_FALSE(StateCookie::open(KEY, altered, ISSUED, 60s)) << i;
+        EXPECT_FALSE(StateCookie::open(KEY, Unpooled::wrappedBuffer(altered), ISSUED, 60s)) << i;
     }
 }
 
@@ -63,26 +64,26 @@ TEST(StateCookie, RejectsAnotherKey)
 {
     auto other = KEY;
     other[31] = std::byte{9};
-    EXPECT_FALSE(StateCookie::open(other, COOKIE.seal(KEY, ISSUED), ISSUED, 60s));
+    EXPECT_FALSE(StateCookie::open(other, COOKIE.seal(KEY, ISSUED).slice(), ISSUED, 60s));
 }
 
 TEST(StateCookie, RejectsWrongSize)
 {
-    auto sealed = COOKIE.seal(KEY, ISSUED);
+    auto sealed = bytesOf(COOKIE.seal(KEY, ISSUED));
     sealed.push_back(std::byte{0});
-    EXPECT_FALSE(StateCookie::open(KEY, sealed, ISSUED, 60s));
+    EXPECT_FALSE(StateCookie::open(KEY, Unpooled::wrappedBuffer(sealed), ISSUED, 60s));
     sealed.resize(10);
-    EXPECT_FALSE(StateCookie::open(KEY, sealed, ISSUED, 60s));
-    EXPECT_FALSE(StateCookie::open(KEY, {}, ISSUED, 60s));
+    EXPECT_FALSE(StateCookie::open(KEY, Unpooled::wrappedBuffer(sealed), ISSUED, 60s));
+    EXPECT_FALSE(StateCookie::open(KEY, ByteBufView{}, ISSUED, 60s));
 }
 
 TEST(StateCookie, ReportsExpiryWithoutRejecting)
 {
     const auto sealed = COOKIE.seal(KEY, ISSUED);
-    const auto at_limit = StateCookie::open(KEY, sealed, ISSUED + 60s, 60s);
+    const auto at_limit = StateCookie::open(KEY, sealed.slice(), ISSUED + 60s, 60s);
     ASSERT_TRUE(at_limit);
     EXPECT_FALSE(at_limit->expired);
-    const auto late = StateCookie::open(KEY, sealed, ISSUED + 60s + 1ms, 60s);
+    const auto late = StateCookie::open(KEY, sealed.slice(), ISSUED + 60s + 1ms, 60s);
     ASSERT_TRUE(late);
     EXPECT_TRUE(late->expired);
     EXPECT_EQ(late->age, 60s + 1ms);
@@ -90,7 +91,7 @@ TEST(StateCookie, ReportsExpiryWithoutRejecting)
 
 TEST(StateCookie, RejectsCookieFromTheFuture)
 {
-    EXPECT_FALSE(StateCookie::open(KEY, COOKIE.seal(KEY, ISSUED + 1s), ISSUED, 60s));
+    EXPECT_FALSE(StateCookie::open(KEY, COOKIE.seal(KEY, ISSUED + 1s).slice(), ISSUED, 60s));
 }
 
 }  // namespace

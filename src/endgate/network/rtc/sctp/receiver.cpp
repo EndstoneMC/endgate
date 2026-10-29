@@ -11,9 +11,9 @@ namespace {
 constexpr std::size_t FRAGMENT_OVERHEAD = 64;
 constexpr std::uint64_t SSN_ORIGIN = std::uint64_t{1} << 16U;
 
-std::size_t charge(const LegacyByteBuf &payload)
+std::size_t charge(const ByteBuf &payload)
 {
-    return payload.length() + FRAGMENT_OVERHEAD;
+    return payload.readableBytes() + FRAGMENT_OVERHEAD;
 }
 
 std::size_t charge(const ForwardTsnChunk &chunk)
@@ -28,7 +28,7 @@ Receiver::Receiver(const Config &config, std::uint32_t peer_initial_tsn)
 {
 }
 
-Receiver::Outcome Receiver::receive(const DataChunk &chunk, LegacyByteBuf payload, std::vector<Message> &delivered)
+Receiver::Outcome Receiver::receive(const DataChunk &chunk, std::vector<Message> &delivered)
 {
     const auto tsn = unwrap(chunk.tsn, cumulative_);
     const auto outcome = track(chunk, tsn);
@@ -40,7 +40,7 @@ Receiver::Outcome Receiver::receive(const DataChunk &chunk, LegacyByteBuf payloa
         .ssn = chunk.ssn,
         .ppid = chunk.ppid,
         .flags = chunk.flags,
-        .payload = std::move(payload),
+        .payload = chunk.payload.copy(),
     };
     if (affectedByReset(tsn, chunk.stream)) {
         buffered_ += charge(fragment.payload);
@@ -324,9 +324,14 @@ void Receiver::assemble(std::uint64_t tsn, Fragment fragment, std::vector<Messag
     };
     const auto ssn = first->second.ssn;
     const auto stop = std::next(last);
+    std::size_t total = 0;
+    for (auto it = first; it != stop; ++it) {
+        total += it->second.payload.readableBytes();
+    }
+    message.payload = Unpooled::buffer(total);
     for (auto it = first; it != stop; ++it) {
         buffered_ -= charge(it->second.payload);
-        message.payload.appendToChain(std::move(it->second.payload));
+        message.payload.writeBytes(it->second.payload.nioBuffer());
     }
     fragments_.erase(first, stop);
     complete(ssn, std::move(message), delivered);
@@ -334,7 +339,7 @@ void Receiver::assemble(std::uint64_t tsn, Fragment fragment, std::vector<Messag
 
 void Receiver::complete(std::uint16_t ssn, Message message, std::vector<Message> &delivered)
 {
-    if (message.payload.length() > config_.max_message_size) {
+    if (message.payload.readableBytes() > config_.max_message_size) {
         failure_ = CauseCode::ProtocolViolation;
         return;
     }

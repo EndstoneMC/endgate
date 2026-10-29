@@ -1,10 +1,12 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/rtc/sctp/sender.h"
 
 namespace endgate::rtc::sctp {
@@ -32,24 +34,37 @@ struct Sent {
     std::size_t length;
 };
 
-LegacyByteBuf payload(std::size_t size)
+ByteBuf payload(std::size_t size)
 {
-    return LegacyByteBuf::copyBuffer(std::vector<std::byte>(size, std::byte{0x5a}));
+    return Unpooled::copiedBuffer(std::vector<std::byte>(size, std::byte{0x5a}));
 }
 
 class SenderTest : public testing::Test {
 protected:
+    static ByteBuf newPacket()
+    {
+        auto packet = Unpooled::buffer(MTU & ~std::size_t{3}, MTU & ~std::size_t{3});
+        CommonHeader{.source_port = 5000, .destination_port = 5000, .verification_tag = 1}.write(packet);
+        return packet;
+    }
+
+    static std::optional<Packet> parse(ByteBuf &packet)
+    {
+        Packet::seal(packet);
+        return Packet::parse(packet.slice());
+    }
+
     std::vector<Sent> transmit(std::chrono::steady_clock::time_point now, std::size_t max_packets = 100)
     {
         std::vector<Sent> sent;
         for (std::size_t i = 0; i < max_packets; ++i) {
-            PacketBuilder builder(buffer_, {.source_port = 5000, .destination_port = 5000, .verification_tag = 1}, MTU);
+            auto builder = newPacket();
             const auto added = sender_.fastRetransmitPending() ? sender_.addFastRetransmit(builder, now)
                                                                : sender_.addData(builder, now);
             if (!added) {
                 break;
             }
-            const auto packet = Packet::parse(builder.build());
+            const auto packet = parse(builder);
             EXPECT_TRUE(packet);
             for (const auto &chunk : packet->chunks) {
                 const auto data = DataChunk::parse(chunk);
@@ -57,7 +72,7 @@ protected:
                                 .stream = data->stream,
                                 .ssn = data->ssn,
                                 .flags = data->flags,
-                                .length = data->payload.size()});
+                                .length = data->payload.readableBytes()});
             }
             ++packets_;
         }
@@ -73,7 +88,6 @@ protected:
     }
 
     Sender sender_{CONFIG, 1000, 1 << 20};
-    std::vector<std::byte> buffer_;
     std::size_t packets_{0};
 };
 
@@ -282,11 +296,11 @@ TEST_F(SenderTest, DiscardsTheUnsentRestOfAnAbandonedMessage)
     Sender narrow{CONFIG, 1000, 1500};
     ASSERT_TRUE(narrow.send(1, 53, payload(5000), {.unordered = true, .max_retransmits = 0}, START));
     ASSERT_TRUE(narrow.send(1, 53, payload(10), {.unordered = true, .max_retransmits = 0}, START));
-    PacketBuilder first(buffer_, {}, MTU);
+    auto first = newPacket();
     ASSERT_TRUE(narrow.addData(first, START));
-    PacketBuilder second(buffer_, {}, MTU);
+    auto second = newPacket();
     ASSERT_TRUE(narrow.addData(second, START));
-    PacketBuilder third(buffer_, {}, MTU);
+    auto third = newPacket();
     EXPECT_FALSE(narrow.addData(third, START));
     EXPECT_EQ(narrow.outstandingChunks(), 2U);
 
@@ -296,9 +310,9 @@ TEST_F(SenderTest, DiscardsTheUnsentRestOfAnAbandonedMessage)
     ASSERT_TRUE(forward);
     EXPECT_EQ(forward->new_cumulative_tsn, 1001U);
 
-    PacketBuilder next(buffer_, {}, MTU);
+    auto next = newPacket();
     ASSERT_TRUE(narrow.addData(next, START + 500ms));
-    const auto packet = Packet::parse(next.build());
+    const auto packet = parse(next);
     ASSERT_TRUE(packet);
     const auto data = DataChunk::parse(packet->chunks[0]);
     EXPECT_EQ(data->tsn, 1002U);
@@ -390,15 +404,15 @@ TEST_F(SenderTest, ProbesZeroWindowWithOneChunk)
     for (auto i = 0; i < 3; ++i) {
         ASSERT_TRUE(closed.send(0, 53, payload(100), {}, START));
     }
-    PacketBuilder probe(buffer_, {}, MTU);
+    auto probe = newPacket();
     ASSERT_TRUE(closed.addData(probe, START));
-    EXPECT_EQ(Packet::parse(probe.build())->chunks.size(), 1U);
-    PacketBuilder blocked(buffer_, {}, MTU);
+    EXPECT_EQ(parse(probe)->chunks.size(), 1U);
+    auto blocked = newPacket();
     EXPECT_FALSE(closed.addData(blocked, START));
     closed.handleSack({.cumulative_tsn_ack = 1000, .a_rwnd = 100000, .gap_blocks = {}, .duplicate_tsns = {}}, START);
-    PacketBuilder open(buffer_, {}, MTU);
+    auto open = newPacket();
     ASSERT_TRUE(closed.addData(open, START));
-    EXPECT_EQ(Packet::parse(open.build())->chunks.size(), 2U);
+    EXPECT_EQ(parse(open)->chunks.size(), 2U);
 }
 
 TEST_F(SenderTest, RespectsPeerWindowWhileDataIsInFlight)
@@ -407,9 +421,9 @@ TEST_F(SenderTest, RespectsPeerWindowWhileDataIsInFlight)
     for (auto i = 0; i < 4; ++i) {
         ASSERT_TRUE(narrow.send(0, 53, payload(100), {}, START));
     }
-    PacketBuilder builder(buffer_, {}, MTU);
+    auto builder = newPacket();
     ASSERT_TRUE(narrow.addData(builder, START));
-    EXPECT_EQ(Packet::parse(builder.build())->chunks.size(), 2U);
+    EXPECT_EQ(parse(builder)->chunks.size(), 2U);
 }
 
 TEST_F(SenderTest, ComputesRetransmissionTimeout)
@@ -475,7 +489,7 @@ TEST_F(SenderTest, RefusesWhatTheBufferCannotHold)
     EXPECT_FALSE(small.send(0, 53, payload(600), {}, START));
     EXPECT_TRUE(small.send(0, 53, payload(200), {}, START));
     EXPECT_FALSE(small.send(0, 53, payload(10), {}, START));
-    EXPECT_FALSE(small.send(0, 53, LegacyByteBuf{}, {}, START));
+    EXPECT_FALSE(small.send(0, 53, ByteBuf{}, {}, START));
     EXPECT_EQ(small.bufferedAmount(), 800U);
     EXPECT_EQ(small.bufferedAmount(0), 800U);
 }
@@ -495,7 +509,7 @@ TEST_F(SenderTest, BoundsWhatAPeerThatNeverAdvancesCanMakeItHold)
     }
     std::size_t sent = 0;
     for (auto round = 0; round < 1000; ++round) {
-        PacketBuilder builder(buffer_, {}, MTU);
+        auto builder = newPacket();
         if (!held.addData(builder, START)) {
             if (sent == held.outstandingChunks()) {
                 break;
@@ -548,9 +562,9 @@ TEST_F(SenderTest, FollowsTsnAcrossWrap)
     Sender wrapping{CONFIG, 0xFFFFFFFF, 1 << 20};
     ASSERT_TRUE(wrapping.send(0, 53, payload(10), {}, START));
     ASSERT_TRUE(wrapping.send(0, 53, payload(10), {}, START));
-    PacketBuilder builder(buffer_, {}, MTU);
+    auto builder = newPacket();
     ASSERT_TRUE(wrapping.addData(builder, START));
-    const auto packet = Packet::parse(builder.build());
+    const auto packet = parse(builder);
     EXPECT_EQ(DataChunk::parse(packet->chunks[0])->tsn, 0xFFFFFFFFU);
     EXPECT_EQ(DataChunk::parse(packet->chunks[1])->tsn, 0U);
     EXPECT_EQ(wrapping.handleSack({.cumulative_tsn_ack = 0, .a_rwnd = 1 << 20, .gap_blocks = {}, .duplicate_tsns = {}},

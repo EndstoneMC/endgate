@@ -4,8 +4,6 @@
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 
-#include "endgate/network/rtc/sctp/packet.h"
-
 namespace endgate::rtc::sctp {
 namespace {
 
@@ -21,66 +19,63 @@ std::array<std::byte, MAC_SIZE> authenticate(const StateCookie::Key &key, std::s
     return mac;
 }
 
-std::uint64_t load(std::span<const std::byte> data, std::size_t offset, std::size_t size)
-{
-    std::uint64_t value = 0;
-    for (std::size_t i = 0; i < size; ++i) {
-        value = value << 8U | std::to_integer<std::uint64_t>(data[offset + i]);
-    }
-    return value;
-}
-
 }  // namespace
 
-std::vector<std::byte> StateCookie::seal(const Key &key, std::chrono::steady_clock::time_point now) const
+ByteBuf StateCookie::seal(const Key &key, std::chrono::steady_clock::time_point now) const
 {
-    std::vector<std::byte> data;
-    data.reserve(FIELDS_SIZE + MAC_SIZE);
-    ByteWriter writer(data);
-    writer.write64(static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count()));
-    writer.write32(local_tag);
-    writer.write32(peer_tag);
-    writer.write32(local_initial_tsn);
-    writer.write32(peer_initial_tsn);
-    writer.write32(peer_a_rwnd);
-    writer.write16(peer_outbound_streams);
-    writer.write16(peer_inbound_streams);
-    writer.write64(tie_tag);
-    writer.write8(
-        static_cast<std::uint8_t>((peer_supports_forward_tsn ? 1U : 0U) | (peer_supports_reconfig ? 2U : 0U)));
-    writer.write(authenticate(key, data));
+    auto data = Unpooled::buffer(FIELDS_SIZE + MAC_SIZE);
+    data.writeLong(static_cast<std::uint64_t>(
+                       std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count()))
+        .writeInt(local_tag)
+        .writeInt(peer_tag)
+        .writeInt(local_initial_tsn)
+        .writeInt(peer_initial_tsn)
+        .writeInt(peer_a_rwnd)
+        .writeShort(peer_outbound_streams)
+        .writeShort(peer_inbound_streams)
+        .writeLong(tie_tag)
+        .writeByte(
+            static_cast<std::uint8_t>((peer_supports_forward_tsn ? 1U : 0U) | (peer_supports_reconfig ? 2U : 0U)));
+    data.writeBytes(authenticate(key, data.nioBuffer()));
     return data;
 }
 
-std::optional<StateCookie::Opened> StateCookie::open(const Key &key, std::span<const std::byte> data,
+std::optional<StateCookie::Opened> StateCookie::open(const Key &key, ByteBufView data,
                                                      std::chrono::steady_clock::time_point now,
                                                      std::chrono::steady_clock::duration lifetime)
 {
-    if (data.size() != FIELDS_SIZE + MAC_SIZE) {
+    if (data.readableBytes() != FIELDS_SIZE + MAC_SIZE) {
         return std::nullopt;
     }
-    const auto mac = authenticate(key, data.first(FIELDS_SIZE));
-    if (CRYPTO_memcmp(mac.data(), data.subspan(FIELDS_SIZE).data(), MAC_SIZE) != 0) {
+    const auto bytes = data.nioBuffer();
+    const auto mac = authenticate(key, bytes.first(FIELDS_SIZE));
+    if (CRYPTO_memcmp(mac.data(), bytes.subspan(FIELDS_SIZE).data(), MAC_SIZE) != 0) {
         return std::nullopt;
     }
-    const auto created =
-        std::chrono::steady_clock::time_point{std::chrono::milliseconds{static_cast<std::int64_t>(load(data, 0, 8))}};
+    const auto created = std::chrono::steady_clock::time_point{std::chrono::milliseconds{data.readLong()}};
     if (created > now) {
         return std::nullopt;
     }
-    const auto flags = load(data, 40, 1);
+    const auto local_tag = data.readUnsignedInt();
+    const auto peer_tag = data.readUnsignedInt();
+    const auto local_initial_tsn = data.readUnsignedInt();
+    const auto peer_initial_tsn = data.readUnsignedInt();
+    const auto peer_a_rwnd = data.readUnsignedInt();
+    const auto peer_outbound_streams = data.readUnsignedShort();
+    const auto peer_inbound_streams = data.readUnsignedShort();
+    const auto tie_tag = static_cast<std::uint64_t>(data.readLong());
+    const auto flags = data.readUnsignedByte();
     return Opened{
         .cookie =
             {
-                .local_tag = static_cast<std::uint32_t>(load(data, 8, 4)),
-                .peer_tag = static_cast<std::uint32_t>(load(data, 12, 4)),
-                .local_initial_tsn = static_cast<std::uint32_t>(load(data, 16, 4)),
-                .peer_initial_tsn = static_cast<std::uint32_t>(load(data, 20, 4)),
-                .peer_a_rwnd = static_cast<std::uint32_t>(load(data, 24, 4)),
-                .peer_outbound_streams = static_cast<std::uint16_t>(load(data, 28, 2)),
-                .peer_inbound_streams = static_cast<std::uint16_t>(load(data, 30, 2)),
-                .tie_tag = load(data, 32, 8),
+                .local_tag = local_tag,
+                .peer_tag = peer_tag,
+                .local_initial_tsn = local_initial_tsn,
+                .peer_initial_tsn = peer_initial_tsn,
+                .peer_a_rwnd = peer_a_rwnd,
+                .peer_outbound_streams = peer_outbound_streams,
+                .peer_inbound_streams = peer_inbound_streams,
+                .tie_tag = tie_tag,
                 .peer_supports_forward_tsn = (flags & 1U) != 0,
                 .peer_supports_reconfig = (flags & 2U) != 0,
             },

@@ -11,18 +11,24 @@
 #include <string>
 #include <vector>
 
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/rtc/sctp/association.h"
 #include "endgate/network/rtc/sctp/transport.h"
 
 namespace endgate::rtc::sctp {
 
 struct Endpoint : Association::Listener {
-    void sendPacket(std::span<const std::byte> packet) override { outbox.emplace_back(packet.begin(), packet.end()); }
+    void sendPacket(ByteBufView packet) override
+    {
+        const auto bytes = packet.nioBuffer();
+        outbox.emplace_back(bytes.begin(), bytes.end());
+    }
     void onEstablished() override { ++established; }
     void onRestarted() override { ++restarted; }
     void onClosed(Association::CloseReason reason) override { closed = reason; }
-    void onMessage(Message message) override
+    void onMessage(std::uint16_t stream, std::uint32_t ppid, bool unordered, ByteBufView payload) override
     {
+        Message message{.stream = stream, .ppid = ppid, .unordered = unordered, .payload = payload.copy()};
         if (on_message) {
             on_message(message);
         }
@@ -56,23 +62,32 @@ inline std::function<void(std::span<std::byte>)> seeded(std::uint32_t seed)
     };
 }
 
-inline std::string text(const LegacyByteBuf &buf)
+inline std::string text(const ByteBuf &buf)
 {
-    std::string result(buf.length(), '\0');
-    buf.copyTo(std::as_writable_bytes(std::span{result}));
-    return result;
+    const auto bytes = buf.nioBuffer();
+    return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
 }
 
-inline LegacyByteBuf bufferOf(const std::string &value)
+inline std::string text(ByteBufView view)
 {
-    return LegacyByteBuf::copyBuffer(std::as_bytes(std::span{value}));
+    const auto bytes = view.nioBuffer();
+    return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
+}
+
+inline ByteBuf bufferOf(const std::string &value)
+{
+    return Unpooled::copiedBuffer(std::as_bytes(std::span{value}));
 }
 
 struct TransportEndpoint : SctpTransport::Listener {
-    void sendPacket(std::span<const std::byte> packet) override { outbox.emplace_back(packet.begin(), packet.end()); }
+    void sendPacket(ByteBufView packet) override
+    {
+        const auto bytes = packet.nioBuffer();
+        outbox.emplace_back(bytes.begin(), bytes.end());
+    }
     void onStateChange(SctpTransport::State state) override { states.push_back(state); }
     void onChannelOpen(const DataChannel &channel) override { opened.push_back(channel); }
-    void onChannelMessage(const DataChannel &channel, LegacyByteBuf message, bool binary) override
+    void onChannelMessage(const DataChannel &channel, ByteBufView message, bool binary) override
     {
         if (on_message) {
             on_message(channel, message);
@@ -93,7 +108,7 @@ struct TransportEndpoint : SctpTransport::Listener {
     std::vector<DataChannel> opened;
     std::vector<Received> messages;
     std::vector<DataChannel> closed;
-    std::function<void(const DataChannel &, const LegacyByteBuf &)> on_message;
+    std::function<void(const DataChannel &, ByteBufView)> on_message;
 };
 
 inline void seedRandom(Association::Config &config, std::uint32_t seed)
@@ -182,7 +197,7 @@ public:
         if (!in_flight.empty() && in_flight.front().arrival <= now) {
             auto flight = std::move(in_flight.front());
             in_flight.erase(in_flight.begin());
-            (flight.to_b ? *b : *a).handlePacket(flight.packet, now);
+            (flight.to_b ? *b : *a).handlePacket(Unpooled::wrappedBuffer(flight.packet), now);
         }
         if (a->nextTimeout() && *a->nextTimeout() <= now) {
             a->handleTimeout(now);
@@ -237,7 +252,7 @@ using TransportNetwork = BasicNetwork<SctpTransport, TransportEndpoint>;
 
 inline std::optional<std::uint8_t> firstChunk(std::span<const std::byte> packet)
 {
-    const auto parsed = Packet::parse(packet);
+    const auto parsed = Packet::parse(Unpooled::wrappedBuffer(packet));
     if (!parsed || parsed->chunks.empty()) {
         return std::nullopt;
     }
@@ -246,7 +261,7 @@ inline std::optional<std::uint8_t> firstChunk(std::span<const std::byte> packet)
 
 inline bool hasChunk(std::span<const std::byte> packet, ChunkType type)
 {
-    const auto parsed = Packet::parse(packet);
+    const auto parsed = Packet::parse(Unpooled::wrappedBuffer(packet));
     return parsed && std::ranges::any_of(parsed->chunks, [&](const Chunk &chunk) {
                return chunk.type == static_cast<std::uint8_t>(type);
            });

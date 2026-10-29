@@ -4,11 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <span>
 #include <string>
-#include <vector>
 
-#include "endgate/network/buffer.h"
+#include "endgate/buffer/bytebuf.h"
 
 namespace endgate::rtc {
 
@@ -50,12 +48,12 @@ struct DataChannelOpen {
     std::string label;
     std::string protocol;
 
-    static std::optional<DataChannelOpen> parse(std::span<const std::byte> message);
+    static std::optional<DataChannelOpen> parse(ByteBufView message);
     static DataChannelOpen of(std::string label, std::string protocol, const Reliability &reliability,
                               std::uint16_t priority);
 
     [[nodiscard]] std::optional<Reliability> reliability() const;
-    [[nodiscard]] std::vector<std::byte> serialize() const;
+    [[nodiscard]] ByteBuf serialize() const;
 };
 
 /**

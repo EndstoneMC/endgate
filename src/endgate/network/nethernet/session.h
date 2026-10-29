@@ -131,10 +131,10 @@ private:
     void onDtlsData(ByteBufView data) override;
     void onDtlsStateChanged(rtc::DtlsTransport::State state) override;
 
-    void sendPacket(std::span<const std::byte> packet) override;
+    void sendPacket(ByteBufView packet) override;
     void onStateChange(rtc::SctpTransport::State state) override;
     void onChannelOpen(const rtc::DataChannel &channel) override;
-    void onChannelMessage(const rtc::DataChannel &channel, LegacyByteBuf message, bool binary) override;
+    void onChannelMessage(const rtc::DataChannel &channel, ByteBufView message, bool binary) override;
     void onChannelClosed(const rtc::DataChannel &channel) override;
 
     void sendFragment(ESendType type, LegacyByteBuf fragment) override;
@@ -221,10 +221,10 @@ private:
     void onDtlsData(ByteBufView data) override;
     void onDtlsStateChanged(rtc::DtlsTransport::State state) override;
 
-    void sendPacket(std::span<const std::byte> packet) override;
+    void sendPacket(ByteBufView packet) override;
     void onStateChange(rtc::SctpTransport::State state) override;
     void onChannelOpen(const rtc::DataChannel &channel) override;
-    void onChannelMessage(const rtc::DataChannel &channel, LegacyByteBuf message, bool binary) override;
+    void onChannelMessage(const rtc::DataChannel &channel, ByteBufView message, bool binary) override;
     void onChannelClosed(const rtc::DataChannel &channel) override;
 
     void sendFragment(ESendType type, LegacyByteBuf fragment) override;

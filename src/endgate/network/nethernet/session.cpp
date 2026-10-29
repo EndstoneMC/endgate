@@ -127,7 +127,7 @@ void NetworkSession::sendDtlsDatagram(ByteBufView datagram)
 
 void NetworkSession::onDtlsData(ByteBufView data)
 {
-    sctp_.handlePacket(data.nioBuffer(), now_);
+    sctp_.handlePacket(data, now_);
 }
 
 void NetworkSession::onDtlsStateChanged(rtc::DtlsTransport::State state)
@@ -140,9 +140,10 @@ void NetworkSession::onDtlsStateChanged(rtc::DtlsTransport::State state)
     }
 }
 
-void NetworkSession::sendPacket(std::span<const std::byte> packet)
+void NetworkSession::sendPacket(ByteBufView packet)
 {
-    outbox_.emplace_back(packet.begin(), packet.end());
+    const auto bytes = packet.nioBuffer();
+    outbox_.emplace_back(bytes.begin(), bytes.end());
 }
 
 void NetworkSession::onStateChange(rtc::SctpTransport::State state)
@@ -164,13 +165,13 @@ void NetworkSession::onChannelOpen(const rtc::DataChannel &channel)
     }
 }
 
-void NetworkSession::onChannelMessage(const rtc::DataChannel &channel, LegacyByteBuf message, bool)
+void NetworkSession::onChannelMessage(const rtc::DataChannel &channel, ByteBufView message, bool)
 {
     if (channel.stream == reliable_stream_) {
-        queue_.onOrderedMessage(message);
+        queue_.onOrderedMessage(LegacyByteBuf::copyBuffer(message.nioBuffer()));
     }
     else if (channel.stream == unreliable_stream_) {
-        queue_.onUnorderedMessage(message);
+        queue_.onUnorderedMessage(LegacyByteBuf::copyBuffer(message.nioBuffer()));
     }
 }
 
@@ -187,7 +188,10 @@ void NetworkSession::sendFragment(ESendType type, LegacyByteBuf fragment)
     if (!stream || closed_) {
         return;
     }
-    if (!sctp_.send(*stream, std::move(fragment), true, now_) && type == ESendType::Reliable) {
+    auto message = Unpooled::buffer(fragment.length());
+    message.writeZero(fragment.length());
+    fragment.copyTo(message.nioBuffer());
+    if (!sctp_.send(*stream, std::move(message), true, now_) && type == ESendType::Reliable) {
         fail(ESessionError::GenericFailure);
     }
 }
@@ -401,7 +405,7 @@ void DialerSession::sendDtlsDatagram(ByteBufView datagram)
 
 void DialerSession::onDtlsData(ByteBufView data)
 {
-    sctp_.handlePacket(data.nioBuffer(), now_);
+    sctp_.handlePacket(data, now_);
 }
 
 void DialerSession::onDtlsStateChanged(rtc::DtlsTransport::State state)
@@ -414,9 +418,10 @@ void DialerSession::onDtlsStateChanged(rtc::DtlsTransport::State state)
     }
 }
 
-void DialerSession::sendPacket(std::span<const std::byte> packet)
+void DialerSession::sendPacket(ByteBufView packet)
 {
-    outbox_.emplace_back(packet.begin(), packet.end());
+    const auto bytes = packet.nioBuffer();
+    outbox_.emplace_back(bytes.begin(), bytes.end());
 }
 
 void DialerSession::onStateChange(rtc::SctpTransport::State state)
@@ -428,13 +433,13 @@ void DialerSession::onStateChange(rtc::SctpTransport::State state)
 
 void DialerSession::onChannelOpen(const rtc::DataChannel &) {}
 
-void DialerSession::onChannelMessage(const rtc::DataChannel &channel, LegacyByteBuf message, bool)
+void DialerSession::onChannelMessage(const rtc::DataChannel &channel, ByteBufView message, bool)
 {
     if (channel.stream == reliable_stream_) {
-        queue_.onOrderedMessage(message);
+        queue_.onOrderedMessage(LegacyByteBuf::copyBuffer(message.nioBuffer()));
     }
     else if (channel.stream == unreliable_stream_) {
-        queue_.onUnorderedMessage(message);
+        queue_.onUnorderedMessage(LegacyByteBuf::copyBuffer(message.nioBuffer()));
     }
 }
 
@@ -451,7 +456,10 @@ void DialerSession::sendFragment(ESendType type, LegacyByteBuf fragment)
     if (!stream || closed_) {
         return;
     }
-    if (!sctp_.send(*stream, std::move(fragment), true, now_) && type == ESendType::Reliable) {
+    auto message = Unpooled::buffer(fragment.length());
+    message.writeZero(fragment.length());
+    fragment.copyTo(message.nioBuffer());
+    if (!sctp_.send(*stream, std::move(message), true, now_) && type == ESendType::Reliable) {
         fail(ESessionError::GenericFailure);
     }
 }

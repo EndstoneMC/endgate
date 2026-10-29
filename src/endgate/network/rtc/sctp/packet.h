@@ -3,10 +3,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <span>
 #include <vector>
 
-#include "endgate/network/buffer.h"
+#include "endgate/buffer/bytebuf.h"
 
 namespace endgate::rtc::sctp {
 
@@ -95,6 +94,8 @@ struct CommonHeader {
     std::uint16_t source_port;
     std::uint16_t destination_port;
     std::uint32_t verification_tag;
+
+    void write(ByteBuf &out) const;
 };
 
 /**
@@ -107,7 +108,9 @@ struct Chunk {
 
     std::uint8_t type;
     std::uint8_t flags;
-    std::span<const std::byte> value;
+    ByteBufView value;
+
+    void write(ByteBuf &out) const;
 };
 
 /**
@@ -117,7 +120,14 @@ struct Packet {
     CommonHeader header;
     std::vector<Chunk> chunks;
 
-    static std::optional<Packet> parse(std::span<const std::byte> data);
+    static std::optional<Packet> parse(ByteBufView data);
+
+    /**
+     * Fills in the CRC32c of a packet whose header was written with CommonHeader::write.
+     *
+     * @see RFC 9260 section 6.8
+     */
+    static void seal(ByteBuf &packet);
 };
 
 /**
@@ -129,10 +139,12 @@ struct Tlv {
     static constexpr std::size_t HEADER_SIZE = 4;
 
     std::uint16_t type;
-    std::span<const std::byte> value;
-    std::span<const std::byte> raw;
+    ByteBufView value;
+    ByteBufView raw;
 
-    static std::optional<std::vector<Tlv>> parseAll(std::span<const std::byte> data);
+    static std::optional<std::vector<Tlv>> parseAll(ByteBufView data);
+
+    void write(ByteBuf &out) const;
 };
 
 /**
@@ -150,9 +162,11 @@ struct DataChunk {
     std::uint16_t ssn;
     std::uint32_t ppid;
     std::uint8_t flags;
-    std::span<const std::byte> payload;
+    ByteBufView payload;
 
     static std::optional<DataChunk> parse(const Chunk &chunk);
+
+    void write(ByteBuf &out) const;
 };
 
 /**
@@ -170,6 +184,8 @@ struct InitChunk {
     std::vector<Tlv> parameters;
 
     static std::optional<InitChunk> parse(const Chunk &chunk);
+
+    void write(ByteBuf &out, ChunkType type, ByteBufView encoded_parameters) const;
 };
 
 /**
@@ -189,6 +205,8 @@ struct SackChunk {
     std::vector<std::uint32_t> duplicate_tsns;
 
     static std::optional<SackChunk> parse(const Chunk &chunk);
+
+    void write(ByteBuf &out) const;
 };
 
 /**
@@ -206,6 +224,8 @@ struct ForwardTsnChunk {
     std::vector<SkippedStream> skipped;
 
     static std::optional<ForwardTsnChunk> parse(const Chunk &chunk);
+
+    void write(ByteBuf &out) const;
 };
 
 /**
@@ -238,53 +258,6 @@ struct ReconfigResponse {
     ReconfigResult result;
 
     static std::optional<ReconfigResponse> parse(const Tlv &parameter);
-};
-
-/**
- * Appends big-endian fields and padded TLVs to a byte vector.
- *
- * @see dcsctp::BoundedByteWriter
- */
-class ByteWriter {
-public:
-    explicit ByteWriter(std::vector<std::byte> &out) : out_(out) {}
-
-    void write8(std::uint8_t value);
-    void write16(std::uint16_t value);
-    void write32(std::uint32_t value);
-    void write64(std::uint64_t value);
-    void write(std::span<const std::byte> bytes);
-    void writeTlv(std::uint16_t type, std::span<const std::byte> value);
-    void pad();
-
-private:
-    std::vector<std::byte> &out_;
-};
-
-/**
- * Lays chunks out behind a common header, never past the size it was given, and seals the packet with its CRC32c.
- *
- * @see dcsctp::SctpPacket::Builder
- */
-class PacketBuilder {
-public:
-    PacketBuilder(std::vector<std::byte> &buffer, const CommonHeader &header, std::size_t max_size);
-
-    [[nodiscard]] bool empty() const { return buffer_.size() == CommonHeader::SIZE; }
-
-    [[nodiscard]] std::size_t remaining() const;
-
-    void addChunk(ChunkType type, std::uint8_t flags, std::span<const std::byte> value);
-    void addData(const DataChunk &header, const LegacyByteBuf &payload);
-    void addInit(ChunkType type, const InitChunk &init, std::span<const std::byte> parameters);
-    void addSack(const SackChunk &sack);
-    void addForwardTsn(const ForwardTsnChunk &forward_tsn);
-
-    std::span<const std::byte> build();
-
-private:
-    std::vector<std::byte> &buffer_;
-    std::size_t max_size_;
 };
 
 }  // namespace endgate::rtc::sctp

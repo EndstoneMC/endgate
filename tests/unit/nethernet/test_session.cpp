@@ -106,29 +106,33 @@ private:
         const auto bytes = datagram.nioBuffer();
         outgoing.emplace_back(bytes.begin(), bytes.end());
     }
-    void onDtlsData(ByteBufView data) override { sctp.handlePacket(data.nioBuffer(), now); }
+    void onDtlsData(ByteBufView data) override { sctp.handlePacket(data, now); }
     void onDtlsStateChanged(rtc::DtlsTransport::State) override {}
 
-    void sendPacket(std::span<const std::byte> packet) override
+    void sendPacket(ByteBufView packet) override
     {
-        sctp_outbox.emplace_back(packet.begin(), packet.end());
+        const auto bytes = packet.nioBuffer();
+        sctp_outbox.emplace_back(bytes.begin(), bytes.end());
     }
     void onStateChange(rtc::SctpTransport::State) override {}
     void onChannelOpen(const rtc::DataChannel &) override {}
-    void onChannelMessage(const rtc::DataChannel &channel, LegacyByteBuf message, bool) override
+    void onChannelMessage(const rtc::DataChannel &channel, ByteBufView message, bool) override
     {
         if (channel.stream == reliable) {
-            queue.onOrderedMessage(message);
+            queue.onOrderedMessage(LegacyByteBuf::copyBuffer(message.nioBuffer()));
         }
         else if (channel.stream == unreliable) {
-            queue.onUnorderedMessage(message);
+            queue.onUnorderedMessage(LegacyByteBuf::copyBuffer(message.nioBuffer()));
         }
     }
     void onChannelClosed(const rtc::DataChannel &) override {}
 
     void sendFragment(ESendType type, LegacyByteBuf fragment) override
     {
-        sctp.send(type == ESendType::Reliable ? *reliable : *unreliable, std::move(fragment), true, now);
+        auto message = Unpooled::buffer(fragment.length());
+        message.writeZero(fragment.length());
+        fragment.copyTo(message.nioBuffer());
+        sctp.send(type == ESendType::Reliable ? *reliable : *unreliable, std::move(message), true, now);
     }
     void onPacket(LegacyByteBuf packet) override { packets.push_back(bytesOf(packet)); }
     void closeChannel(ESendType) override {}
@@ -291,7 +295,7 @@ TEST_F(NetworkSessionTest, ClosesWhenTheClientClosesItsReliableChannel)
 TEST_F(NetworkSessionTest, ClosesOnAHeaderOnlyMessage)
 {
     connect();
-    client_.sctp.send(*client_.reliable, LegacyByteBuf::copyBuffer(std::vector{std::byte{0}}), true, now_);
+    client_.sctp.send(*client_.reliable, Unpooled::copiedBuffer(std::vector{std::byte{0}}), true, now_);
     client_.drive(now_);
     pump();
     EXPECT_EQ(recorder_.closed, std::vector{ESessionError::DataChannelClosed});

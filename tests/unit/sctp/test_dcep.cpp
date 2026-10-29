@@ -12,6 +12,7 @@ namespace {
 
 using namespace std::chrono_literals;
 using sctp::bytes;
+using sctp::bytesOf;
 
 const auto PION_OPEN =
     bytes({0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x03, 'f', 'o', 'o', 'b', 'a', 'r'});
@@ -22,7 +23,7 @@ const auto UNRELIABLE_OPEN =
 
 TEST(DataChannelOpen, ParsesPionGolden)
 {
-    const auto open = DataChannelOpen::parse(PION_OPEN);
+    const auto open = DataChannelOpen::parse(Unpooled::wrappedBuffer(PION_OPEN));
     ASSERT_TRUE(open);
     EXPECT_EQ(open->channel_type, 0x00);
     EXPECT_EQ(open->priority, 0);
@@ -30,12 +31,12 @@ TEST(DataChannelOpen, ParsesPionGolden)
     EXPECT_EQ(open->label, "foo");
     EXPECT_EQ(open->protocol, "bar");
     EXPECT_EQ(open->reliability(), (Reliability{}));
-    EXPECT_EQ(open->serialize(), PION_OPEN);
+    EXPECT_EQ(bytesOf(open->serialize()), PION_OPEN);
 }
 
 TEST(DataChannelOpen, ReadsNetherNetUnreliableChannel)
 {
-    const auto open = DataChannelOpen::parse(UNRELIABLE_OPEN);
+    const auto open = DataChannelOpen::parse(Unpooled::wrappedBuffer(UNRELIABLE_OPEN));
     ASSERT_TRUE(open);
     EXPECT_EQ(open->label, "UnreliableDataChannel");
     EXPECT_TRUE(open->protocol.empty());
@@ -45,9 +46,9 @@ TEST(DataChannelOpen, ReadsNetherNetUnreliableChannel)
 
 TEST(DataChannelOpen, WritesEveryChannelType)
 {
-    EXPECT_EQ(DataChannelOpen::of("UnreliableDataChannel", "",
-                                  {.unordered = true, .max_retransmits = 0, .max_packet_life_time = {}}, 256)
-                  .serialize(),
+    EXPECT_EQ(bytesOf(DataChannelOpen::of("UnreliableDataChannel", "",
+                                          {.unordered = true, .max_retransmits = 0, .max_packet_life_time = {}}, 256)
+                          .serialize()),
               UNRELIABLE_OPEN);
     EXPECT_EQ(DataChannelOpen::of("a", "", {}, 256).channel_type, 0x00);
     EXPECT_EQ(DataChannelOpen::of("a", "", {.unordered = true}, 256).channel_type, 0x80);
@@ -63,7 +64,8 @@ TEST(DataChannelOpen, RoundTripsReliability)
 {
     for (const auto &reliability : {Reliability{}, Reliability{.unordered = true}, Reliability{.max_retransmits = 7},
                                     Reliability{.unordered = true, .max_packet_life_time = 250ms}}) {
-        const auto open = DataChannelOpen::parse(DataChannelOpen::of("label", "proto", reliability, 512).serialize());
+        const auto open =
+            DataChannelOpen::parse(DataChannelOpen::of("label", "proto", reliability, 512).serialize().slice());
         ASSERT_TRUE(open);
         EXPECT_EQ(open->reliability(), reliability);
         EXPECT_EQ(open->priority, 512);
@@ -73,29 +75,29 @@ TEST(DataChannelOpen, RoundTripsReliability)
 
 TEST(DataChannelOpen, RejectsMalformedMessages)
 {
-    EXPECT_FALSE(DataChannelOpen::parse({}));
-    EXPECT_FALSE(DataChannelOpen::parse(std::span{PION_OPEN}.first(11)));
-    EXPECT_FALSE(DataChannelOpen::parse(std::span{PION_OPEN}.first(17)));
+    EXPECT_FALSE(DataChannelOpen::parse(ByteBufView{}));
+    EXPECT_FALSE(DataChannelOpen::parse(Unpooled::wrappedBuffer(std::span{PION_OPEN}.first(11))));
+    EXPECT_FALSE(DataChannelOpen::parse(Unpooled::wrappedBuffer(std::span{PION_OPEN}.first(17))));
     auto longer = PION_OPEN;
     longer.push_back(std::byte{0});
-    EXPECT_FALSE(DataChannelOpen::parse(longer));
+    EXPECT_FALSE(DataChannelOpen::parse(Unpooled::wrappedBuffer(longer)));
     auto ack = PION_OPEN;
     ack[0] = std::byte{0x02};
-    EXPECT_FALSE(DataChannelOpen::parse(ack));
+    EXPECT_FALSE(DataChannelOpen::parse(Unpooled::wrappedBuffer(ack)));
     auto overstated = PION_OPEN;
     overstated[9] = std::byte{0xff};
-    EXPECT_FALSE(DataChannelOpen::parse(overstated));
+    EXPECT_FALSE(DataChannelOpen::parse(Unpooled::wrappedBuffer(overstated)));
 }
 
 TEST(DataChannelOpen, RefusesUnknownChannelType)
 {
     auto unknown = PION_OPEN;
     unknown[1] = std::byte{0x03};
-    const auto open = DataChannelOpen::parse(unknown);
+    const auto open = DataChannelOpen::parse(Unpooled::wrappedBuffer(unknown));
     ASSERT_TRUE(open);
     EXPECT_FALSE(open->reliability());
     unknown[1] = std::byte{0x40};
-    EXPECT_FALSE(DataChannelOpen::parse(unknown)->reliability());
+    EXPECT_FALSE(DataChannelOpen::parse(Unpooled::wrappedBuffer(unknown))->reliability());
 }
 
 }  // namespace

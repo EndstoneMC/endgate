@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "bytes.h"
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/rtc/sctp/packet.h"
 
 namespace endgate::rtc::sctp {
@@ -18,21 +19,23 @@ Chunk chunkOf(std::span<const std::byte> serialized)
     return {
         .type = std::to_integer<std::uint8_t>(serialized[0]),
         .flags = std::to_integer<std::uint8_t>(serialized[1]),
-        .value = serialized.subspan(4, length - 4),
+        .value = Unpooled::wrappedBuffer(serialized.subspan(4, length - 4)),
     };
 }
 
 std::vector<std::byte> serialized(auto &&add)
 {
-    std::vector<std::byte> buffer;
-    PacketBuilder builder(buffer, {}, 65536);
-    add(builder);
-    const auto packet = builder.build();
+    auto buffer = Unpooled::buffer();
+    CommonHeader{}.write(buffer);
+    add(buffer);
+    Packet::seal(buffer);
+    const auto packet = buffer.nioBuffer();
     return {packet.begin() + CommonHeader::SIZE, packet.end()};
 }
 
-std::vector<std::byte> copy(std::span<const std::byte> span)
+std::vector<std::byte> copy(ByteBufView view)
 {
+    const auto span = view.nioBuffer();
     return {span.begin(), span.end()};
 }
 
@@ -94,28 +97,34 @@ TEST(DataChunk, ParsesCapture)
 
 TEST(DataChunk, SerializesCapture)
 {
-    EXPECT_EQ(serialized([](PacketBuilder &builder) {
-                  builder.addData({.tsn = 1426601532, .stream = 2, .ssn = 1, .ppid = 53, .flags = 3, .payload = {}},
-                                  LegacyByteBuf::copyBuffer(bytes({0, 1, 2, 3})));
+    EXPECT_EQ(serialized([](ByteBuf &out) {
+                  DataChunk{.tsn = 1426601532,
+                            .stream = 2,
+                            .ssn = 1,
+                            .ppid = 53,
+                            .flags = 3,
+                            .payload = Unpooled::wrappedBuffer(bytes({0, 1, 2, 3}))}
+                      .write(out);
               }),
               CAPTURED_DATA);
 }
 
 TEST(DataChunk, PadsOddPayload)
 {
-    const auto chunk = serialized([](PacketBuilder &builder) {
-        builder.addData({.tsn = 7, .stream = 1, .ssn = 0, .ppid = 51, .flags = 3, .payload = {}},
-                        LegacyByteBuf::copyBuffer(bytes({0xaa})));
+    const auto chunk = serialized([](ByteBuf &out) {
+        DataChunk{
+            .tsn = 7, .stream = 1, .ssn = 0, .ppid = 51, .flags = 3, .payload = Unpooled::wrappedBuffer(bytes({0xaa}))}
+            .write(out);
     });
     EXPECT_EQ(chunk, bytes({0x00, 0x03, 0x00, 0x11, 0, 0, 0, 7, 0, 1, 0, 0, 0, 0, 0, 51, 0xaa, 0, 0, 0}));
 }
 
-TEST(DataChunk, SerializesChainedPayload)
+TEST(DataChunk, SerializesPayload)
 {
-    auto payload = LegacyByteBuf::copyBuffer(bytes({1, 2}));
-    payload.appendToChain(LegacyByteBuf::copyBuffer(bytes({3, 4, 5})));
-    const auto chunk = serialized([&](PacketBuilder &builder) {
-        builder.addData({.tsn = 1, .stream = 0, .ssn = 0, .ppid = 53, .flags = 3, .payload = {}}, payload);
+    const auto payload = bytes({1, 2, 3, 4, 5});
+    const auto chunk = serialized([&](ByteBuf &out) {
+        DataChunk{.tsn = 1, .stream = 0, .ssn = 0, .ppid = 53, .flags = 3, .payload = Unpooled::wrappedBuffer(payload)}
+            .write(out);
     });
     const auto data = DataChunk::parse(chunkOf(chunk));
     ASSERT_TRUE(data);
@@ -133,7 +142,7 @@ TEST(DataChunk, ParsesEmptyPayload)
     const auto empty = bytes({0x00, 0x03, 0x00, 0x10, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0});
     const auto data = DataChunk::parse(chunkOf(empty));
     ASSERT_TRUE(data);
-    EXPECT_TRUE(data->payload.empty());
+    EXPECT_FALSE(data->payload.isReadable());
 }
 
 TEST(InitChunk, ParsesCapture)
@@ -151,7 +160,7 @@ TEST(InitChunk, ParsesCapture)
     EXPECT_EQ(init->parameters[2].type, static_cast<std::uint16_t>(ParameterType::SupportedExtensions));
     EXPECT_EQ(copy(init->parameters[2].value), bytes({0xc0, 0x0f, 0xc1, 0x80, 0x82}));
     EXPECT_EQ(init->parameters[3].type, 0x8002);
-    EXPECT_EQ(init->parameters[3].value.size(), 32U);
+    EXPECT_EQ(init->parameters[3].value.readableBytes(), 32U);
     EXPECT_EQ(init->parameters[5].type, 0x8003);
     EXPECT_EQ(copy(init->parameters[5].raw), bytes({0x80, 0x03, 0x00, 0x06, 0x80, 0xc1}));
 }
@@ -160,13 +169,11 @@ TEST(InitChunk, SerializesCapture)
 {
     const auto init = InitChunk::parse(chunkOf(CAPTURED_INIT));
     ASSERT_TRUE(init);
-    std::vector<std::byte> parameters;
-    ByteWriter writer(parameters);
+    auto parameters = Unpooled::buffer();
     for (const auto &parameter : init->parameters) {
-        writer.writeTlv(parameter.type, parameter.value);
+        parameter.write(parameters);
     }
-    EXPECT_EQ(serialized([&](PacketBuilder &builder) { builder.addInit(ChunkType::Init, *init, parameters); }),
-              CAPTURED_INIT);
+    EXPECT_EQ(serialized([&](ByteBuf &out) { init->write(out, ChunkType::Init, parameters.slice()); }), CAPTURED_INIT);
 }
 
 TEST(InitChunk, ParsesCapturedInitAckWithKameCookie)
@@ -179,8 +186,8 @@ TEST(InitChunk, ParsesCapturedInitAckWithKameCookie)
     EXPECT_EQ(init_ack->initial_tsn, 1670811335U);
     ASSERT_EQ(init_ack->parameters.size(), 3U);
     EXPECT_EQ(init_ack->parameters[2].type, static_cast<std::uint16_t>(ParameterType::StateCookie));
-    EXPECT_EQ(init_ack->parameters[2].value.size(), 0x104U - 4);
-    EXPECT_EQ(copy(init_ack->parameters[2].value.first(8)), bytes({'K', 'A', 'M', 'E', '-', 'B', 'S', 'D'}));
+    EXPECT_EQ(init_ack->parameters[2].value.readableBytes(), 0x104U - 4);
+    EXPECT_EQ(copy(init_ack->parameters[2].value.slice(0, 8)), bytes({'K', 'A', 'M', 'E', '-', 'B', 'S', 'D'}));
 }
 
 TEST(InitChunk, RejectsTruncatedFields)
@@ -215,13 +222,14 @@ TEST(SackChunk, ParsesCapture)
 
 TEST(SackChunk, SerializesCapture)
 {
-    EXPECT_EQ(serialized([](PacketBuilder &builder) {
-                  builder.addSack({
+    EXPECT_EQ(serialized([](ByteBuf &out) {
+                  SackChunk{
                       .cumulative_tsn_ack = 916312075,
                       .a_rwnd = 126323,
                       .gap_blocks = {{.start = 2, .end = 6}, {.start = 8, .end = 8}},
                       .duplicate_tsns = {916312081},
-                  });
+                  }
+                      .write(out);
               }),
               CAPTURED_SACK);
 }
@@ -250,9 +258,9 @@ TEST(ForwardTsnChunk, ParsesCapture)
 
 TEST(ForwardTsnChunk, RoundTripsSkippedStreams)
 {
-    const auto chunk = serialized([](PacketBuilder &builder) {
-        builder.addForwardTsn(
-            {.new_cumulative_tsn = 123, .skipped = {{.stream = 1, .ssn = 23}, {.stream = 42, .ssn = 99}}});
+    const auto chunk = serialized([](ByteBuf &out) {
+        ForwardTsnChunk{.new_cumulative_tsn = 123, .skipped = {{.stream = 1, .ssn = 23}, {.stream = 42, .ssn = 99}}}
+            .write(out);
     });
     EXPECT_EQ(chunk, bytes({0xc0, 0x00, 0x00, 0x10, 0, 0, 0, 123, 0, 1, 0, 23, 0, 42, 0, 99}));
     const auto forward_tsn = ForwardTsnChunk::parse(chunkOf(chunk));
@@ -286,16 +294,17 @@ TEST(ReconfigChunk, ParsesCapturedOutgoingResetRequest)
 
 TEST(ReconfigChunk, SerializesCapturedOutgoingResetRequest)
 {
-    std::vector<std::byte> value;
-    std::vector<std::byte> fields;
-    ByteWriter field_writer(fields);
-    field_writer.write32(2270550051U);
-    field_writer.write32(1905748638U);
-    field_writer.write32(2270550066U);
-    field_writer.write16(6);
-    ByteWriter(value).writeTlv(static_cast<std::uint16_t>(ParameterType::OutgoingSsnResetRequest), fields);
-    EXPECT_EQ(serialized([&](PacketBuilder &builder) { builder.addChunk(ChunkType::ReConfig, 0, value); }),
-              CAPTURED_RECONFIG);
+    auto value = Unpooled::buffer();
+    auto fields = Unpooled::buffer();
+    fields.writeInt(2270550051U).writeInt(1905748638U).writeInt(2270550066U).writeShort(6);
+    Tlv{.type = static_cast<std::uint16_t>(ParameterType::OutgoingSsnResetRequest), .value = fields.slice(), .raw = {}}
+        .write(value);
+    EXPECT_EQ(
+        serialized([&](ByteBuf &out) {
+            Chunk{.type = static_cast<std::uint8_t>(ChunkType::ReConfig), .flags = 0, .value = value.slice()}.write(
+                out);
+        }),
+        CAPTURED_RECONFIG);
 }
 
 TEST(ReconfigChunk, ParsesIncomingResetRequestAndResponse)
@@ -304,7 +313,7 @@ TEST(ReconfigChunk, ParsesIncomingResetRequestAndResponse)
     const auto response = bytes({0x00, 0x10, 0x00, 0x0c, 0, 0, 0, 5, 0, 0, 0, 6});
     std::vector<std::byte> value(incoming);
     value.insert(value.end(), response.begin(), response.end());
-    const auto parameters = Tlv::parseAll(value);
+    const auto parameters = Tlv::parseAll(Unpooled::wrappedBuffer(value));
     ASSERT_TRUE(parameters);
     ASSERT_EQ(parameters->size(), 2U);
 
@@ -322,22 +331,22 @@ TEST(ReconfigChunk, ParsesIncomingResetRequestAndResponse)
 TEST(ReconfigChunk, RejectsMalformedParameters)
 {
     const auto odd_streams_bytes = bytes({0x00, 0x0d, 0x00, 0x11, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7});
-    const auto odd_streams = Tlv::parseAll(odd_streams_bytes);
+    const auto odd_streams = Tlv::parseAll(Unpooled::wrappedBuffer(odd_streams_bytes));
     ASSERT_TRUE(odd_streams);
     EXPECT_FALSE(OutgoingResetRequest::parse((*odd_streams)[0]));
 
     const auto short_request_bytes = bytes({0x00, 0x0d, 0x00, 0x0c, 0, 0, 0, 1, 0, 0, 0, 0});
-    const auto short_request = Tlv::parseAll(short_request_bytes);
+    const auto short_request = Tlv::parseAll(Unpooled::wrappedBuffer(short_request_bytes));
     ASSERT_TRUE(short_request);
     EXPECT_FALSE(OutgoingResetRequest::parse((*short_request)[0]));
 
     const auto unknown_result_bytes = bytes({0x00, 0x10, 0x00, 0x0c, 0, 0, 0, 1, 0, 0, 0, 7});
-    const auto unknown_result = Tlv::parseAll(unknown_result_bytes);
+    const auto unknown_result = Tlv::parseAll(Unpooled::wrappedBuffer(unknown_result_bytes));
     ASSERT_TRUE(unknown_result);
     EXPECT_FALSE(ReconfigResponse::parse((*unknown_result)[0]));
 
     const auto odd_response_bytes = bytes({0x00, 0x10, 0x00, 0x10, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0});
-    const auto odd_response = Tlv::parseAll(odd_response_bytes);
+    const auto odd_response = Tlv::parseAll(Unpooled::wrappedBuffer(odd_response_bytes));
     ASSERT_TRUE(odd_response);
     EXPECT_FALSE(ReconfigResponse::parse((*odd_response)[0]));
 }
@@ -349,7 +358,7 @@ TEST(HeartbeatChunk, ParsesCapturedInfo)
     ASSERT_TRUE(parameters);
     ASSERT_EQ(parameters->size(), 1U);
     EXPECT_EQ((*parameters)[0].type, static_cast<std::uint16_t>(ParameterType::HeartbeatInfo));
-    EXPECT_EQ((*parameters)[0].value.size(), 36U);
+    EXPECT_EQ((*parameters)[0].value.readableBytes(), 36U);
 }
 
 TEST(HeartbeatChunk, EchoesInfoUnchanged)
@@ -357,45 +366,72 @@ TEST(HeartbeatChunk, EchoesInfoUnchanged)
     const auto chunk = chunkOf(CAPTURED_HEARTBEAT);
     auto expected = CAPTURED_HEARTBEAT;
     expected[0] = std::byte{static_cast<std::uint8_t>(ChunkType::HeartbeatAck)};
-    EXPECT_EQ(serialized([&](PacketBuilder &builder) { builder.addChunk(ChunkType::HeartbeatAck, 0, chunk.value); }),
-              expected);
+    EXPECT_EQ(
+        serialized([&](ByteBuf &out) {
+            Chunk{.type = static_cast<std::uint8_t>(ChunkType::HeartbeatAck), .flags = 0, .value = chunk.value}.write(
+                out);
+        }),
+        expected);
 }
 
 TEST(ControlChunks, SerializeCaptures)
 {
-    std::vector<std::byte> user_abort;
-    ByteWriter(user_abort).writeTlv(static_cast<std::uint16_t>(CauseCode::UserInitiatedAbort), {});
-    EXPECT_EQ(serialized([&](PacketBuilder &builder) { builder.addChunk(ChunkType::Abort, 0, user_abort); }),
-              bytes({0x06, 0x00, 0x00, 0x08, 0x00, 0x0c, 0x00, 0x04}));
+    auto user_abort = Unpooled::buffer();
+    Tlv{.type = static_cast<std::uint16_t>(CauseCode::UserInitiatedAbort), .value = {}, .raw = {}}.write(user_abort);
+    EXPECT_EQ(
+        serialized([&](ByteBuf &out) {
+            Chunk{.type = static_cast<std::uint8_t>(ChunkType::Abort), .flags = 0, .value = user_abort.slice()}.write(
+                out);
+        }),
+        bytes({0x06, 0x00, 0x00, 0x08, 0x00, 0x0c, 0x00, 0x04}));
 
-    std::vector<std::byte> unrecognized;
-    ByteWriter(unrecognized)
-        .writeTlv(static_cast<std::uint16_t>(CauseCode::UnrecognizedChunkType), bytes({0x49, 0x00, 0x00, 0x04}));
-    EXPECT_EQ(serialized([&](PacketBuilder &builder) { builder.addChunk(ChunkType::Error, 0, unrecognized); }),
-              bytes({0x09, 0x00, 0x00, 0x0c, 0x00, 0x06, 0x00, 0x08, 0x49, 0x00, 0x00, 0x04}));
+    auto unrecognized = Unpooled::buffer();
+    Tlv{.type = static_cast<std::uint16_t>(CauseCode::UnrecognizedChunkType),
+        .value = Unpooled::wrappedBuffer(bytes({0x49, 0x00, 0x00, 0x04})),
+        .raw = {}}
+        .write(unrecognized);
+    EXPECT_EQ(
+        serialized([&](ByteBuf &out) {
+            Chunk{.type = static_cast<std::uint8_t>(ChunkType::Error), .flags = 0, .value = unrecognized.slice()}.write(
+                out);
+        }),
+        bytes({0x09, 0x00, 0x00, 0x0c, 0x00, 0x06, 0x00, 0x08, 0x49, 0x00, 0x00, 0x04}));
 
-    EXPECT_EQ(serialized([](PacketBuilder &builder) {
-                  builder.addChunk(ChunkType::CookieEcho, 0, bytes({0x12, 0x34, 0x56, 0x78}));
+    EXPECT_EQ(serialized([](ByteBuf &out) {
+                  Chunk{.type = static_cast<std::uint8_t>(ChunkType::CookieEcho),
+                        .flags = 0,
+                        .value = Unpooled::wrappedBuffer(bytes({0x12, 0x34, 0x56, 0x78}))}
+                      .write(out);
               }),
               bytes({0x0a, 0x00, 0x00, 0x08, 0x12, 0x34, 0x56, 0x78}));
 
-    EXPECT_EQ(serialized([](PacketBuilder &builder) {
-                  builder.addChunk(ChunkType::Shutdown, 0, bytes({0x06, 0x11, 0xd1, 0xbd}));
+    EXPECT_EQ(serialized([](ByteBuf &out) {
+                  Chunk{.type = static_cast<std::uint8_t>(ChunkType::Shutdown),
+                        .flags = 0,
+                        .value = Unpooled::wrappedBuffer(bytes({0x06, 0x11, 0xd1, 0xbd}))}
+                      .write(out);
               }),
               bytes({0x07, 0x00, 0x00, 0x08, 0x06, 0x11, 0xd1, 0xbd}));
 
-    EXPECT_EQ(serialized([](PacketBuilder &builder) { builder.addChunk(ChunkType::CookieAck, 0, {}); }),
+    EXPECT_EQ(serialized([](ByteBuf &out) {
+                  Chunk{.type = static_cast<std::uint8_t>(ChunkType::CookieAck), .flags = 0, .value = {}}.write(out);
+              }),
               bytes({0x0b, 0x00, 0x00, 0x04}));
-    EXPECT_EQ(serialized([](PacketBuilder &builder) { builder.addChunk(ChunkType::ShutdownAck, 0, {}); }),
+    EXPECT_EQ(serialized([](ByteBuf &out) {
+                  Chunk{.type = static_cast<std::uint8_t>(ChunkType::ShutdownAck), .flags = 0, .value = {}}.write(out);
+              }),
               bytes({0x08, 0x00, 0x00, 0x04}));
-    EXPECT_EQ(serialized([](PacketBuilder &builder) { builder.addChunk(ChunkType::ShutdownComplete, 1, {}); }),
+    EXPECT_EQ(serialized([](ByteBuf &out) {
+                  Chunk{.type = static_cast<std::uint8_t>(ChunkType::ShutdownComplete), .flags = 1, .value = {}}.write(
+                      out);
+              }),
               bytes({0x0e, 0x01, 0x00, 0x04}));
 }
 
 TEST(Tlv, ParsesCausesWithPadding)
 {
     const auto cause_bytes = bytes({0x00, 0x0d, 0x00, 0x05, 'x', 0, 0, 0, 0x00, 0x03, 0x00, 0x08, 0, 0, 0, 9});
-    const auto causes = Tlv::parseAll(cause_bytes);
+    const auto causes = Tlv::parseAll(Unpooled::wrappedBuffer(cause_bytes));
     ASSERT_TRUE(causes);
     ASSERT_EQ(causes->size(), 2U);
     EXPECT_EQ((*causes)[0].type, static_cast<std::uint16_t>(CauseCode::ProtocolViolation));
@@ -405,7 +441,7 @@ TEST(Tlv, ParsesCausesWithPadding)
 
 TEST(Tlv, RejectsTruncatedHeader)
 {
-    EXPECT_FALSE(Tlv::parseAll(bytes({0x00, 0x0d, 0x00})));
+    EXPECT_FALSE(Tlv::parseAll(Unpooled::wrappedBuffer(bytes({0x00, 0x0d, 0x00}))));
 }
 
 }  // namespace

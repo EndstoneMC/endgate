@@ -15,22 +15,21 @@ namespace {
 using namespace std::chrono_literals;
 using State = Association::State;
 
-LegacyByteBuf patterned(std::size_t size, std::uint32_t seed)
+ByteBuf patterned(std::size_t size, std::uint32_t seed)
 {
     std::vector<std::byte> data(size);
     for (std::size_t i = 0; i < size; ++i) {
         data[i] = static_cast<std::byte>((seed * 31 + i * 7) & 0xFFU);
     }
-    return LegacyByteBuf::copyBuffer(data);
+    return Unpooled::copiedBuffer(data);
 }
 
-bool intact(const LegacyByteBuf &payload, std::size_t size, std::uint32_t seed)
+bool intact(const ByteBuf &payload, std::size_t size, std::uint32_t seed)
 {
-    if (payload.length() != size) {
+    if (payload.readableBytes() != size) {
         return false;
     }
-    std::vector<std::byte> data(size);
-    payload.copyTo(data);
+    const auto data = payload.nioBuffer();
     for (std::size_t i = 0; i < size; ++i) {
         if (data[i] != static_cast<std::byte>((seed * 31 + i * 7) & 0xFFU)) {
             return false;
@@ -218,7 +217,7 @@ TEST_P(Transfer, CrossesTheTsnWrap)
         [&] { return network.a->state() == State::Established && network.b->state() == State::Established; }, 10s));
     std::uint32_t first_tsn = 0;
     network.filter = [&](std::span<const std::byte> packet, bool to_b) {
-        const auto parsed = Packet::parse(packet);
+        const auto parsed = Packet::parse(Unpooled::wrappedBuffer(packet));
         if (to_b && first_tsn == 0 && parsed->chunks.front().type == static_cast<std::uint8_t>(ChunkType::Data)) {
             first_tsn = DataChunk::parse(parsed->chunks.front())->tsn;
         }

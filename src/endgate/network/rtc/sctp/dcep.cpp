@@ -2,8 +2,7 @@
 
 #include <algorithm>
 #include <limits>
-
-#include "endgate/network/rtc/sctp/packet.h"
+#include <span>
 
 namespace endgate::rtc {
 namespace {
@@ -15,30 +14,28 @@ constexpr std::uint8_t PARTIAL_RELIABLE_TIMED = 0x02;
 
 }  // namespace
 
-std::optional<DataChannelOpen> DataChannelOpen::parse(std::span<const std::byte> message)
+std::optional<DataChannelOpen> DataChannelOpen::parse(ByteBufView message)
 {
     constexpr std::size_t fields_size = 12;
-    if (message.size() < fields_size || std::to_integer<std::uint8_t>(message[0]) != MESSAGE_TYPE) {
+    if (!message.isReadable(fields_size) || message.readUnsignedByte() != MESSAGE_TYPE) {
         return std::nullopt;
     }
-    const auto load16 = [&](std::size_t offset) {
-        return static_cast<std::uint16_t>(std::to_integer<unsigned>(message[offset]) << 8U |
-                                          std::to_integer<unsigned>(message[offset + 1]));
-    };
-    const std::size_t label_length = load16(8);
-    const std::size_t protocol_length = load16(10);
-    if (message.size() != fields_size + label_length + protocol_length) {
+    const auto channel_type = message.readUnsignedByte();
+    const auto priority = message.readUnsignedShort();
+    const auto reliability_parameter = message.readUnsignedInt();
+    const std::size_t label_length = message.readUnsignedShort();
+    const std::size_t protocol_length = message.readUnsignedShort();
+    if (message.readableBytes() != label_length + protocol_length) {
         return std::nullopt;
     }
-    const auto text = [&](std::size_t offset, std::size_t length) {
-        return std::string(reinterpret_cast<const char *>(message.data() + offset), length);
-    };
+    const auto label = message.readSlice(label_length).nioBuffer();
+    const auto protocol = message.readSlice(protocol_length).nioBuffer();
     return DataChannelOpen{
-        .channel_type = std::to_integer<std::uint8_t>(message[1]),
-        .priority = load16(2),
-        .reliability_parameter = static_cast<std::uint32_t>(load16(4)) << 16U | load16(6),
-        .label = text(fields_size, label_length),
-        .protocol = text(fields_size + label_length, protocol_length),
+        .channel_type = channel_type,
+        .priority = priority,
+        .reliability_parameter = reliability_parameter,
+        .label = std::string(reinterpret_cast<const char *>(label.data()), label.size()),
+        .protocol = std::string(reinterpret_cast<const char *>(protocol.data()), protocol.size()),
     };
 }
 
@@ -87,19 +84,17 @@ std::optional<Reliability> DataChannelOpen::reliability() const
     }
 }
 
-std::vector<std::byte> DataChannelOpen::serialize() const
+ByteBuf DataChannelOpen::serialize() const
 {
-    std::vector<std::byte> out;
-    out.reserve(12 + label.size() + protocol.size());
-    sctp::ByteWriter writer(out);
-    writer.write8(MESSAGE_TYPE);
-    writer.write8(channel_type);
-    writer.write16(priority);
-    writer.write32(reliability_parameter);
-    writer.write16(static_cast<std::uint16_t>(label.size()));
-    writer.write16(static_cast<std::uint16_t>(protocol.size()));
-    writer.write(std::as_bytes(std::span{label}));
-    writer.write(std::as_bytes(std::span{protocol}));
+    auto out = Unpooled::buffer(12 + label.size() + protocol.size());
+    out.writeByte(MESSAGE_TYPE)
+        .writeByte(channel_type)
+        .writeShort(priority)
+        .writeInt(reliability_parameter)
+        .writeShort(static_cast<std::uint16_t>(label.size()))
+        .writeShort(static_cast<std::uint16_t>(protocol.size()))
+        .writeBytes(std::as_bytes(std::span{label}))
+        .writeBytes(std::as_bytes(std::span{protocol}));
     return out;
 }
 

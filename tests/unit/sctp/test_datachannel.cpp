@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include "bytes.h"
 #include "network.h"
 
 namespace endgate::rtc::sctp {
@@ -111,7 +112,7 @@ TEST_F(DataChannelTest, SendsOrderedUntilTheChannelIsAcknowledged)
         if (!to_b) {
             return true;
         }
-        for (const auto &chunk : Packet::parse(packet)->chunks) {
+        for (const auto &chunk : Packet::parse(Unpooled::wrappedBuffer(packet))->chunks) {
             const auto data = chunk.type == 0 ? DataChunk::parse(chunk) : std::nullopt;
             if (data && data->ppid == static_cast<std::uint32_t>(Ppid::Binary)) {
                 flags.push_back(data->flags & DataChunk::UNORDERED_FLAG);
@@ -185,8 +186,8 @@ TEST_F(DataChannelTest, DeliversQueuedMessagesBeforeClosing)
 TEST_F(DataChannelTest, CarriesEmptyMessages)
 {
     openNetherNetChannels();
-    ASSERT_TRUE(network_.a->send(1, LegacyByteBuf{}, false, network_.now));
-    ASSERT_TRUE(network_.a->send(1, LegacyByteBuf{}, true, network_.now));
+    ASSERT_TRUE(network_.a->send(1, ByteBuf{}, false, network_.now));
+    ASSERT_TRUE(network_.a->send(1, ByteBuf{}, true, network_.now));
     ASSERT_TRUE(network_.runUntil([&] { return network_.endpoint_b.messages.size() == 2; }, 5s));
     EXPECT_EQ(network_.endpoint_b.messages[0].payload, "");
     EXPECT_FALSE(network_.endpoint_b.messages[0].binary);
@@ -240,9 +241,10 @@ TEST_F(DataChannelTest, BoundsTheChannelsAPeerMayOpen)
 TEST_F(DataChannelTest, ListenerMaySendFromInsideAMessage)
 {
     openNetherNetChannels();
-    network_.endpoint_b.on_message = [&](const DataChannel &channel, const LegacyByteBuf &message) {
-        EXPECT_TRUE(network_.b->send(
-            channel.stream, LegacyByteBuf::copyBuffer(std::vector<std::byte>(message.length())), true, network_.now));
+    network_.endpoint_b.on_message = [&](const DataChannel &channel, ByteBufView message) {
+        EXPECT_TRUE(network_.b->send(channel.stream,
+                                     Unpooled::copiedBuffer(std::vector<std::byte>(message.readableBytes())), true,
+                                     network_.now));
     };
     ASSERT_TRUE(network_.a->send(1, bufferOf("echo me"), true, network_.now));
     ASSERT_TRUE(network_.runUntil([&] { return !network_.endpoint_a.messages.empty(); }, 5s));
@@ -264,18 +266,18 @@ protected:
     {
         for (auto round = 0; round < 10; ++round) {
             for (auto &packet : std::exchange(raw_.outbox, {})) {
-                transport_.handlePacket(packet, now_);
+                transport_.handlePacket(Unpooled::wrappedBuffer(packet), now_);
             }
             for (auto &packet : std::exchange(server_.outbox, {})) {
-                peer_.handlePacket(packet, now_);
+                peer_.handlePacket(Unpooled::wrappedBuffer(packet), now_);
             }
         }
     }
 
-    void open(std::uint16_t stream, std::vector<std::byte> message)
+    void open(std::uint16_t stream, std::span<const std::byte> message)
     {
         ASSERT_TRUE(
-            peer_.send(stream, static_cast<std::uint32_t>(Ppid::Dcep), LegacyByteBuf::copyBuffer(message), {}, now_));
+            peer_.send(stream, static_cast<std::uint32_t>(Ppid::Dcep), Unpooled::copiedBuffer(message), {}, now_));
         pump();
     }
 
@@ -289,7 +291,7 @@ protected:
 TEST_F(RawPeerTest, AcknowledgesAValidOpen)
 {
     ASSERT_EQ(transport_.state(), SctpTransport::State::Connected);
-    open(1, DataChannelOpen::of("ReliableDataChannel", "", RELIABLE, 256).serialize());
+    open(1, DataChannelOpen::of("ReliableDataChannel", "", RELIABLE, 256).serialize().nioBuffer());
     ASSERT_EQ(server_.opened.size(), 1U);
     ASSERT_EQ(raw_.messages.size(), 1U);
     EXPECT_EQ(raw_.messages[0].ppid, static_cast<std::uint32_t>(Ppid::Dcep));
@@ -299,7 +301,7 @@ TEST_F(RawPeerTest, AcknowledgesAValidOpen)
 
 TEST_F(RawPeerTest, RefusesAnOpenOnOurParity)
 {
-    open(4, DataChannelOpen::of("even", "", RELIABLE, 256).serialize());
+    open(4, DataChannelOpen::of("even", "", RELIABLE, 256).serialize().nioBuffer());
     EXPECT_TRUE(server_.opened.empty());
     EXPECT_TRUE(raw_.messages.empty());
     ASSERT_EQ(raw_.incoming_resets.size(), 1U);
@@ -309,17 +311,17 @@ TEST_F(RawPeerTest, RefusesAnOpenOnOurParity)
 TEST_F(RawPeerTest, RefusesMalformedOrUnknownOpen)
 {
     auto unknown = DataChannelOpen::of("odd", "", RELIABLE, 256).serialize();
-    unknown[1] = std::byte{0x05};
-    open(5, unknown);
-    open(7, {std::byte{0x03}, std::byte{0x00}});
+    unknown.setByte(1, 0x05);
+    open(5, unknown.nioBuffer());
+    open(7, bytes({0x03, 0x00}));
     EXPECT_TRUE(server_.opened.empty());
     EXPECT_EQ(raw_.incoming_resets.size(), 2U);
 }
 
 TEST_F(RawPeerTest, RefusesAnOpenOnAStreamInUse)
 {
-    open(1, DataChannelOpen::of("first", "", RELIABLE, 256).serialize());
-    open(1, DataChannelOpen::of("second", "", RELIABLE, 256).serialize());
+    open(1, DataChannelOpen::of("first", "", RELIABLE, 256).serialize().nioBuffer());
+    open(1, DataChannelOpen::of("second", "", RELIABLE, 256).serialize().nioBuffer());
     ASSERT_EQ(server_.opened.size(), 1U);
     EXPECT_EQ(raw_.incoming_resets.size(), 1U);
 }
@@ -335,7 +337,7 @@ TEST_F(RawPeerTest, RefusesUserDataOnAnUnopenedStream)
 
 TEST_F(RawPeerTest, ClosesChannelOnUnsupportedPpid)
 {
-    open(1, DataChannelOpen::of("chan", "", RELIABLE, 256).serialize());
+    open(1, DataChannelOpen::of("chan", "", RELIABLE, 256).serialize().nioBuffer());
     ASSERT_TRUE(peer_.send(1, static_cast<std::uint32_t>(Ppid::BinaryPartial), bufferOf("old"), {}, now_));
     pump();
     EXPECT_TRUE(server_.messages.empty());
@@ -349,9 +351,9 @@ TEST_F(RawPeerTest, ClosesChannelOnUnsupportedPpid)
 
 TEST_F(RawPeerTest, ListenerMayCloseTheChannelItIsHearingFrom)
 {
-    open(1, DataChannelOpen::of("chan", "", RELIABLE, 256).serialize());
+    open(1, DataChannelOpen::of("chan", "", RELIABLE, 256).serialize().nioBuffer());
     std::string label;
-    server_.on_message = [&](const DataChannel &channel, const LegacyByteBuf &) {
+    server_.on_message = [&](const DataChannel &channel, ByteBufView) {
         transport_.abort(now_);
         transport_.closeDataChannel(channel.stream, now_);
         label = channel.label;
@@ -366,15 +368,15 @@ TEST_F(RawPeerTest, ListenerMayCloseTheChannelItIsHearingFrom)
 
 TEST_F(RawPeerTest, ClosesChannelWhosePeerDeniesTheReset)
 {
-    open(1, DataChannelOpen::of("chan", "", RELIABLE, 256).serialize());
+    open(1, DataChannelOpen::of("chan", "", RELIABLE, 256).serialize().nioBuffer());
     ASSERT_TRUE(peer_.send(1, static_cast<std::uint32_t>(Ppid::Binary), bufferOf("x"), {}, now_));
-    const auto tag = Packet::parse(raw_.outbox.front())->header.verification_tag;
+    const auto tag = Packet::parse(Unpooled::wrappedBuffer(raw_.outbox.front()))->header.verification_tag;
     pump();
 
     transport_.closeDataChannel(1, now_);
     std::optional<std::uint32_t> sequence;
     for (const auto &packet : std::exchange(server_.outbox, {})) {
-        const auto parsed = Packet::parse(packet);
+        const auto parsed = Packet::parse(Unpooled::wrappedBuffer(packet));
         for (const auto &chunk : parsed->chunks) {
             if (chunk.type == static_cast<std::uint8_t>(ChunkType::ReConfig)) {
                 sequence = OutgoingResetRequest::parse(Tlv::parseAll(chunk.value)->front())->request_sequence;
@@ -384,23 +386,23 @@ TEST_F(RawPeerTest, ClosesChannelWhosePeerDeniesTheReset)
     ASSERT_TRUE(sequence);
     EXPECT_TRUE(server_.closed.empty());
 
-    std::vector<std::byte> fields;
-    ByteWriter fields_writer(fields);
-    fields_writer.write32(*sequence);
-    fields_writer.write32(static_cast<std::uint32_t>(ReconfigResult::Denied));
-    std::vector<std::byte> value;
-    ByteWriter(value).writeTlv(static_cast<std::uint16_t>(ParameterType::ReconfigurationResponse), fields);
-    std::vector<std::byte> buffer;
-    PacketBuilder builder(buffer, {.source_port = 5000, .destination_port = 5000, .verification_tag = tag}, 1200);
-    builder.addChunk(ChunkType::ReConfig, 0, value);
-    transport_.handlePacket(builder.build(), now_);
+    auto fields = Unpooled::buffer();
+    fields.writeInt(*sequence).writeInt(static_cast<std::uint32_t>(ReconfigResult::Denied));
+    auto value = Unpooled::buffer();
+    Tlv{.type = static_cast<std::uint16_t>(ParameterType::ReconfigurationResponse), .value = fields.slice(), .raw = {}}
+        .write(value);
+    auto packet = Unpooled::buffer();
+    CommonHeader{.source_port = 5000, .destination_port = 5000, .verification_tag = tag}.write(packet);
+    Chunk{.type = static_cast<std::uint8_t>(ChunkType::ReConfig), .flags = 0, .value = value.slice()}.write(packet);
+    Packet::seal(packet);
+    transport_.handlePacket(packet.slice(), now_);
     ASSERT_EQ(server_.closed.size(), 1U);
     EXPECT_EQ(server_.closed[0].label, "chan");
 }
 
 TEST_F(RawPeerTest, RefusesOversizedLabel)
 {
-    open(1, DataChannelOpen::of(std::string(1025, 'l'), "", RELIABLE, 256).serialize());
+    open(1, DataChannelOpen::of(std::string(1025, 'l'), "", RELIABLE, 256).serialize().nioBuffer());
     EXPECT_TRUE(server_.opened.empty());
     EXPECT_EQ(raw_.incoming_resets.size(), 1U);
 }

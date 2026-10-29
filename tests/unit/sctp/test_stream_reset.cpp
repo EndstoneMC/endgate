@@ -27,7 +27,7 @@ void connect(Network &network)
 std::vector<ReconfigResponse> responsesIn(std::span<const std::byte> packet)
 {
     std::vector<ReconfigResponse> responses;
-    const auto parsed = Packet::parse(packet);
+    const auto parsed = Packet::parse(Unpooled::wrappedBuffer(packet));
     for (const auto &chunk : parsed->chunks) {
         if (chunk.type != static_cast<std::uint8_t>(ChunkType::ReConfig)) {
             continue;
@@ -211,16 +211,16 @@ TEST(StreamReset, AnswersRepeatedAndOutOfSequenceRequests)
     ASSERT_FALSE(request.empty());
 
     network.endpoint_b.outbox.clear();
-    network.b->handlePacket(request, network.now);
+    network.b->handlePacket(Unpooled::wrappedBuffer(request), network.now);
     ASSERT_FALSE(network.endpoint_b.outbox.empty());
     auto responses = responsesIn(network.endpoint_b.outbox.back());
     ASSERT_EQ(responses.size(), 1U);
     EXPECT_EQ(responses[0].result, ReconfigResult::SuccessPerformed);
     EXPECT_EQ(network.endpoint_b.incoming_resets.size(), 1U);
 
-    auto parsed = Packet::parse(request);
+    auto parsed = Packet::parse(Unpooled::wrappedBuffer(request));
     std::vector<std::byte> forged(request.begin(), request.end());
-    const auto offset = static_cast<std::size_t>(parsed->chunks[0].value.data() - request.data()) + 4;
+    const auto offset = static_cast<std::size_t>(parsed->chunks[0].value.nioBuffer().data() - request.data()) + 4;
     forged[offset + 3] = static_cast<std::byte>(std::to_integer<std::uint8_t>(forged[offset + 3]) + 5);
     std::fill_n(forged.begin() + 8, 4, std::byte{0});
     const auto checksum = crc32c(forged);
@@ -228,7 +228,7 @@ TEST(StreamReset, AnswersRepeatedAndOutOfSequenceRequests)
         forged[8 + i] = static_cast<std::byte>(checksum >> (8 * i));
     }
     network.endpoint_b.outbox.clear();
-    network.b->handlePacket(forged, network.now);
+    network.b->handlePacket(Unpooled::wrappedBuffer(forged), network.now);
     ASSERT_FALSE(network.endpoint_b.outbox.empty());
     responses = responsesIn(network.endpoint_b.outbox.back());
     ASSERT_EQ(responses.size(), 1U);
@@ -261,7 +261,7 @@ TEST(StreamReset, FollowsARequestRetriedUnderANewSequenceNumber)
 
     const auto answer = [&](std::span<const std::byte> packet) {
         network.endpoint_b.outbox.clear();
-        network.b->handlePacket(packet, network.now);
+        network.b->handlePacket(Unpooled::wrappedBuffer(packet), network.now);
         for (const auto &sent : network.endpoint_b.outbox) {
             const auto responses = responsesIn(sent);
             if (!responses.empty()) {
@@ -274,9 +274,9 @@ TEST(StreamReset, FollowsARequestRetriedUnderANewSequenceNumber)
     };
     EXPECT_EQ(answer(request), ReconfigResult::InProgress);
 
-    const auto parsed = Packet::parse(request);
+    const auto parsed = Packet::parse(Unpooled::wrappedBuffer(request));
     auto renumbered = request;
-    const auto offset = static_cast<std::size_t>(parsed->chunks[0].value.data() - request.data()) + 4;
+    const auto offset = static_cast<std::size_t>(parsed->chunks[0].value.nioBuffer().data() - request.data()) + 4;
     renumbered[offset + 3] = static_cast<std::byte>(std::to_integer<std::uint8_t>(renumbered[offset + 3]) + 1);
     std::fill_n(renumbered.begin() + 8, 4, std::byte{0});
     const auto checksum = crc32c(renumbered);
@@ -299,7 +299,7 @@ TEST(StreamReset, ReportsOnlyStreamsThatExist)
     std::uint32_t tag = 0;
     network.filter = [&](std::span<const std::byte> packet, bool to_b) {
         if (to_b) {
-            tag = Packet::parse(packet)->header.verification_tag;
+            tag = Packet::parse(Unpooled::wrappedBuffer(packet))->header.verification_tag;
         }
         return true;
     };
@@ -317,23 +317,24 @@ TEST(StreamReset, ReportsOnlyStreamsThatExist)
     };
     network.collect();
     ASSERT_FALSE(request.empty());
-    const auto parsed = Packet::parse(request);
+    const auto parsed = Packet::parse(Unpooled::wrappedBuffer(request));
     const auto original = OutgoingResetRequest::parse(Tlv::parseAll(parsed->chunks.back().value)->front());
 
-    std::vector<std::byte> fields;
-    ByteWriter writer(fields);
-    writer.write32(original->request_sequence);
-    writer.write32(original->response_sequence);
-    writer.write32(original->last_assigned_tsn);
+    auto fields = Unpooled::buffer();
+    fields.writeInt(original->request_sequence)
+        .writeInt(original->response_sequence)
+        .writeInt(original->last_assigned_tsn);
     for (const auto stream : {5, 3, 9000, 5, 3}) {
-        writer.write16(static_cast<std::uint16_t>(stream));
+        fields.writeShort(static_cast<std::uint16_t>(stream));
     }
-    std::vector<std::byte> value;
-    ByteWriter(value).writeTlv(static_cast<std::uint16_t>(ParameterType::OutgoingSsnResetRequest), fields);
-    std::vector<std::byte> buffer;
-    PacketBuilder builder(buffer, {.source_port = 5000, .destination_port = 5000, .verification_tag = tag}, 1200);
-    builder.addChunk(ChunkType::ReConfig, 0, value);
-    network.b->handlePacket(builder.build(), network.now);
+    auto value = Unpooled::buffer();
+    Tlv{.type = static_cast<std::uint16_t>(ParameterType::OutgoingSsnResetRequest), .value = fields.slice(), .raw = {}}
+        .write(value);
+    auto packet = Unpooled::buffer();
+    CommonHeader{.source_port = 5000, .destination_port = 5000, .verification_tag = tag}.write(packet);
+    Chunk{.type = static_cast<std::uint8_t>(ChunkType::ReConfig), .flags = 0, .value = value.slice()}.write(packet);
+    Packet::seal(packet);
+    network.b->handlePacket(packet.slice(), network.now);
     ASSERT_EQ(network.endpoint_b.incoming_resets.size(), 1U);
     EXPECT_EQ(network.endpoint_b.incoming_resets[0], (Streams{3, 5}));
 }
@@ -348,7 +349,7 @@ TEST(StreamReset, GivesUpOnAPeerThatStaysInProgress)
     std::uint32_t tag = 0;
     network.filter = [&](std::span<const std::byte> packet, bool to_b) {
         if (!to_b) {
-            tag = Packet::parse(packet)->header.verification_tag;
+            tag = Packet::parse(Unpooled::wrappedBuffer(packet))->header.verification_tag;
         }
         return true;
     };
@@ -361,7 +362,7 @@ TEST(StreamReset, GivesUpOnAPeerThatStaysInProgress)
         if (!to_b) {
             return true;
         }
-        for (const auto &chunk : Packet::parse(packet)->chunks) {
+        for (const auto &chunk : Packet::parse(Unpooled::wrappedBuffer(packet))->chunks) {
             if (chunk.type == static_cast<std::uint8_t>(ChunkType::ReConfig)) {
                 sequences.push_back(OutgoingResetRequest::parse(Tlv::parseAll(chunk.value)->front())->request_sequence);
             }
@@ -372,16 +373,18 @@ TEST(StreamReset, GivesUpOnAPeerThatStaysInProgress)
     ASSERT_TRUE(network.a->resetStreams(streams, network.now));
     for (auto answer = 0; answer < 6 && network.endpoint_a.outgoing_resets.empty(); ++answer) {
         ASSERT_TRUE(network.runUntil([&] { return sequences.size() > static_cast<std::size_t>(answer); }, 120s));
-        std::vector<std::byte> fields;
-        ByteWriter fields_writer(fields);
-        fields_writer.write32(sequences.back());
-        fields_writer.write32(static_cast<std::uint32_t>(ReconfigResult::InProgress));
-        std::vector<std::byte> value;
-        ByteWriter(value).writeTlv(static_cast<std::uint16_t>(ParameterType::ReconfigurationResponse), fields);
-        std::vector<std::byte> buffer;
-        PacketBuilder builder(buffer, {.source_port = 5000, .destination_port = 5000, .verification_tag = tag}, 1200);
-        builder.addChunk(ChunkType::ReConfig, 0, value);
-        network.a->handlePacket(builder.build(), network.now);
+        auto fields = Unpooled::buffer();
+        fields.writeInt(sequences.back()).writeInt(static_cast<std::uint32_t>(ReconfigResult::InProgress));
+        auto value = Unpooled::buffer();
+        Tlv{.type = static_cast<std::uint16_t>(ParameterType::ReconfigurationResponse),
+            .value = fields.slice(),
+            .raw = {}}
+            .write(value);
+        auto packet = Unpooled::buffer();
+        CommonHeader{.source_port = 5000, .destination_port = 5000, .verification_tag = tag}.write(packet);
+        Chunk{.type = static_cast<std::uint8_t>(ChunkType::ReConfig), .flags = 0, .value = value.slice()}.write(packet);
+        Packet::seal(packet);
+        network.a->handlePacket(packet.slice(), network.now);
     }
     ASSERT_EQ(network.endpoint_a.outgoing_resets.size(), 1U);
     EXPECT_FALSE(network.endpoint_a.outgoing_resets[0].second);

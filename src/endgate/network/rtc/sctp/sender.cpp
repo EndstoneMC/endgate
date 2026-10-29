@@ -21,18 +21,19 @@ Sender::Sender(const Config &config, std::uint32_t initial_tsn, std::uint32_t pe
 {
 }
 
-bool Sender::send(std::uint16_t stream_id, std::uint32_t ppid, LegacyByteBuf payload, const SendOptions &options,
+bool Sender::send(std::uint16_t stream_id, std::uint32_t ppid, ByteBuf payload, const SendOptions &options,
                   Clock::time_point now)
 {
     constexpr std::size_t message_overhead = 64;
-    if (payload.empty() || buffered_ + message_overhead * (queued_ + 1) + payload.length() > config_.max_buffered) {
+    if (!payload.isReadable() ||
+        buffered_ + message_overhead * (queued_ + 1) + payload.readableBytes() > config_.max_buffered) {
         return false;
     }
     auto &stream = streams_[stream_id];
     if (stream.reset != Reset::None) {
         return false;
     }
-    const auto length = payload.length();
+    const auto length = payload.readableBytes();
     stream.queue.push_back({
         .ppid = ppid,
         .payload = std::move(payload),
@@ -93,18 +94,18 @@ Sender::SackOutcome Sender::handleSack(const SackChunk &sack, Clock::time_point 
         auto &item = outstanding_.front();
         ++cumulative_ack_;
         if (item.state == State::InFlight || item.state == State::Lost) {
-            bytes_acked += chunkSize(item.payload.length());
+            bytes_acked += chunkSize(item.payload.readableBytes());
             highest_newly_acked = cumulative_ack_;
         }
         leaveFlight(item);
-        held_ -= item.payload.length();
+        held_ -= item.payload.readableBytes();
         outstanding_.pop_front();
     }
     for (const auto &[first, last] : acked) {
         for (auto tsn = std::max(first, cumulative_ack_ + 1); tsn <= last; ++tsn) {
             auto &item = outstanding_[tsn - cumulative_ack_ - 1];
             if (item.state == State::InFlight || item.state == State::Lost) {
-                bytes_acked += chunkSize(item.payload.length());
+                bytes_acked += chunkSize(item.payload.readableBytes());
                 highest_newly_acked = tsn;
                 leaveFlight(item);
                 item.state = State::Acked;
@@ -198,7 +199,7 @@ bool Sender::handleTimeout(Clock::time_point now)
     return true;
 }
 
-bool Sender::addFastRetransmit(PacketBuilder &builder, Clock::time_point now)
+bool Sender::addFastRetransmit(ByteBuf &packet, Clock::time_point now)
 {
     fast_retransmit_pending_ = false;
     auto added = false;
@@ -214,10 +215,10 @@ bool Sender::addFastRetransmit(PacketBuilder &builder, Clock::time_point now)
             abandon(index);
             continue;
         }
-        if (chunkSize(item.payload.length()) > builder.remaining()) {
+        if (chunkSize(item.payload.readableBytes()) > packet.maxWritableBytes()) {
             continue;
         }
-        retransmit(index, builder, now);
+        retransmit(index, packet, now);
         restart = restart || index == 0;
         added = true;
     }
@@ -227,7 +228,7 @@ bool Sender::addFastRetransmit(PacketBuilder &builder, Clock::time_point now)
     return added;
 }
 
-bool Sender::addData(PacketBuilder &builder, Clock::time_point now)
+bool Sender::addData(ByteBuf &packet, Clock::time_point now)
 {
     auto added = false;
     for (std::size_t index = 0; lost_ > 0 && index < outstanding_.size() && flight_ < cwnd_; ++index) {
@@ -239,10 +240,10 @@ bool Sender::addData(PacketBuilder &builder, Clock::time_point now)
             abandon(index);
             continue;
         }
-        if (chunkSize(item.payload.length()) > builder.remaining()) {
+        if (chunkSize(item.payload.readableBytes()) > packet.maxWritableBytes()) {
             break;
         }
-        retransmit(index, builder, now);
+        retransmit(index, packet, now);
         added = true;
     }
 
@@ -251,7 +252,7 @@ bool Sender::addData(PacketBuilder &builder, Clock::time_point now)
     constexpr std::size_t max_outstanding = 65535;
     while (lost_ == 0 && flight_ < cwnd_ && !ready_.empty() && (peer_window_ > 0 || flight_ == 0) &&
            outstanding_.size() < max_outstanding && held_ < config_.max_buffered &&
-           builder.remaining() > DataChunk::HEADER_SIZE) {
+           packet.maxWritableBytes() > DataChunk::HEADER_SIZE) {
         const auto after = ready_.upper_bound(last_stream_);
         const auto stream_id = current_.value_or(after != ready_.end() ? *after : *ready_.begin());
         auto &stream = streams_[stream_id];
@@ -261,8 +262,8 @@ bool Sender::addData(PacketBuilder &builder, Clock::time_point now)
             continue;
         }
 
-        const auto remaining = message.payload.length() - message.offset;
-        auto fragment = std::min(remaining, builder.remaining() - DataChunk::HEADER_SIZE);
+        const auto remaining = message.payload.readableBytes() - message.offset;
+        auto fragment = std::min(remaining, packet.maxWritableBytes() - DataChunk::HEADER_SIZE);
         if (flight_ > 0) {
             fragment = std::min(fragment, peer_window_);
         }
@@ -277,14 +278,14 @@ bool Sender::addData(PacketBuilder &builder, Clock::time_point now)
                                                      (fragment == remaining ? DataChunk::END_FLAG : 0U) |
                                                      (message.unordered ? DataChunk::UNORDERED_FLAG : 0U) |
                                                      (cwnd_ < 10 * config_.mtu ? DataChunk::IMMEDIATE_FLAG : 0U));
-        auto payload = message.payload.retainedSlice(message.offset, fragment);
-        builder.addData({.tsn = static_cast<std::uint32_t>(nextTsn()),
-                         .stream = stream_id,
-                         .ssn = message.ssn,
-                         .ppid = message.ppid,
-                         .flags = flags,
-                         .payload = {}},
-                        payload);
+        auto payload = message.payload.copy(message.offset, fragment);
+        DataChunk{.tsn = static_cast<std::uint32_t>(nextTsn()),
+                  .stream = stream_id,
+                  .ssn = message.ssn,
+                  .ppid = message.ppid,
+                  .flags = flags,
+                  .payload = payload.slice()}
+            .write(packet);
         outstanding_.push_back({
             .stream = stream_id,
             .ssn = message.ssn,
@@ -305,7 +306,7 @@ bool Sender::addData(PacketBuilder &builder, Clock::time_point now)
         buffered_ -= fragment;
         message.offset += fragment;
         current_ = stream_id;
-        if (message.offset == message.payload.length()) {
+        if (message.offset == message.payload.readableBytes()) {
             stream.queue.pop_front();
             --queued_;
             current_.reset();
@@ -446,32 +447,32 @@ bool Sender::exhausted(const Outstanding &item, Clock::time_point now) const
 void Sender::leaveFlight(Outstanding &item)
 {
     if (item.state == State::InFlight) {
-        flight_ -= chunkSize(item.payload.length());
-        flight_payload_ -= item.payload.length();
+        flight_ -= chunkSize(item.payload.readableBytes());
+        flight_payload_ -= item.payload.readableBytes();
     }
     else if (item.state == State::Lost) {
         --lost_;
     }
 }
 
-void Sender::retransmit(std::size_t index, PacketBuilder &builder, Clock::time_point now)
+void Sender::retransmit(std::size_t index, ByteBuf &packet, Clock::time_point now)
 {
     auto &item = outstanding_[index];
-    builder.addData({.tsn = static_cast<std::uint32_t>(cumulative_ack_ + 1 + index),
-                     .stream = item.stream,
-                     .ssn = item.ssn,
-                     .ppid = item.ppid,
-                     .flags = item.flags,
-                     .payload = {}},
-                    item.payload);
+    DataChunk{.tsn = static_cast<std::uint32_t>(cumulative_ack_ + 1 + index),
+              .stream = item.stream,
+              .ssn = item.ssn,
+              .ppid = item.ppid,
+              .flags = item.flags,
+              .payload = item.payload.slice()}
+        .write(packet);
     --lost_;
     item.state = State::InFlight;
     item.sent = now;
     item.boundary = nextTsn();
     item.misses = 0;
     ++item.transmissions;
-    flight_ += chunkSize(item.payload.length());
-    flight_payload_ += item.payload.length();
+    flight_ += chunkSize(item.payload.readableBytes());
+    flight_payload_ += item.payload.readableBytes();
 }
 
 void Sender::abandon(std::size_t index)
@@ -499,7 +500,7 @@ void Sender::abandon(std::size_t index)
 void Sender::dropFront(std::uint16_t stream_id, OutgoingStream &stream)
 {
     const auto &message = stream.queue.front();
-    const auto unsent = message.payload.length() - message.offset;
+    const auto unsent = message.payload.readableBytes() - message.offset;
     stream.buffered -= unsent;
     buffered_ -= unsent;
     stream.queue.pop_front();

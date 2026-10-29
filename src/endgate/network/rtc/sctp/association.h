@@ -10,7 +10,7 @@
 #include <variant>
 #include <vector>
 
-#include "endgate/network/buffer.h"
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/rtc/sctp/cookie.h"
 #include "endgate/network/rtc/sctp/packet.h"
 #include "endgate/network/rtc/sctp/receiver.h"
@@ -81,11 +81,11 @@ public:
     public:
         virtual ~Listener() = default;
 
-        virtual void sendPacket(std::span<const std::byte> packet) = 0;
+        virtual void sendPacket(ByteBufView packet) = 0;
         virtual void onEstablished() = 0;
         virtual void onRestarted() = 0;
         virtual void onClosed(CloseReason reason) = 0;
-        virtual void onMessage(Message message) = 0;
+        virtual void onMessage(std::uint16_t stream, std::uint32_t ppid, bool unordered, ByteBufView payload) = 0;
         virtual void onIncomingStreamsReset(std::span<const std::uint16_t> streams) = 0;
         virtual void onOutgoingStreamsReset(std::span<const std::uint16_t> streams, bool performed) = 0;
     };
@@ -96,11 +96,11 @@ public:
      * @see RFC 9260 section 5.1
      */
     void connect(Clock::time_point now);
-    void handlePacket(std::span<const std::byte> data, Clock::time_point now);
+    void handlePacket(ByteBufView data, Clock::time_point now);
     void handleTimeout(Clock::time_point now);
     [[nodiscard]] std::optional<Clock::time_point> nextTimeout() const;
 
-    bool send(std::uint16_t stream, std::uint32_t ppid, LegacyByteBuf payload, const Sender::SendOptions &options,
+    bool send(std::uint16_t stream, std::uint32_t ppid, ByteBuf payload, const Sender::SendOptions &options,
               Clock::time_point now);
 
     /**
@@ -171,7 +171,7 @@ private:
     struct Control {
         ChunkType type;
         std::uint8_t flags;
-        std::vector<std::byte> value;
+        ByteBuf value;
     };
 
     struct Retry {
@@ -195,13 +195,13 @@ private:
     using Event = std::variant<Established, Restarted, Closed, Message, IncomingReset, OutgoingReset>;
 
     struct InitParameters {
-        std::optional<std::span<const std::byte>> state_cookie;
+        std::optional<ByteBufView> state_cookie;
         Capabilities capabilities;
-        std::vector<std::span<const std::byte>> unrecognized;
+        std::vector<ByteBufView> unrecognized;
     };
 
     static InitParameters readParameters(std::span<const Tlv> parameters);
-    static void writeCapabilities(ByteWriter &writer);
+    static void writeCapabilities(ByteBuf &out);
 
     void dispatch(const Packet &packet, Clock::time_point now);
     [[nodiscard]] bool verify(const Packet &packet) const;
@@ -216,7 +216,7 @@ private:
     void handleShutdownAck(const Packet &packet);
     void handleForwardTsn(const Chunk &chunk, std::vector<Message> &delivered);
     void handleReconfig(const Chunk &chunk, Clock::time_point now);
-    bool handleUnknown(const Chunk &chunk, std::vector<std::byte> &unrecognized) const;
+    bool handleUnknown(const Chunk &chunk, ByteBuf &unrecognized) const;
 
     void establish(const StateCookie &cookie, Clock::time_point now);
     void becomeEstablished(Clock::time_point now);
@@ -225,16 +225,15 @@ private:
                 std::uint16_t peer_inbound, Capabilities capabilities);
     void sendInit();
     void sendCookieEcho();
-    void sendStandalone(std::uint32_t verification_tag, ChunkType type, std::uint8_t flags,
-                        std::span<const std::byte> value);
-    void queue(ChunkType type, std::uint8_t flags, std::vector<std::byte> value);
+    void sendStandalone(std::uint32_t verification_tag, ChunkType type, std::uint8_t flags, const ByteBuf &value);
+    void queue(ChunkType type, std::uint8_t flags, ByteBuf value);
     void queueResetRequest();
     void transmit(Clock::time_point now);
     void maybeFinishShutdown(Clock::time_point now);
     void sendShutdown(Clock::time_point now);
     void sendShutdownAck(Clock::time_point now);
     void countError();
-    void fail(CauseCode code, CloseReason reason, std::span<const std::byte> value = {});
+    void fail(CauseCode code, CloseReason reason, ByteBufView value = {});
     void close(CloseReason reason);
     void deliver();
 
@@ -250,10 +249,9 @@ private:
     std::uint32_t init_tsn_{0};
     std::optional<Retry> t1_;
     std::optional<Retry> t2_;
-    std::vector<std::byte> cookie_echo_;
+    ByteBuf cookie_echo_;
     std::optional<Tcb> tcb_;
     std::deque<Control> control_;
-    std::vector<std::byte> buffer_;
     std::deque<Event> events_;
     bool delivering_{false};
     std::size_t dropped_packets_{0};

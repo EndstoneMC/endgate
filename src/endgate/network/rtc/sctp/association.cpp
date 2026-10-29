@@ -13,10 +13,12 @@ namespace {
 
 constexpr std::uint8_t REFLECTED_TAG = 0x01;
 
-std::vector<std::byte> cause(CauseCode code, std::span<const std::byte> value = {})
+constexpr std::size_t MAX_STANDALONE_SIZE = std::numeric_limits<std::uint16_t>::max() & ~std::size_t{3};
+
+ByteBuf cause(CauseCode code, ByteBufView value = {})
 {
-    std::vector<std::byte> out;
-    ByteWriter(out).writeTlv(static_cast<std::uint16_t>(code), value);
+    auto out = Unpooled::buffer(Tlv::HEADER_SIZE + value.readableBytes());
+    Tlv{.type = static_cast<std::uint16_t>(code), .value = value, .raw = {}}.write(out);
     return out;
 }
 
@@ -67,7 +69,7 @@ void Association::connect(Clock::time_point now)
     deliver();
 }
 
-void Association::handlePacket(std::span<const std::byte> data, Clock::time_point now)
+void Association::handlePacket(ByteBufView data, Clock::time_point now)
 {
     const auto packet = terminated_ ? std::nullopt : Packet::parse(data);
     if (!packet || packet->header.destination_port != config_.local_port ||
@@ -120,8 +122,8 @@ void Association::handleTimeout(Clock::time_point now)
             queue(ChunkType::ShutdownAck, 0, {});
         }
         else {
-            std::vector<std::byte> value;
-            ByteWriter(value).write32(tcb_->receiver.cumulativeTsn());
+            auto value = Unpooled::buffer(4);
+            value.writeInt(tcb_->receiver.cumulativeTsn());
             queue(ChunkType::Shutdown, 0, std::move(value));
         }
     }
@@ -139,12 +141,11 @@ void Association::handleTimeout(Clock::time_point now)
         auto &tcb = *tcb_;
         if (!tcb.heartbeat_timeout && state_ == State::Established) {
             tcb.heartbeat_nonce = random<std::uint64_t>();
-            std::vector<std::byte> info;
-            ByteWriter info_writer(info);
-            info_writer.write64(static_cast<std::uint64_t>(now.time_since_epoch().count()));
-            info_writer.write64(tcb.heartbeat_nonce);
-            std::vector<std::byte> value;
-            ByteWriter(value).writeTlv(static_cast<std::uint16_t>(ParameterType::HeartbeatInfo), info);
+            auto info = Unpooled::buffer(16);
+            info.writeLong(static_cast<std::uint64_t>(now.time_since_epoch().count())).writeLong(tcb.heartbeat_nonce);
+            auto value = Unpooled::buffer(Tlv::HEADER_SIZE + info.readableBytes());
+            Tlv{.type = static_cast<std::uint16_t>(ParameterType::HeartbeatInfo), .value = info.slice(), .raw = {}}
+                .write(value);
             queue(ChunkType::Heartbeat, 0, std::move(value));
             tcb.heartbeat_timeout = now + tcb.sender.rto();
         }
@@ -184,8 +185,8 @@ std::optional<Association::Clock::time_point> Association::nextTimeout() const
     return next;
 }
 
-bool Association::send(std::uint16_t stream, std::uint32_t ppid, LegacyByteBuf payload,
-                       const Sender::SendOptions &options, Clock::time_point now)
+bool Association::send(std::uint16_t stream, std::uint32_t ppid, ByteBuf payload, const Sender::SendOptions &options,
+                       Clock::time_point now)
 {
     if (!tcb_ || state_ != State::Established || stream >= tcb_->outbound_streams ||
         !tcb_->sender.send(stream, ppid, std::move(payload), options, now)) {
@@ -259,9 +260,10 @@ Association::InitParameters Association::readParameters(std::span<const Tlv> par
             result.capabilities.partial_reliability = true;
             continue;
         case ParameterType::SupportedExtensions:
-            for (const auto type : parameter.value) {
-                result.capabilities.partial_reliability |= type == std::byte{0xC0};
-                result.capabilities.reconfig |= type == std::byte{0x82};
+            for (auto extensions = parameter.value; extensions.isReadable();) {
+                const auto type = extensions.readUnsignedByte();
+                result.capabilities.partial_reliability |= type == 0xC0;
+                result.capabilities.reconfig |= type == 0x82;
             }
             continue;
         case ParameterType::Ipv4Address:
@@ -284,12 +286,15 @@ Association::InitParameters Association::readParameters(std::span<const Tlv> par
     return result;
 }
 
-void Association::writeCapabilities(ByteWriter &writer)
+void Association::writeCapabilities(ByteBuf &out)
 {
     constexpr std::array extensions{std::byte{static_cast<std::uint8_t>(ChunkType::ReConfig)},
                                     std::byte{static_cast<std::uint8_t>(ChunkType::ForwardTsn)}};
-    writer.writeTlv(static_cast<std::uint16_t>(ParameterType::ForwardTsnSupported), {});
-    writer.writeTlv(static_cast<std::uint16_t>(ParameterType::SupportedExtensions), extensions);
+    Tlv{.type = static_cast<std::uint16_t>(ParameterType::ForwardTsnSupported), .value = {}, .raw = {}}.write(out);
+    Tlv{.type = static_cast<std::uint16_t>(ParameterType::SupportedExtensions),
+        .value = Unpooled::wrappedBuffer(extensions),
+        .raw = {}}
+        .write(out);
 }
 
 bool Association::verify(const Packet &packet) const
@@ -330,7 +335,7 @@ bool Association::verify(const Packet &packet) const
 void Association::dispatch(const Packet &packet, Clock::time_point now)
 {
     std::vector<Message> delivered;
-    std::vector<std::byte> unrecognized;
+    ByteBuf unrecognized;
     auto data_seen = false;
     const auto cookie_first = packet.chunks.front().type == static_cast<std::uint8_t>(ChunkType::CookieEcho);
     const auto last_sack =
@@ -359,8 +364,8 @@ void Association::dispatch(const Packet &packet, Clock::time_point now)
             }
             break;
         case ChunkType::Heartbeat:
-            if (tcb_ && CommonHeader::SIZE + Chunk::HEADER_SIZE + chunk.value.size() <= config_.mtu) {
-                queue(ChunkType::HeartbeatAck, 0, {chunk.value.begin(), chunk.value.end()});
+            if (tcb_ && CommonHeader::SIZE + Chunk::HEADER_SIZE + chunk.value.readableBytes() <= config_.mtu) {
+                queue(ChunkType::HeartbeatAck, 0, chunk.value.copy());
             }
             break;
         case ChunkType::HeartbeatAck:
@@ -373,7 +378,7 @@ void Association::dispatch(const Packet &packet, Clock::time_point now)
             stop = true;
             break;
         case ChunkType::Shutdown:
-            if (chunk.value.size() == 4) {
+            if (chunk.value.readableBytes() == 4) {
                 handleShutdown(now);
             }
             break;
@@ -432,7 +437,7 @@ void Association::dispatch(const Packet &packet, Clock::time_point now)
         }
     }
 
-    if (!unrecognized.empty() && tcb_) {
+    if (unrecognized.isReadable() && tcb_) {
         queue(ChunkType::Error, 0, std::move(unrecognized));
     }
     if (data_seen && state_ == State::ShutdownSent) {
@@ -492,33 +497,35 @@ void Association::handleInit(const Chunk &chunk, Clock::time_point now)
         .peer_supports_forward_tsn = parameters.capabilities.partial_reliability,
         .peer_supports_reconfig = parameters.capabilities.reconfig,
     };
-    std::vector<std::byte> value;
-    ByteWriter writer(value);
-    writer.writeTlv(static_cast<std::uint16_t>(ParameterType::StateCookie), cookie.seal(cookie_key_, now));
-    writeCapabilities(writer);
-    for (const auto unrecognized : parameters.unrecognized) {
-        if (CommonHeader::SIZE + Chunk::HEADER_SIZE + 16 + padded(value.size()) + Tlv::HEADER_SIZE +
-                unrecognized.size() >
+    const auto sealed = cookie.seal(cookie_key_, now);
+    auto value = Unpooled::buffer(Tlv::HEADER_SIZE + sealed.readableBytes() + 16);
+    Tlv{.type = static_cast<std::uint16_t>(ParameterType::StateCookie), .value = sealed.slice(), .raw = {}}.write(
+        value);
+    writeCapabilities(value);
+    for (const auto &unrecognized : parameters.unrecognized) {
+        if (CommonHeader::SIZE + Chunk::HEADER_SIZE + 16 + padded(value.writerIndex()) + Tlv::HEADER_SIZE +
+                unrecognized.readableBytes() >
             config_.mtu) {
             break;
         }
-        writer.writeTlv(static_cast<std::uint16_t>(ParameterType::UnrecognizedParameter), unrecognized);
+        Tlv{.type = static_cast<std::uint16_t>(ParameterType::UnrecognizedParameter), .value = unrecognized, .raw = {}}
+            .write(value);
     }
 
-    PacketBuilder builder(buffer_,
-                          {.source_port = config_.local_port,
-                           .destination_port = config_.remote_port,
-                           .verification_tag = init->initiate_tag},
-                          std::numeric_limits<std::uint16_t>::max());
-    builder.addInit(ChunkType::InitAck,
-                    {.initiate_tag = local_tag,
-                     .a_rwnd = static_cast<std::uint32_t>(config_.receive_window),
-                     .outbound_streams = config_.streams,
-                     .inbound_streams = config_.streams,
-                     .initial_tsn = local_tsn,
-                     .parameters = {}},
-                    value);
-    listener_.sendPacket(builder.build());
+    auto packet = Unpooled::buffer(std::min(config_.mtu, MAX_STANDALONE_SIZE), MAX_STANDALONE_SIZE);
+    CommonHeader{.source_port = config_.local_port,
+                 .destination_port = config_.remote_port,
+                 .verification_tag = init->initiate_tag}
+        .write(packet);
+    InitChunk{.initiate_tag = local_tag,
+              .a_rwnd = static_cast<std::uint32_t>(config_.receive_window),
+              .outbound_streams = config_.streams,
+              .inbound_streams = config_.streams,
+              .initial_tsn = local_tsn,
+              .parameters = {}}
+        .write(packet, ChunkType::InitAck, value.slice());
+    Packet::seal(packet);
+    listener_.sendPacket(packet.slice());
 }
 
 void Association::handleInitAck(const Chunk &chunk, Clock::time_point now)
@@ -534,21 +541,21 @@ void Association::handleInitAck(const Chunk &chunk, Clock::time_point now)
     const auto parameters = readParameters(init_ack->parameters);
     if (init_ack->initiate_tag == 0 || init_ack->outbound_streams == 0 || init_ack->inbound_streams == 0 ||
         !parameters.state_cookie ||
-        parameters.state_cookie->size() + CommonHeader::SIZE + Chunk::HEADER_SIZE > config_.mtu) {
+        parameters.state_cookie->readableBytes() + CommonHeader::SIZE + Chunk::HEADER_SIZE > config_.mtu) {
         if (init_ack->initiate_tag != 0) {
             sendStandalone(init_ack->initiate_tag, ChunkType::Abort, 0,
-                           parameters.state_cookie
-                               ? cause(CauseCode::InvalidMandatoryParameter)
-                               : cause(CauseCode::MissingMandatoryParameter,
-                                       std::array<std::byte, 6>{std::byte{0}, std::byte{0}, std::byte{0}, std::byte{1},
-                                                                std::byte{0}, std::byte{7}}));
+                           parameters.state_cookie ? cause(CauseCode::InvalidMandatoryParameter)
+                                                   : cause(CauseCode::MissingMandatoryParameter,
+                                                           Unpooled::wrappedBuffer(std::array<std::byte, 6>{
+                                                               std::byte{0}, std::byte{0}, std::byte{0}, std::byte{1},
+                                                               std::byte{0}, std::byte{7}})));
         }
         close(CloseReason::ProtocolViolation);
         return;
     }
     tcb_.emplace(makeTcb(init_tag_, init_tsn_, init_ack->initiate_tag, init_ack->initial_tsn, init_ack->a_rwnd,
                          init_ack->outbound_streams, init_ack->inbound_streams, parameters.capabilities));
-    cookie_echo_.assign(parameters.state_cookie->begin(), parameters.state_cookie->end());
+    cookie_echo_ = parameters.state_cookie->copy();
     state_ = State::CookieEchoed;
     t1_ = Retry{.at = now + config_.init_timeout, .backoff = config_.init_timeout, .count = 0};
     sendCookieEcho();
@@ -563,12 +570,12 @@ bool Association::handleCookieEcho(const Packet &packet, const Chunk &chunk, Clo
     }
     const auto &cookie = opened->cookie;
     const auto stale = [&] {
-        std::vector<std::byte> staleness;
         const auto excess =
             std::chrono::duration_cast<std::chrono::microseconds>(opened->age - config_.cookie_lifetime);
-        ByteWriter(staleness).write32(static_cast<std::uint32_t>(
+        auto staleness = Unpooled::buffer(4);
+        staleness.writeInt(static_cast<std::uint32_t>(
             std::min<std::int64_t>(excess.count(), std::numeric_limits<std::uint32_t>::max())));
-        sendStandalone(cookie.peer_tag, ChunkType::Error, 0, cause(CauseCode::StaleCookie, staleness));
+        sendStandalone(cookie.peer_tag, ChunkType::Error, 0, cause(CauseCode::StaleCookie, staleness.slice()));
         return false;
     };
 
@@ -588,14 +595,18 @@ bool Association::handleCookieEcho(const Packet &packet, const Chunk &chunk, Clo
     }
     if (!local_matches && !peer_matches && cookie.tie_tag != 0 && cookie.tie_tag == tcb_->tie_tag) {
         if (state_ == State::ShutdownAckSent) {
-            PacketBuilder builder(buffer_,
-                                  {.source_port = config_.local_port,
-                                   .destination_port = config_.remote_port,
-                                   .verification_tag = cookie.peer_tag},
-                                  config_.mtu);
-            builder.addChunk(ChunkType::ShutdownAck, 0, {});
-            builder.addChunk(ChunkType::Error, 0, cause(CauseCode::CookieReceivedWhileShuttingDown));
-            listener_.sendPacket(builder.build());
+            const auto shutting_down = cause(CauseCode::CookieReceivedWhileShuttingDown);
+            const auto limit = config_.mtu & ~std::size_t{3};
+            auto packet = Unpooled::buffer(limit, limit);
+            CommonHeader{.source_port = config_.local_port,
+                         .destination_port = config_.remote_port,
+                         .verification_tag = cookie.peer_tag}
+                .write(packet);
+            Chunk{.type = static_cast<std::uint8_t>(ChunkType::ShutdownAck), .flags = 0, .value = {}}.write(packet);
+            Chunk{.type = static_cast<std::uint8_t>(ChunkType::Error), .flags = 0, .value = shutting_down.slice()}
+                .write(packet);
+            Packet::seal(packet);
+            listener_.sendPacket(packet.slice());
             return false;
         }
         control_.clear();
@@ -632,22 +643,20 @@ void Association::handleData(const Chunk &chunk, std::vector<Message> &delivered
         ++dropped_packets_;
         return;
     }
-    if (header->payload.empty()) {
-        std::vector<std::byte> tsn;
-        ByteWriter(tsn).write32(header->tsn);
-        fail(CauseCode::NoUserData, CloseReason::ProtocolViolation, tsn);
+    if (!header->payload.isReadable()) {
+        auto tsn = Unpooled::buffer(4);
+        tsn.writeInt(header->tsn);
+        fail(CauseCode::NoUserData, CloseReason::ProtocolViolation, tsn.slice());
         return;
     }
     if (header->stream >= tcb_->inbound_streams) {
         tcb_->receiver.acknowledge(*header);
-        std::vector<std::byte> stream;
-        ByteWriter stream_writer(stream);
-        stream_writer.write16(header->stream);
-        stream_writer.write16(0);
-        queue(ChunkType::Error, 0, cause(CauseCode::InvalidStreamIdentifier, stream));
+        auto stream = Unpooled::buffer(4);
+        stream.writeShort(header->stream).writeShort(0);
+        queue(ChunkType::Error, 0, cause(CauseCode::InvalidStreamIdentifier, stream.slice()));
         return;
     }
-    tcb_->receiver.receive(*header, LegacyByteBuf::copyBuffer(header->payload), delivered);
+    tcb_->receiver.receive(*header, delivered);
 }
 
 void Association::handleSack(const Chunk &chunk, Clock::time_point now)
@@ -677,16 +686,12 @@ void Association::handleHeartbeatAck(const Chunk &chunk, Clock::time_point now)
     const auto parameters = Tlv::parseAll(chunk.value);
     if (!parameters || parameters->size() != 1 ||
         (*parameters)[0].type != static_cast<std::uint16_t>(ParameterType::HeartbeatInfo) ||
-        (*parameters)[0].value.size() != 16) {
+        (*parameters)[0].value.readableBytes() != 16) {
         return;
     }
-    const auto info = (*parameters)[0].value;
-    std::uint64_t sent = 0;
-    std::uint64_t nonce = 0;
-    for (std::size_t i = 0; i < 8; ++i) {
-        sent = sent << 8U | std::to_integer<std::uint64_t>(info[i]);
-        nonce = nonce << 8U | std::to_integer<std::uint64_t>(info[8 + i]);
-    }
+    auto info = (*parameters)[0].value;
+    const auto sent = static_cast<std::uint64_t>(info.readLong());
+    const auto nonce = static_cast<std::uint64_t>(info.readLong());
     if (nonce != tcb_->heartbeat_nonce) {
         return;
     }
@@ -764,15 +769,15 @@ void Association::handleReconfig(const Chunk &chunk, Clock::time_point now)
         return;
     }
 
-    std::vector<std::byte> responses;
-    ByteWriter writer(responses);
+    ByteBuf responses;
     auto request_seen = false;
     const auto respond = [&](std::uint32_t sequence, ReconfigResult result) {
-        std::vector<std::byte> value;
-        ByteWriter value_writer(value);
-        value_writer.write32(sequence);
-        value_writer.write32(static_cast<std::uint32_t>(result));
-        writer.writeTlv(static_cast<std::uint16_t>(ParameterType::ReconfigurationResponse), value);
+        auto value = Unpooled::buffer(8);
+        value.writeInt(sequence).writeInt(static_cast<std::uint32_t>(result));
+        Tlv{.type = static_cast<std::uint16_t>(ParameterType::ReconfigurationResponse),
+            .value = value.slice(),
+            .raw = {}}
+            .write(responses);
     };
     const auto evaluate = [&](std::uint32_t sequence, const auto &perform) {
         request_seen = true;
@@ -823,13 +828,9 @@ void Association::handleReconfig(const Chunk &chunk, Clock::time_point now)
         case ParameterType::SsnTsnResetRequest:
         case ParameterType::AddOutgoingStreamsRequest:
         case ParameterType::AddIncomingStreamsRequest:
-            if (parameter.value.size() >= 4) {
-                const auto sequence =
-                    static_cast<std::uint32_t>(std::to_integer<std::uint32_t>(parameter.value[0]) << 24U |
-                                               std::to_integer<std::uint32_t>(parameter.value[1]) << 16U |
-                                               std::to_integer<std::uint32_t>(parameter.value[2]) << 8U |
-                                               std::to_integer<std::uint32_t>(parameter.value[3]));
-                evaluate(sequence, [] { return ReconfigResult::Denied; });
+            if (parameter.value.isReadable(4)) {
+                auto value = parameter.value;
+                evaluate(value.readUnsignedInt(), [] { return ReconfigResult::Denied; });
             }
             break;
         case ParameterType::ReconfigurationResponse: {
@@ -858,7 +859,7 @@ void Association::handleReconfig(const Chunk &chunk, Clock::time_point now)
         }
     }
 
-    if (!responses.empty()) {
+    if (responses.isReadable()) {
         queue(ChunkType::ReConfig, 0, std::move(responses));
     }
     if (request_seen) {
@@ -866,19 +867,20 @@ void Association::handleReconfig(const Chunk &chunk, Clock::time_point now)
     }
 }
 
-bool Association::handleUnknown(const Chunk &chunk, std::vector<std::byte> &unrecognized) const
+bool Association::handleUnknown(const Chunk &chunk, ByteBuf &unrecognized) const
 {
     const auto action = chunk.type >> 6U;
-    if ((action == 1 || action == 3) && CommonHeader::SIZE + 2 * Chunk::HEADER_SIZE + padded(unrecognized.size()) +
-                                                Tlv::HEADER_SIZE + Chunk::HEADER_SIZE + chunk.value.size() <=
+    if ((action == 1 || action == 3) && CommonHeader::SIZE + 2 * Chunk::HEADER_SIZE +
+                                                padded(unrecognized.writerIndex()) + Tlv::HEADER_SIZE +
+                                                Chunk::HEADER_SIZE + chunk.value.readableBytes() <=
                                             config_.mtu) {
-        std::vector<std::byte> original;
-        ByteWriter original_writer(original);
-        original_writer.write8(chunk.type);
-        original_writer.write8(chunk.flags);
-        original_writer.write16(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + chunk.value.size()));
-        original_writer.write(chunk.value);
-        ByteWriter(unrecognized).writeTlv(static_cast<std::uint16_t>(CauseCode::UnrecognizedChunkType), original);
+        auto original = Unpooled::buffer(Chunk::HEADER_SIZE + chunk.value.readableBytes());
+        original.writeByte(chunk.type)
+            .writeByte(chunk.flags)
+            .writeShort(static_cast<std::uint16_t>(Chunk::HEADER_SIZE + chunk.value.readableBytes()))
+            .writeBytes(chunk.value.nioBuffer());
+        Tlv{.type = static_cast<std::uint16_t>(CauseCode::UnrecognizedChunkType), .value = original.slice(), .raw = {}}
+            .write(unrecognized);
     }
     return action >= 2;
 }
@@ -950,21 +952,21 @@ Association::Tcb Association::makeTcb(std::uint32_t local_tag, std::uint32_t loc
 
 void Association::sendInit()
 {
-    std::vector<std::byte> parameters;
-    ByteWriter writer(parameters);
-    writeCapabilities(writer);
-    PacketBuilder builder(
-        buffer_, {.source_port = config_.local_port, .destination_port = config_.remote_port, .verification_tag = 0},
-        config_.mtu);
-    builder.addInit(ChunkType::Init,
-                    {.initiate_tag = init_tag_,
-                     .a_rwnd = static_cast<std::uint32_t>(config_.receive_window),
-                     .outbound_streams = config_.streams,
-                     .inbound_streams = config_.streams,
-                     .initial_tsn = init_tsn_,
-                     .parameters = {}},
-                    parameters);
-    listener_.sendPacket(builder.build());
+    auto parameters = Unpooled::buffer(32);
+    writeCapabilities(parameters);
+    const auto limit = config_.mtu & ~std::size_t{3};
+    auto packet = Unpooled::buffer(limit, limit);
+    CommonHeader{.source_port = config_.local_port, .destination_port = config_.remote_port, .verification_tag = 0}
+        .write(packet);
+    InitChunk{.initiate_tag = init_tag_,
+              .a_rwnd = static_cast<std::uint32_t>(config_.receive_window),
+              .outbound_streams = config_.streams,
+              .inbound_streams = config_.streams,
+              .initial_tsn = init_tsn_,
+              .parameters = {}}
+        .write(packet, ChunkType::Init, parameters.slice());
+    Packet::seal(packet);
+    listener_.sendPacket(packet.slice());
 }
 
 void Association::sendCookieEcho()
@@ -976,18 +978,19 @@ void Association::sendCookieEcho()
 }
 
 void Association::sendStandalone(std::uint32_t verification_tag, ChunkType type, std::uint8_t flags,
-                                 std::span<const std::byte> value)
+                                 const ByteBuf &value)
 {
-    PacketBuilder builder(buffer_,
-                          {.source_port = config_.local_port,
-                           .destination_port = config_.remote_port,
-                           .verification_tag = verification_tag},
-                          std::numeric_limits<std::uint16_t>::max());
-    builder.addChunk(type, flags, value);
-    listener_.sendPacket(builder.build());
+    auto packet = Unpooled::buffer(std::min(config_.mtu, MAX_STANDALONE_SIZE), MAX_STANDALONE_SIZE);
+    CommonHeader{.source_port = config_.local_port,
+                 .destination_port = config_.remote_port,
+                 .verification_tag = verification_tag}
+        .write(packet);
+    Chunk{.type = static_cast<std::uint8_t>(type), .flags = flags, .value = value.slice()}.write(packet);
+    Packet::seal(packet);
+    listener_.sendPacket(packet.slice());
 }
 
-void Association::queue(ChunkType type, std::uint8_t flags, std::vector<std::byte> value)
+void Association::queue(ChunkType type, std::uint8_t flags, ByteBuf value)
 {
     control_.push_back({.type = type, .flags = flags, .value = std::move(value)});
 }
@@ -997,16 +1000,16 @@ void Association::queueResetRequest()
     if (!tcb_ || !tcb_->request) {
         return;
     }
-    std::vector<std::byte> request;
-    ByteWriter request_writer(request);
-    request_writer.write32(tcb_->request->sequence);
-    request_writer.write32(tcb_->last_peer_request);
-    request_writer.write32(tcb_->request->last_assigned_tsn);
+    auto request = Unpooled::buffer(12 + 2 * tcb_->request->streams.size());
+    request.writeInt(tcb_->request->sequence)
+        .writeInt(tcb_->last_peer_request)
+        .writeInt(tcb_->request->last_assigned_tsn);
     for (const auto stream : tcb_->request->streams) {
-        request_writer.write16(stream);
+        request.writeShort(stream);
     }
-    std::vector<std::byte> value;
-    ByteWriter(value).writeTlv(static_cast<std::uint16_t>(ParameterType::OutgoingSsnResetRequest), request);
+    auto value = Unpooled::buffer(Tlv::HEADER_SIZE + request.readableBytes());
+    Tlv{.type = static_cast<std::uint16_t>(ParameterType::OutgoingSsnResetRequest), .value = request.slice(), .raw = {}}
+        .write(value);
     queue(ChunkType::ReConfig, 0, std::move(value));
 }
 
@@ -1039,36 +1042,43 @@ void Association::transmit(Clock::time_point now)
             }
         }
 
-        PacketBuilder builder(buffer_,
-                              {.source_port = config_.local_port,
-                               .destination_port = config_.remote_port,
-                               .verification_tag = tcb.peer_tag},
-                              config_.mtu);
+        const auto limit = config_.mtu & ~std::size_t{3};
+        const auto first_control =
+            control_.empty() ? 0
+                             : CommonHeader::SIZE + Chunk::HEADER_SIZE + padded(control_.front().value.readableBytes());
+        auto datagram = Unpooled::buffer(limit, std::max(limit, first_control));
+        CommonHeader{.source_port = config_.local_port,
+                     .destination_port = config_.remote_port,
+                     .verification_tag = tcb.peer_tag}
+            .write(datagram);
         while (!control_.empty() &&
-               (builder.empty() || Chunk::HEADER_SIZE + padded(control_.front().value.size()) <= builder.remaining())) {
+               (datagram.writerIndex() == CommonHeader::SIZE ||
+                Chunk::HEADER_SIZE + padded(control_.front().value.readableBytes()) <= datagram.maxWritableBytes())) {
             const auto &front = control_.front();
-            builder.addChunk(front.type, front.flags, front.value);
+            Chunk{.type = static_cast<std::uint8_t>(front.type), .flags = front.flags, .value = front.value.slice()}
+                .write(datagram);
             control_.pop_front();
         }
         if ((receiver.sackRequired() || (receiver.sackPending() && sends_data && sender.hasDataToSend())) &&
-            builder.remaining() >= Chunk::HEADER_SIZE + 12) {
-            builder.addSack(receiver.makeSack(builder.remaining()));
+            datagram.maxWritableBytes() >= Chunk::HEADER_SIZE + 12) {
+            receiver.makeSack(datagram.maxWritableBytes()).write(datagram);
         }
-        if (builder.remaining() >= Chunk::HEADER_SIZE + 4) {
-            if (const auto forward_tsn = sender.forwardTsn(now, builder.remaining())) {
-                builder.addForwardTsn(*forward_tsn);
+        if (datagram.maxWritableBytes() >= Chunk::HEADER_SIZE + 4) {
+            if (const auto forward_tsn = sender.forwardTsn(now, datagram.maxWritableBytes())) {
+                forward_tsn->write(datagram);
             }
         }
 
         auto data = false;
         if (sends_data && packet < max_burst) {
-            data =
-                sender.fastRetransmitPending() ? sender.addFastRetransmit(builder, now) : sender.addData(builder, now);
+            data = sender.fastRetransmitPending() ? sender.addFastRetransmit(datagram, now)
+                                                  : sender.addData(datagram, now);
         }
-        if (builder.empty()) {
+        if (datagram.writerIndex() == CommonHeader::SIZE) {
             break;
         }
-        listener_.sendPacket(builder.build());
+        Packet::seal(datagram);
+        listener_.sendPacket(datagram.slice());
         if (data && tcb.heartbeat_at) {
             tcb.heartbeat_at = now + config_.heartbeat_interval + sender.rto();
         }
@@ -1097,8 +1107,8 @@ void Association::sendShutdown(Clock::time_point now)
         return;
     }
     const auto rto = tcb_->sender.rto();
-    std::vector<std::byte> value;
-    ByteWriter(value).write32(tcb_->receiver.cumulativeTsn());
+    auto value = Unpooled::buffer(4);
+    value.writeInt(tcb_->receiver.cumulativeTsn());
     queue(ChunkType::Shutdown, 0, std::move(value));
     state_ = State::ShutdownSent;
     t2_ = Retry{.at = now + rto, .backoff = rto, .count = t2_ ? t2_->count : 0};
@@ -1123,7 +1133,7 @@ void Association::countError()
     }
 }
 
-void Association::fail(CauseCode code, CloseReason reason, std::span<const std::byte> value)
+void Association::fail(CauseCode code, CloseReason reason, ByteBufView value)
 {
     if (tcb_) {
         sendStandalone(tcb_->peer_tag, ChunkType::Abort, 0, cause(code, value));
@@ -1168,7 +1178,7 @@ void Association::deliver()
                     listener_.onClosed(value.reason);
                 }
                 else if constexpr (std::is_same_v<T, Message>) {
-                    listener_.onMessage(std::move(value));
+                    listener_.onMessage(value.stream, value.ppid, value.unordered, value.payload.slice());
                 }
                 else if constexpr (std::is_same_v<T, IncomingReset>) {
                     listener_.onIncomingStreamsReset(value.streams);
