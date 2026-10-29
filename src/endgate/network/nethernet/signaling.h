@@ -11,13 +11,12 @@
 #include <utility>
 #include <variant>
 
-#include <asio/io_context.hpp>
 #include <asio/ip/tcp.hpp>
 #include <asio/ssl/context.hpp>
 #include <asio/steady_timer.hpp>
-#include <asio/strand.hpp>
 
 #include "endgate/awaitable.h"
+#include "endgate/network/eventloop.h"
 #include "endgate/network/ping.h"
 
 namespace endgate::nethernet {
@@ -31,8 +30,9 @@ namespace endgate::nethernet {
 class JoinResponse {
 public:
     struct Pending {
-        explicit Pending(asio::strand<asio::io_context::executor_type> strand) : timer(std::move(strand)) {}
+        explicit Pending(EventLoop &loop) : event_loop(loop), timer(loop.getExecutor()) {}
 
+        EventLoop &event_loop;
         asio::steady_timer timer;
         std::optional<std::variant<std::string, std::uint32_t>> result;
     };
@@ -97,7 +97,7 @@ public:
         std::chrono::milliseconds join_timeout{std::chrono::seconds{10}};
     };
 
-    [[nodiscard]] static std::shared_ptr<HttpSignalingServer> create(asio::io_context &io_context, JoinHandler &handler,
+    [[nodiscard]] static std::shared_ptr<HttpSignalingServer> create(EventLoop &event_loop, JoinHandler &handler,
                                                                      Config config,
                                                                      std::shared_ptr<asio::ssl::context> tls);
 
@@ -126,7 +126,7 @@ private:
         std::string body;
     };
 
-    HttpSignalingServer(asio::io_context &io_context, JoinHandler &handler, Config config,
+    HttpSignalingServer(EventLoop &event_loop, JoinHandler &handler, Config config,
                         std::shared_ptr<asio::ssl::context> tls);
 
     static Awaitable<void> accept(std::shared_ptr<HttpSignalingServer> self);
@@ -137,7 +137,7 @@ private:
 
     Awaitable<Response> respond(Request request);
 
-    asio::strand<asio::io_context::executor_type> strand_;
+    EventLoop &event_loop_;
     asio::ip::tcp::acceptor acceptor_;
     JoinHandler &handler_;
     Config config_;

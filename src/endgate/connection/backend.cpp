@@ -11,7 +11,6 @@
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/ip/udp.hpp>
-#include <asio/post.hpp>
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 
@@ -33,7 +32,7 @@ ServerConnection::ServerConnection(BackendServer &server, std::shared_ptr<Player
 
 void ServerConnection::connect()
 {
-    asio::co_spawn(player_->getConnection().getExecutor(), open(shared_from_this()), asio::detached);
+    asio::co_spawn(player_->getConnection().eventLoop().getExecutor(), open(shared_from_this()), asio::detached);
 }
 
 Awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> self)
@@ -62,7 +61,7 @@ Awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> self)
 
     std::optional<ServerInfo::Transport> transport;
     if (address && player.isActive()) {
-        transport = co_await self->server_.detectTransport(endpoint.getIoContext(), *address);
+        transport = co_await self->server_.detectTransport(endpoint.getEventLoop().getIoContext(), *address);
     }
     if (!player.isActive()) {
         co_return;
@@ -151,7 +150,7 @@ void BackendPlaySessionHandler::connected()
         logger_.info("[server connection] {} -> {} has connected", player.getRemoteAddress(),
                      server_connection_->getServer().getServerInfo().getName());
     }
-    asio::post(player.getExecutor(), [server_connection = server_connection_] { server_connection->connected(); });
+    server_connection_->connected();
 }
 
 void BackendPlaySessionHandler::handleUnknown(ByteBuf batch)

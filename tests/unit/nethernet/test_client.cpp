@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 #include <openssl/evp.h>
 
+#include "endgate/network/eventloop.h"
 #include "endgate/network/nethernet/client.h"
 #include "endgate/network/nethernet/identity.h"
 #include "endgate/network/nethernet/signaling.h"
@@ -70,12 +71,20 @@ class SignalingClientTest : public testing::Test {
 protected:
     void listen()
     {
-        server_ = HttpSignalingServer::create(io_, handler_, {}, nullptr);
+        server_ = HttpSignalingServer::create(loop_, handler_, {}, nullptr);
         server_->listen({asio::ip::make_address("127.0.0.1"), 0});
         port_ = server_->getLocalEndpoint().port();
     }
 
+    void TearDown() override
+    {
+        if (server_) {
+            server_->close();
+        }
+    }
+
     SignalingClient::Config config_{.connect_timeout = 2s, .request_timeout = 2s, .tls_handshake_timeout = 500ms};
+    EventLoop loop_;
     asio::io_context io_;
     StubHandler handler_;
     std::shared_ptr<HttpSignalingServer> server_;

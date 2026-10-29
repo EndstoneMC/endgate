@@ -7,7 +7,6 @@
 #include <span>
 #include <string_view>
 
-#include <asio/io_context.hpp>
 #include <asio/ip/udp.hpp>
 #include <asio/steady_timer.hpp>
 #include <spdlog/logger.h>
@@ -41,8 +40,9 @@ public:
      */
     void connect();
 
-protected:
     void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender) override;
+
+protected:
     void send(ByteBuf batch) override;
     void disconnect(bool wait_for_peer) override;
 

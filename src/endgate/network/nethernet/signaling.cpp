@@ -14,13 +14,13 @@
 #include <asio/cancel_after.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/ip/v6_only.hpp>
-#include <asio/post.hpp>
 #include <asio/ssl/stream.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/write.hpp>
 #include <glaze/json.hpp>
 
 #include "endgate/awaitable.h"
+#include "endgate/network/reuseport.h"
 
 namespace endgate::nethernet {
 
@@ -79,35 +79,40 @@ std::chrono::milliseconds remainingUntil(std::chrono::steady_clock::time_point d
 
 void JoinResponse::answer(std::string sdp) const
 {
-    asio::post(pending_->timer.get_executor(), [pending = pending_, sdp = std::move(sdp)]() mutable {
-        if (!pending->result) {
-            pending->result = std::move(sdp);
-            pending->timer.cancel();
-        }
-    });
+    if (!pending_->event_loop.inEventLoop()) {
+        pending_->event_loop.execute(
+            [response = *this, sdp = std::move(sdp)]() mutable { response.answer(std::move(sdp)); });
+        return;
+    }
+    if (!pending_->result) {
+        pending_->result = std::move(sdp);
+        pending_->timer.cancel();
+    }
 }
 
 void JoinResponse::reject(std::uint32_t session_error) const
 {
-    asio::post(pending_->timer.get_executor(), [pending = pending_, session_error] {
-        if (!pending->result) {
-            pending->result = session_error;
-            pending->timer.cancel();
-        }
-    });
+    if (!pending_->event_loop.inEventLoop()) {
+        pending_->event_loop.execute([response = *this, session_error] { response.reject(session_error); });
+        return;
+    }
+    if (!pending_->result) {
+        pending_->result = session_error;
+        pending_->timer.cancel();
+    }
 }
 
-HttpSignalingServer::HttpSignalingServer(asio::io_context &io_context, JoinHandler &handler, Config config,
+HttpSignalingServer::HttpSignalingServer(EventLoop &event_loop, JoinHandler &handler, Config config,
                                          std::shared_ptr<asio::ssl::context> tls)
-    : strand_(asio::make_strand(io_context)), acceptor_(strand_), handler_(handler), config_(config),
+    : event_loop_(event_loop), acceptor_(event_loop.getExecutor()), handler_(handler), config_(config),
       tls_(std::move(tls))
 {
 }
 
-std::shared_ptr<HttpSignalingServer> HttpSignalingServer::create(asio::io_context &io_context, JoinHandler &handler,
+std::shared_ptr<HttpSignalingServer> HttpSignalingServer::create(EventLoop &event_loop, JoinHandler &handler,
                                                                  Config config, std::shared_ptr<asio::ssl::context> tls)
 {
-    return std::shared_ptr<HttpSignalingServer>(new HttpSignalingServer(io_context, handler, config, std::move(tls)));
+    return std::shared_ptr<HttpSignalingServer>(new HttpSignalingServer(event_loop, handler, config, std::move(tls)));
 }
 
 std::shared_ptr<asio::ssl::context> HttpSignalingServer::loadTls(const std::filesystem::path &certificate_chain,
@@ -125,23 +130,26 @@ void HttpSignalingServer::listen(const asio::ip::tcp::endpoint &endpoint)
 {
     acceptor_.open(endpoint.protocol());
     acceptor_.set_option(asio::socket_base::reuse_address(true));
+    acceptor_.set_option(ReusePort(true));
     if (endpoint.address().is_v6() && endpoint.address().is_unspecified()) {
         acceptor_.set_option(asio::ip::v6_only(false));
     }
     acceptor_.bind(endpoint);
     acceptor_.listen();
-    asio::co_spawn(strand_, accept(shared_from_this()), [](const std::exception_ptr &) {});
+    asio::co_spawn(event_loop_.getExecutor(), accept(shared_from_this()), [](const std::exception_ptr &) {});
 }
 
 void HttpSignalingServer::close()
 {
-    asio::post(strand_, [self = shared_from_this()] {
-        asio::error_code ignored;
-        std::ignore = self->acceptor_.close(ignored);
-        for (auto *socket : self->connections_) {
-            std::ignore = socket->close(ignored);
-        }
-    });
+    if (!event_loop_.inEventLoop()) {
+        event_loop_.execute([self = shared_from_this()] { self->close(); });
+        return;
+    }
+    asio::error_code ignored;
+    std::ignore = acceptor_.close(ignored);
+    for (auto *socket : connections_) {
+        std::ignore = socket->close(ignored);
+    }
 }
 
 Awaitable<void> HttpSignalingServer::accept(std::shared_ptr<HttpSignalingServer> self)
@@ -149,11 +157,12 @@ Awaitable<void> HttpSignalingServer::accept(std::shared_ptr<HttpSignalingServer>
     while (self->acceptor_.is_open()) {
         auto [error, socket] = co_await self->acceptor_.async_accept(AWAITABLE);
         if (error) {
-            asio::steady_timer pause(self->strand_, std::chrono::milliseconds{100});
+            asio::steady_timer pause(self->event_loop_.getExecutor(), std::chrono::milliseconds{100});
             co_await pause.async_wait(AWAITABLE);
             continue;
         }
-        asio::co_spawn(self->strand_, serve(self, std::move(socket)), [](const std::exception_ptr &) {});
+        asio::co_spawn(self->event_loop_.getExecutor(), serve(self, std::move(socket)),
+                       [](const std::exception_ptr &) {});
     }
 }
 
@@ -386,14 +395,16 @@ Awaitable<HttpSignalingServer::Response> HttpSignalingServer::respond(Request re
         co_return error(400, "Missing SDP offer in request body");
     }
 
-    auto pending = std::make_shared<JoinResponse::Pending>(strand_);
+    auto pending = std::make_shared<JoinResponse::Pending>(event_loop_);
     pending->timer.expires_after(config_.join_timeout);
     handler_.onJoin(JoinRequest{.network_id = std::string(network_id),
                                 .offer = std::move(request.body),
                                 .host = std::move(request.host),
                                 .port = request.port},
                     JoinResponse{pending});
-    co_await pending->timer.async_wait(AWAITABLE);
+    if (!pending->result) {
+        co_await pending->timer.async_wait(AWAITABLE);
+    }
     if (!pending->result) {
         co_return error(504, "Gateway Timeout");
     }

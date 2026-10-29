@@ -15,7 +15,6 @@
 #include <asio/as_tuple.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
-#include <asio/executor_work_guard.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ssl.hpp>
 #include <asio/use_awaitable.hpp>
@@ -71,10 +70,9 @@ class HttpSignalingServerTest : public testing::Test {
 protected:
     void start(HttpSignalingServer::Config config, std::shared_ptr<asio::ssl::context> tls = nullptr)
     {
-        server_ = HttpSignalingServer::create(io_context_, handler_, config, std::move(tls));
+        server_ = HttpSignalingServer::create(loop_, handler_, config, std::move(tls));
         server_->listen({asio::ip::make_address("127.0.0.1"), 0});
         endpoint_ = server_->getLocalEndpoint();
-        thread_ = std::thread([this] { io_context_.run(); });
     }
 
     void SetUp() override
@@ -84,13 +82,7 @@ protected:
         }
     }
 
-    void TearDown() override
-    {
-        server_->close();
-        work_.reset();
-        io_context_.stop();
-        thread_.join();
-    }
+    void TearDown() override { server_->close(); }
 
     [[nodiscard]] std::string roundTrip(std::string request, std::chrono::milliseconds timeout = 3s) const
     {
@@ -119,12 +111,10 @@ protected:
         return response;
     }
 
-    asio::io_context io_context_;
-    asio::executor_work_guard<asio::io_context::executor_type> work_{io_context_.get_executor()};
+    EventLoop loop_;
     RecordingHandler handler_;
     std::shared_ptr<HttpSignalingServer> server_;
     asio::ip::tcp::endpoint endpoint_;
-    std::thread thread_;
 };
 
 TEST_F(HttpSignalingServerTest, PassesOnTheAddressTheClientReachedUsAt)

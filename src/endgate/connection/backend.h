@@ -15,9 +15,9 @@ class Player;
 class BackendServer;
 
 /**
- * The proxy's connection to a backend on behalf of one player. Its methods run on the player's
- * strand; the leg it opens runs on its own. What the player sends before that leg is up waits here,
- * in order, up to a bound.
+ * The proxy's connection to a backend on behalf of one player. Its methods run on the player's event
+ * loop, and so does the leg it opens. What the player sends before that leg is up waits here, in
+ * order, up to a bound.
  *
  * @see com.velocitypowered.api.proxy.ServerConnection
  * @see com.velocitypowered.proxy.connection.backend.VelocityServerConnection
@@ -45,8 +45,7 @@ public:
     [[nodiscard]] Player &getPlayer() const { return *player_; }
 
     /**
-     * The leg to the backend, once it is open. It never changes after that, so the leg's own strand
-     * may read it too.
+     * The leg to the backend, once it is open.
      *
      * @see com.velocitypowered.proxy.connection.backend.VelocityServerConnection#getConnection
      */

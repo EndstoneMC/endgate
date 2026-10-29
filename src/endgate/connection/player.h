@@ -13,8 +13,7 @@ class BackendServer;
 class ServerConnection;
 
 /**
- * A player on the proxy, and the backend it is on. Everything but getConnection and disconnect runs on
- * the player's connection strand.
+ * A player on the proxy, and the backend it is on. Everything runs on the player's event loop.
  *
  * @see com.velocitypowered.api.proxy.Player
  * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer

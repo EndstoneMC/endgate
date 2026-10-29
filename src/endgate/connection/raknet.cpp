@@ -8,7 +8,6 @@
 #include <asio/buffer.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
-#include <asio/post.hpp>
 #include <asio/use_awaitable.hpp>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -41,38 +40,35 @@ void setDontFragment(asio::ip::udp::socket &socket, bool dont_fragment)
 RakNetConnection::RakNetConnection(Endpoint &endpoint, const raknet::SystemAddress &address,
                                    const raknet::OpenConnectionRequest2 &request, std::uint64_t guid,
                                    std::uint16_t system_index, raknet::TimePoint now)
-    : MinecraftConnection(endpoint, endpoint.getIoContext(), toString(address)),
-      logger_(LogManager::getLogger("endgate::RakNetConnection")), endpoint_socket_(endpoint.getSocket()),
-      socket_(getExecutor()), address_(address), timer_(getExecutor()),
-      connection_(*this, {.guid = guid}, address, request, system_index, now)
+    : MinecraftConnection(endpoint, toString(address)), logger_(LogManager::getLogger("endgate::RakNetConnection")),
+      endpoint_socket_(endpoint.getSocket()), socket_(eventLoop().getExecutor()), address_(address),
+      timer_(eventLoop().getExecutor()), connection_(*this, {.guid = guid}, address, request, system_index, now)
 {
 }
 
 RakNetConnection::RakNetConnection(Endpoint &endpoint, const raknet::SystemAddress &address, std::uint64_t guid,
                                    raknet::TimePoint now)
-    : MinecraftConnection(endpoint, endpoint.getIoContext(), toString(address)),
-      logger_(LogManager::getLogger("endgate::RakNetConnection")), socket_(getExecutor()), address_(address),
-      timer_(getExecutor()), connection_(*this, {.guid = guid}, address, now)
+    : MinecraftConnection(endpoint, toString(address)), logger_(LogManager::getLogger("endgate::RakNetConnection")),
+      socket_(eventLoop().getExecutor()), address_(address), timer_(eventLoop().getExecutor()),
+      connection_(*this, {.guid = guid}, address, now)
 {
 }
 
 void RakNetConnection::connect()
 {
-    asio::post(getExecutor(), [self = std::static_pointer_cast<RakNetConnection>(shared_from_this())] {
-        if (self->connection_.isClosed()) {
-            return;
-        }
-        asio::error_code ec;
-        if (self->socket_.open(self->address_.protocol(), ec) || self->socket_.connect(self->address_, ec) ||
-            self->socket_.non_blocking(true, ec)) {
-            self->logger_.error("{}: unable to connect: {}", self->getRemoteAddress(), ec.message());
-            self->connection_.close(false, raknet::Clock::now());
-            return;
-        }
-        asio::co_spawn(self->getExecutor(), read(self), asio::detached);
-        self->connection_.handleTimeout(raknet::Clock::now());
-        self->arm();
-    });
+    if (connection_.isClosed()) {
+        return;
+    }
+    asio::error_code ec;
+    if (socket_.open(address_.protocol(), ec) || socket_.connect(address_, ec) || socket_.non_blocking(true, ec)) {
+        logger_.error("{}: unable to connect: {}", getRemoteAddress(), ec.message());
+        connection_.close(false, raknet::Clock::now());
+        return;
+    }
+    asio::co_spawn(eventLoop().getExecutor(), read(std::static_pointer_cast<RakNetConnection>(shared_from_this())),
+                   asio::detached);
+    connection_.handleTimeout(raknet::Clock::now());
+    arm();
 }
 
 Awaitable<void> RakNetConnection::read(std::shared_ptr<RakNetConnection> self)

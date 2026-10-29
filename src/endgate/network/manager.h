@@ -3,26 +3,26 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
-#include <thread>
-#include <vector>
 
-#include <asio/executor_work_guard.hpp>
-#include <asio/io_context.hpp>
 #include <asio/signal_set.hpp>
 #include <spdlog/logger.h>
 
 #include "endgate/network/endpoint.h"
+#include "endgate/network/eventloop.h"
 #include "endgate/network/nethernet/identity.h"
 #include "endgate/network/offline.h"
+#include "endgate/network/registry.h"
 
 namespace endgate {
 
 class ProxyServer;
 
 /**
- * Manages the endpoints endgate listens on, along with the threads running them.
+ * Manages the endpoints endgate listens on, one per event loop, along with the event loop group running
+ * them.
  *
  * @see com.velocitypowered.proxy.network.ConnectionManager
+ * @see io.netty.channel.MultiThreadIoEventLoopGroup
  */
 class ConnectionManager {
 public:
@@ -40,12 +40,10 @@ private:
     spdlog::logger &logger_;
     OfflineMessageHandler offline_;
     std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity_;
-    asio::io_context io_context_;
-    asio::executor_work_guard<asio::io_context::executor_type> work_guard_;
+    Registry registry_;
+    EventLoopGroup group_;
     asio::signal_set signals_;
-    unsigned int threads_;
     std::deque<Endpoint> endpoints_;
-    std::vector<std::jthread> workers_;
 };
 
 }  // namespace endgate

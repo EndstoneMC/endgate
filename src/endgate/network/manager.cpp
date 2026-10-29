@@ -4,23 +4,25 @@
 #include <exception>
 #include <memory>
 #include <system_error>
+#include <thread>
 #include <utility>
+#include <vector>
 
-#include <asio/dispatch.hpp>
 #include <asio/ip/udp.hpp>
 #include <asio/ip/v6_only.hpp>
 #include <asio/ssl/context.hpp>
 
 #include "endgate/config.h"
 #include "endgate/logging/manager.h"
+#include "endgate/network/reuseport.h"
 #include "endgate/server.h"
 
 namespace endgate {
 
 ConnectionManager::ConnectionManager(ProxyServer &server)
     : server_(server), logger_(LogManager::getLogger("endgate::ConnectionManager")), offline_(server),
-      work_guard_(asio::make_work_guard(io_context_)), signals_(io_context_, SIGINT, SIGTERM),
-      threads_(std::max(1U, std::thread::hardware_concurrency()))
+      group_(std::max(1U, std::thread::hardware_concurrency())),
+      signals_(group_.begin()->getIoContext(), SIGINT, SIGTERM)
 {
 }
 
@@ -39,13 +41,17 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
 {
     asio::error_code ec;
 
-    auto socket = std::make_shared<asio::ip::udp::socket>(io_context_);
-    const asio::ip::udp::endpoint game{address, port};
     const bool dual_stack = address.is_v6() && address.is_unspecified();
-    if (socket->open(game.protocol(), ec) || (dual_stack && socket->set_option(asio::ip::v6_only(false), ec)) ||
-        socket->bind(game, ec) || socket->non_blocking(true, ec)) {
-        logger_.error("Can't bind to {}:{}: {}", address.to_string(), port, ec.message());
-        return false;
+    std::vector<std::shared_ptr<asio::ip::udp::socket>> sockets;
+    for (auto &loop : group_) {
+        auto &socket = sockets.emplace_back(std::make_shared<asio::ip::udp::socket>(loop.getExecutor()));
+        const asio::ip::udp::endpoint game{address, port};
+        if (socket->open(game.protocol(), ec) || (dual_stack && socket->set_option(asio::ip::v6_only(false), ec)) ||
+            socket->set_option(ReusePort(true), ec) || socket->bind(game, ec) || socket->non_blocking(true, ec)) {
+            logger_.error("Can't bind to {}:{}: {}", address.to_string(), port, ec.message());
+            return false;
+        }
+        port = socket->local_endpoint().port();
     }
 
     constexpr auto identity_key_path = "keys/server_identity_key.pem";
@@ -68,55 +74,53 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
         return false;
     }
 
-    const auto local_port = socket->local_endpoint().port();
-    offline_.setPingResponder(local_port);
-    auto &endpoint = endpoints_.emplace_back(server_, io_context_, socket, offline_.getGuid(),
-                                             offline_.getOfflinePingResponse(), identity_, std::move(tls));
+    offline_.setPingResponder(port);
+    auto socket = sockets.begin();
+    for (auto &loop : group_) {
+        endpoints_.emplace_back(server_, loop, registry_, *socket++, offline_.getGuid(),
+                                offline_.getOfflinePingResponse(), identity_, tls);
+    }
     try {
-        endpoint.listen({address, local_port});
+        for (auto &endpoint : endpoints_) {
+            endpoint.listen({address, port});
+        }
     }
     catch (const std::system_error &e) {
-        logger_.error("Can't bind to {}:{}: {}", address.to_string(), local_port, e.code().message());
-        endpoints_.pop_back();
+        logger_.error("Can't bind to {}:{}: {}", address.to_string(), port, e.code().message());
+        endpoints_.clear();
         return false;
     }
 
-    logger_.info("Listening on {}", endpoint.getLocalAddress());
-    asio::dispatch(endpoint.getExecutor(), [&endpoint] { endpoint.start(); });
+    logger_.info("Listening on {}", endpoints_.front().getLocalAddress());
+    for (auto &endpoint : endpoints_) {
+        endpoint.getEventLoop().execute([&endpoint] { endpoint.start(); });
+    }
     return true;
 }
 
 void ConnectionManager::start()
 {
-    signals_.async_wait([this](const asio::error_code &ec, int) {
-        if (!ec) {
-            server_.shutdown(false);
-        }
+    group_.begin()->execute([this] {
+        signals_.async_wait([this](const asio::error_code &ec, int) {
+            if (!ec) {
+                server_.shutdown(false);
+            }
+        });
     });
-
-    workers_.reserve(threads_);
-    for (unsigned int i = 0; i < threads_; ++i) {
-        workers_.emplace_back([this] { io_context_.run(); });
-    }
 }
 
 void ConnectionManager::shutdown()
 {
     for (auto &endpoint : endpoints_) {
-        asio::dispatch(endpoint.getExecutor(), [&endpoint] { endpoint.close(); });
+        endpoint.getEventLoop().execute([&endpoint] { endpoint.close(); });
     }
-    signals_.cancel();
-    work_guard_.reset();
+    group_.begin()->execute([this] { signals_.cancel(); });
+    group_.shutdownGracefully();
 }
 
 void ConnectionManager::awaitTermination()
 {
-    for (auto &worker : workers_) {
-        if (worker.joinable()) {
-            worker.join();
-        }
-    }
-    workers_.clear();
+    group_.awaitTermination();
 }
 
 }  // namespace endgate

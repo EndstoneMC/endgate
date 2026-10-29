@@ -19,7 +19,6 @@
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/ip/udp.hpp>
-#include <asio/post.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/use_awaitable.hpp>
 #include <spdlog/logger.h>
@@ -60,16 +59,6 @@ public:
         requires DIALING;
 
     /**
-     * Answers the offer the connection was made from, signed with the server's identity.
-     *
-     * @see NetherNet::ServerNegotiator::createAnswer
-     */
-    void answer(rtc::Description offer, std::vector<rtc::CandidateAddress> candidates, std::uint64_t session_id,
-                std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity,
-                nethernet::JoinResponse response)
-        requires(!DIALING);
-
-    /**
      * Offers the backend a session over HTTP signalling, signed with the server's identity, and runs
      * the session its answer describes.
      *
@@ -79,8 +68,9 @@ public:
                  std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity)
         requires DIALING;
 
-protected:
     void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender) override;
+
+protected:
     void send(ByteBuf batch) override;
     void disconnect(bool wait_for_peer) override;
 
@@ -118,9 +108,8 @@ NetherNetConnection<Session>::NetherNetConnection(Endpoint &endpoint, const std:
                                                   const nethernet::NetworkSession::Config &config,
                                                   Clock::time_point now)
     requires(!DIALING)
-    : MinecraftConnection(endpoint, endpoint.getIoContext(), network_id),
-      logger_(LogManager::getLogger("endgate::NetherNetConnection")), socket_(endpoint.getSocket()),
-      certificate_(certificate), timer_(getExecutor())
+    : MinecraftConnection(endpoint, network_id), logger_(LogManager::getLogger("endgate::NetherNetConnection")), socket_(endpoint.getSocket()),
+      certificate_(certificate), timer_(eventLoop().getExecutor())
 {
     session_.emplace(static_cast<nethernet::NetworkSession::Listener &>(*this), offer, std::move(local),
                      std::move(certificate), config, now);
@@ -130,43 +119,10 @@ template <typename Session>
 NetherNetConnection<Session>::NetherNetConnection(Endpoint &endpoint, const asio::ip::udp::endpoint &address,
                                                   std::shared_ptr<const rtc::Certificate> certificate)
     requires DIALING
-    : MinecraftConnection(endpoint, endpoint.getIoContext(), toString(address)),
-      logger_(LogManager::getLogger("endgate::NetherNetConnection")),
-      socket_(std::make_shared<asio::ip::udp::socket>(getExecutor())), certificate_(std::move(certificate)),
-      address_(address), timer_(getExecutor())
+    : MinecraftConnection(endpoint, toString(address)), logger_(LogManager::getLogger("endgate::NetherNetConnection")),
+      socket_(std::make_shared<asio::ip::udp::socket>(eventLoop().getExecutor())), certificate_(std::move(certificate)),
+      address_(address), timer_(eventLoop().getExecutor())
 {
-}
-
-template <typename Session>
-void NetherNetConnection<Session>::answer(rtc::Description offer, std::vector<rtc::CandidateAddress> candidates,
-                                          std::uint64_t session_id,
-                                          std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity,
-                                          nethernet::JoinResponse response)
-    requires(!DIALING)
-{
-    asio::post(getExecutor(), [self = std::static_pointer_cast<NetherNetConnection>(shared_from_this()),
-                               offer = std::move(offer), candidates = std::move(candidates), session_id,
-                               identity = std::move(identity), response = std::move(response)] {
-        if (self->session_->isClosed()) {
-            response.reject(static_cast<std::uint32_t>(nethernet::ESessionError::GenericFailure));
-            return;
-        }
-        auto sdp = rtc::Description::answer(offer, self->session_->getIceTransport().getLocalCredentials(),
-                                            self->certificate_->getFingerprint(), candidates)
-                       .generate(session_id);
-        if (identity) {
-            const auto assertion =
-                nethernet::IdentityAssertion::create(*identity, sdp, std::chrono::system_clock::now());
-            if (!assertion) {
-                response.reject(static_cast<std::uint32_t>(nethernet::ESessionError::FailedToCreateIdentityAssertion));
-                self->session_->close(Clock::now());
-                return;
-            }
-            sdp = assertion->injectIntoSdp(sdp);
-        }
-        response.answer(std::move(sdp));
-        self->arm();
-    });
 }
 
 template <typename Session>
@@ -174,7 +130,7 @@ void NetherNetConnection<Session>::connect(std::string host, std::uint16_t port,
                                            std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity)
     requires DIALING
 {
-    asio::co_spawn(getExecutor(),
+    asio::co_spawn(eventLoop().getExecutor(),
                    dial(std::static_pointer_cast<NetherNetConnection>(shared_from_this()), std::move(host), port,
                         std::move(identity)),
                    asio::detached);
@@ -189,7 +145,7 @@ Awaitable<void> NetherNetConnection<Session>::dial(
     constexpr std::size_t max_packet_size = 8 * 1024 * 1024;
 
     asio::error_code ec;
-    asio::ip::udp::socket route(self->getExecutor());
+    asio::ip::udp::socket route(self->eventLoop().getExecutor());
     asio::ip::udp::endpoint local;
     if (!route.open(self->address_.protocol(), ec) && !route.connect(self->address_, ec) &&
         !self->socket_->open(self->address_.protocol(), ec) &&
@@ -217,7 +173,7 @@ Awaitable<void> NetherNetConnection<Session>::dial(
     }
 
     const auto answer = co_await nethernet::SignalingClient::requestAnswer(
-        self->getEndpoint().getIoContext(), std::move(host), port, std::to_string(random()), std::move(offer), {});
+        self->eventLoop().getIoContext(), std::move(host), port, std::to_string(random()), std::move(offer), {});
     if (self->finished_) {
         co_return;
     }
@@ -236,7 +192,7 @@ Awaitable<void> NetherNetConnection<Session>::dial(
     self->session_.emplace(static_cast<nethernet::NetworkSession::Listener &>(*self), *description, credentials,
                            self->certificate_, nethernet::DialerSession::Config{.max_packet_size = max_packet_size},
                            Clock::now());
-    asio::co_spawn(self->getExecutor(), read(self), asio::detached);
+    asio::co_spawn(self->eventLoop().getExecutor(), read(self), asio::detached);
     self->arm();
 }
 

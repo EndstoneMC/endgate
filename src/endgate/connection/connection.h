@@ -7,11 +7,10 @@
 #include <string>
 #include <utility>
 
-#include <asio/io_context.hpp>
 #include <asio/ip/udp.hpp>
-#include <asio/strand.hpp>
 
 #include "endgate/buffer/bytebuf.h"
+#include "endgate/network/eventloop.h"
 
 namespace endgate {
 
@@ -23,7 +22,7 @@ class Endpoint;
 }
 
 /**
- * Hears what a connection does, always on the connection's own strand.
+ * Hears what a connection does, always on the connection's event loop.
  *
  * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler
  */
@@ -48,19 +47,19 @@ public:
 };
 
 /**
- * One leg of a proxied session, a player's or a backend's, whatever transport carries it. A leg runs
- * on a strand of its own: write, close, shutdown and receive may be called from any thread and are
- * carried out there. A batch crosses this interface as NetherNet carries it, with no RakNet 0xFE in
- * front; a transport that frames batches otherwise converts at its own edge.
+ * One leg of a proxied session, a player's or a backend's, whatever transport carries it. A leg is
+ * pinned to one event loop for life: write, close and shutdown may be called from any thread and run
+ * inline on that loop, or are handed to it. A batch crosses this interface as NetherNet carries it,
+ * with no RakNet 0xFE in front; a transport that frames batches otherwise converts at its own edge.
  *
  * @see com.velocitypowered.proxy.connection.MinecraftConnection
+ * @see io.netty.channel.Channel
  */
 class MinecraftConnection : public std::enable_shared_from_this<MinecraftConnection> {
 public:
     using Clock = std::chrono::steady_clock;
-    using Executor = asio::strand<asio::io_context::executor_type>;
 
-    MinecraftConnection(Endpoint &endpoint, asio::io_context &io_context, std::string remote_address);
+    MinecraftConnection(Endpoint &endpoint, std::string remote_address);
     MinecraftConnection(const MinecraftConnection &) = delete;
     MinecraftConnection &operator=(const MinecraftConnection &) = delete;
     MinecraftConnection(MinecraftConnection &&) = delete;
@@ -84,16 +83,24 @@ public:
      */
     void shutdown();
 
-    void receive(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender);
+    /**
+     * Takes a datagram its sender sent to the connection, on the connection's loop.
+     *
+     * @see io.netty.channel.ChannelInboundHandler#channelRead
+     */
+    virtual void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender) = 0;
 
     /**
-     * Call before the connection starts or on its strand.
+     * Call before the connection starts or on its event loop.
      *
      * @see com.velocitypowered.proxy.connection.MinecraftConnection#setActiveSessionHandler
      */
     void setSessionHandler(std::shared_ptr<MinecraftSessionHandler> handler);
 
-    [[nodiscard]] const Executor &getExecutor() const { return strand_; }
+    /**
+     * @see io.netty.channel.Channel#eventLoop
+     */
+    [[nodiscard]] EventLoop &eventLoop() const { return event_loop_; }
     [[nodiscard]] Endpoint &getEndpoint() const { return endpoint_; }
 
     /**
@@ -102,7 +109,6 @@ public:
     [[nodiscard]] const std::string &getRemoteAddress() const { return remote_address_; }
 
 protected:
-    virtual void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender) = 0;
     virtual void send(ByteBuf batch) = 0;
     virtual void disconnect(bool wait_for_peer) = 0;
 
@@ -125,7 +131,7 @@ protected:
 
 private:
     Endpoint &endpoint_;
-    Executor strand_;
+    EventLoop &event_loop_;
     std::string remote_address_;
     std::shared_ptr<MinecraftSessionHandler> handler_;
 };

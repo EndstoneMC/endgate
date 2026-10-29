@@ -1,40 +1,45 @@
 #include "endgate/connection/connection.h"
 
 #include <utility>
-#include <vector>
-
-#include <asio/post.hpp>
 
 #include "endgate/network/endpoint.h"
 
 namespace endgate {
 
-MinecraftConnection::MinecraftConnection(Endpoint &endpoint, asio::io_context &io_context, std::string remote_address)
-    : endpoint_(endpoint), strand_(asio::make_strand(io_context)), remote_address_(std::move(remote_address))
+MinecraftConnection::MinecraftConnection(Endpoint &endpoint, std::string remote_address)
+    : endpoint_(endpoint), event_loop_(endpoint.getEventLoop()), remote_address_(std::move(remote_address))
 {
 }
 
 void MinecraftConnection::write(ByteBuf batch)
 {
-    asio::post(strand_,
-               [self = shared_from_this(), batch = std::move(batch)]() mutable { self->send(std::move(batch)); });
+    if (event_loop_.inEventLoop()) {
+        const auto self = shared_from_this();
+        send(std::move(batch));
+        return;
+    }
+    event_loop_.execute(
+        [self = shared_from_this(), batch = std::move(batch)]() mutable { self->send(std::move(batch)); });
 }
 
 void MinecraftConnection::close()
 {
-    asio::post(strand_, [self = shared_from_this()] { self->disconnect(true); });
+    if (event_loop_.inEventLoop()) {
+        const auto self = shared_from_this();
+        disconnect(true);
+        return;
+    }
+    event_loop_.execute([self = shared_from_this()] { self->disconnect(true); });
 }
 
 void MinecraftConnection::shutdown()
 {
-    asio::post(strand_, [self = shared_from_this()] { self->disconnect(false); });
-}
-
-void MinecraftConnection::receive(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender)
-{
-    asio::post(strand_, [self = shared_from_this(), datagram = std::vector(datagram.begin(), datagram.end()), sender] {
-        self->handleDatagram(datagram, sender);
-    });
+    if (event_loop_.inEventLoop()) {
+        const auto self = shared_from_this();
+        disconnect(false);
+        return;
+    }
+    event_loop_.execute([self = shared_from_this()] { self->disconnect(false); });
 }
 
 void MinecraftConnection::setSessionHandler(std::shared_ptr<MinecraftSessionHandler> handler)

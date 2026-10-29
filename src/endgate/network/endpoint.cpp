@@ -14,7 +14,6 @@
 #include <asio/cancel_after.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
-#include <asio/post.hpp>
 #include <asio/use_awaitable.hpp>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -30,15 +29,15 @@
 
 namespace endgate {
 
-Endpoint::Endpoint(ProxyServer &server, asio::io_context &io_context, std::shared_ptr<asio::ip::udp::socket> socket,
-                   std::uint64_t guid, std::span<const std::byte> offline_ping_response,
+Endpoint::Endpoint(ProxyServer &server, EventLoop &event_loop, Registry &registry,
+                   std::shared_ptr<asio::ip::udp::socket> socket, std::uint64_t guid,
+                   std::span<const std::byte> offline_ping_response,
                    std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity,
                    std::shared_ptr<asio::ssl::context> tls)
-    : server_(server), logger_(LogManager::getLogger("endgate::Endpoint")), io_context_(io_context),
-      socket_(std::move(socket)), strand_(asio::make_strand(io_context)), offline_(*this, guid),
-      certificate_(rtc::Certificate::shared()), identity_(std::move(identity)),
-      session_config_{.max_packet_size = 8 * 1024 * 1024},
-      signaling_(nethernet::HttpSignalingServer::create(io_context, *this, {}, std::move(tls)))
+    : server_(server), logger_(LogManager::getLogger("endgate::Endpoint")), event_loop_(event_loop), registry_(registry),
+      socket_(std::move(socket)), offline_(*this, guid), certificate_(rtc::Certificate::shared()),
+      identity_(std::move(identity)), session_config_{.max_packet_size = 8 * 1024 * 1024},
+      signaling_(nethernet::HttpSignalingServer::create(event_loop, *this, {}, std::move(tls)))
 {
     offline_.setOfflinePingResponse(Unpooled::wrappedBuffer(offline_ping_response));
 }
@@ -57,7 +56,7 @@ void Endpoint::listen(const asio::ip::tcp::endpoint &endpoint)
 
 void Endpoint::start()
 {
-    asio::co_spawn(strand_, receive(), asio::detached);
+    asio::co_spawn(event_loop_.getExecutor(), receive(), asio::detached);
 }
 
 Awaitable<void> Endpoint::receive()
@@ -73,7 +72,7 @@ Awaitable<void> Endpoint::receive()
         if (ec || size == 0) {
             continue;
         }
-        handleDatagram(std::span{buffer}.first(size), sender);
+        handleDatagram(std::span{buffer}.first(size), sender, false);
     }
 }
 
@@ -83,7 +82,8 @@ void Endpoint::sendTo(const raknet::SystemAddress &address, ByteBufView datagram
     socket_->send_to(asio::buffer(datagram.nioBuffer()), address, 0, ignored);
 }
 
-void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender)
+void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender,
+                              bool forwarded)
 {
     const auto id = static_cast<raknet::MessageId>(datagram.front());
     const bool offline_message = raknet::isOfflineMessage(Unpooled::wrappedBuffer(datagram));
@@ -94,17 +94,53 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::i
         return;
     }
     if (const auto route = routes_.find(sender); route != routes_.end()) {
-        route->second->receive(datagram, sender);
+        const auto connection = route->second;
+        connection->handleDatagram(datagram, sender);
         return;
     }
-    if (const auto ufrag = rtc::StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(datagram))) {
-        if (const auto session = ufrags_.find(std::string(*ufrag)); session != ufrags_.end()) {
-            session->second->receive(datagram, sender);
+    if (const auto owner = forwards_.find(sender); owner != forwards_.end() && !forwarded && !offline_message) {
+        owner->second->getEventLoop().execute([target = owner->second, copy = Unpooled::copiedBuffer(datagram),
+                                               sender]() mutable { target->forward(std::move(copy), sender); });
+        return;
+    }
+    if (const auto peeked = rtc::StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(datagram))) {
+        const std::string ufrag(*peeked);
+        if (const auto session = ufrags_.find(ufrag); session != ufrags_.end()) {
+            const auto connection = session->second;
+            connection->handleDatagram(datagram, sender);
+            return;
+        }
+        auto claim = closed_ ? Registry::Claim{} : registry_.claim(ufrag, *this);
+        if (auto *const join = std::get_if<PendingJoin>(&claim)) {
+            const auto connection = std::make_shared<NetherNetConnection<nethernet::NetworkSession>>(
+                *this, join->network_id, join->offer, std::move(join->credentials), certificate_, session_config_,
+                join->created);
+            connection->setSessionHandler(
+                std::make_shared<ClientPlaySessionHandler>(std::make_shared<Player>(server_, connection)));
+            connections_.emplace(connection, Registration{.ufrag = ufrag});
+            ufrags_.emplace(ufrag, connection);
+            connection->handleDatagram(datagram, sender);
+            return;
+        }
+        if (auto *const owner = std::get_if<Endpoint *>(&claim); owner != nullptr && !forwarded && *owner != this) {
+            if (forwards_.size() >= 4096) {
+                forwards_.clear();
+            }
+            forwards_.insert_or_assign(sender, *owner);
+            (*owner)->getEventLoop().execute([target = *owner, copy = Unpooled::copiedBuffer(datagram),
+                                              sender]() mutable { target->forward(std::move(copy), sender); });
         }
         return;
     }
     if (offline_message && id == raknet::MessageId::OpenConnectionRequest2) {
         accept(datagram, sender);
+    }
+}
+
+void Endpoint::forward(ByteBuf datagram, const asio::ip::udp::endpoint &sender)
+{
+    if (!closed_ && datagram.isReadable()) {
+        handleDatagram(datagram.nioBuffer(), sender, true);
     }
 }
 
@@ -119,7 +155,7 @@ void Endpoint::accept(std::span<const std::byte> datagram, const raknet::SystemA
     const auto guid = request->client_guid == raknet::UNASSIGNED_RAKNET_GUID
                         ? std::nullopt
                         : std::optional<std::uint64_t>{request->client_guid};
-    if (guid && guids_.contains(*guid)) {
+    if (guid && !registry_.addGuid(*guid)) {
         offline_.reject(sender, raknet::MessageId::AlreadyConnected);
         return;
     }
@@ -142,12 +178,9 @@ void Endpoint::accept(std::span<const std::byte> datagram, const raknet::SystemA
     connections_.emplace(
         connection,
         Registration{.routes = {sender}, .guid = guid, .system_index = system_index, .half_open = half_open});
-    if (guid) {
-        guids_.insert(*guid);
-    }
     half_open_.emplace(half_open, connection);
     routes_.insert_or_assign(sender, connection);
-    connection->receive(datagram, sender);
+    connection->handleDatagram(datagram, sender);
 }
 
 std::uint16_t Endpoint::getFreeSystemIndex() const
@@ -170,80 +203,73 @@ void Endpoint::unroute(const std::shared_ptr<MinecraftConnection> &connection, R
     }
 }
 
-void Endpoint::registerConnection(std::shared_ptr<MinecraftConnection> connection, std::optional<std::uint64_t> guid)
+void Endpoint::registerConnection(const std::shared_ptr<MinecraftConnection> &connection,
+                                  std::optional<std::uint64_t> guid)
 {
-    asio::post(strand_, [this, connection = std::move(connection), guid] {
-        if (closed_) {
-            connection->shutdown();
-            return;
-        }
-        connections_.emplace(connection, Registration{.guid = guid});
-        if (guid) {
-            guids_.insert(*guid);
-        }
-    });
+    if (closed_) {
+        connection->shutdown();
+        return;
+    }
+    if (guid && !registry_.addGuid(*guid)) {
+        guid.reset();
+    }
+    connections_.emplace(connection, Registration{.guid = guid});
 }
 
-void Endpoint::unregisterConnection(std::shared_ptr<MinecraftConnection> connection)
+void Endpoint::unregisterConnection(const std::shared_ptr<MinecraftConnection> &connection)
 {
-    asio::post(strand_, [this, connection = std::move(connection)] {
-        const auto registration = connections_.find(connection);
-        if (registration == connections_.end()) {
-            return;
-        }
-        unroute(connection, registration->second);
-        if (registration->second.guid) {
-            guids_.erase(*registration->second.guid);
-        }
-        if (registration->second.half_open) {
-            half_open_.erase(*registration->second.half_open);
-        }
-        if (const auto session = ufrags_.find(registration->second.ufrag);
-            session != ufrags_.end() && session->second == connection) {
-            ufrags_.erase(session);
-        }
-        connections_.erase(registration);
-    });
-}
-
-void Endpoint::activated(std::shared_ptr<MinecraftConnection> connection)
-{
-    asio::post(strand_, [this, connection = std::move(connection)] {
-        const auto registration = connections_.find(connection);
-        if (registration == connections_.end() || !registration->second.half_open) {
-            return;
-        }
+    const auto registration = connections_.find(connection);
+    if (registration == connections_.end()) {
+        return;
+    }
+    unroute(connection, registration->second);
+    if (registration->second.guid) {
+        registry_.removeGuid(*registration->second.guid);
+    }
+    if (registration->second.half_open) {
         half_open_.erase(*registration->second.half_open);
-        registration->second.half_open.reset();
-    });
+    }
+    if (const auto session = ufrags_.find(registration->second.ufrag);
+        session != ufrags_.end() && session->second == connection) {
+        ufrags_.erase(session);
+        registry_.release(registration->second.ufrag);
+    }
+    connections_.erase(registration);
 }
 
-void Endpoint::addRoute(const asio::ip::udp::endpoint &remote, std::shared_ptr<MinecraftConnection> connection)
+void Endpoint::activated(const std::shared_ptr<MinecraftConnection> &connection)
 {
-    asio::post(strand_, [this, remote, connection = std::move(connection)] {
-        const auto registration = connections_.find(connection);
-        if (registration == connections_.end()) {
-            return;
-        }
-        if (!std::ranges::contains(registration->second.routes, remote)) {
-            registration->second.routes.push_back(remote);
-        }
-        routes_.insert_or_assign(remote, connection);
-    });
+    const auto registration = connections_.find(connection);
+    if (registration == connections_.end() || !registration->second.half_open) {
+        return;
+    }
+    half_open_.erase(*registration->second.half_open);
+    registration->second.half_open.reset();
 }
 
-void Endpoint::removeRoute(const asio::ip::udp::endpoint &remote, std::shared_ptr<MinecraftConnection> connection)
+void Endpoint::addRoute(const asio::ip::udp::endpoint &remote, const std::shared_ptr<MinecraftConnection> &connection)
 {
-    asio::post(strand_, [this, remote, connection = std::move(connection)] {
-        const auto registration = connections_.find(connection);
-        if (registration == connections_.end()) {
-            return;
-        }
-        std::erase(registration->second.routes, remote);
-        if (const auto route = routes_.find(remote); route != routes_.end() && route->second == connection) {
-            routes_.erase(route);
-        }
-    });
+    const auto registration = connections_.find(connection);
+    if (registration == connections_.end()) {
+        return;
+    }
+    if (!std::ranges::contains(registration->second.routes, remote)) {
+        registration->second.routes.push_back(remote);
+    }
+    routes_.insert_or_assign(remote, connection);
+}
+
+void Endpoint::removeRoute(const asio::ip::udp::endpoint &remote,
+                           const std::shared_ptr<MinecraftConnection> &connection)
+{
+    const auto registration = connections_.find(connection);
+    if (registration == connections_.end()) {
+        return;
+    }
+    std::erase(registration->second.routes, remote);
+    if (const auto route = routes_.find(remote); route != routes_.end() && route->second == connection) {
+        routes_.erase(route);
+    }
 }
 
 ServerPing Endpoint::getServerPing(const nethernet::PingRequest &request)
@@ -253,7 +279,7 @@ ServerPing Endpoint::getServerPing(const nethernet::PingRequest &request)
 
 void Endpoint::onJoin(nethernet::JoinRequest request, nethernet::JoinResponse response)
 {
-    asio::co_spawn(strand_, join(std::move(request), std::move(response)), asio::detached);
+    asio::co_spawn(event_loop_.getExecutor(), join(std::move(request), std::move(response)), asio::detached);
 }
 
 Awaitable<void> Endpoint::join(nethernet::JoinRequest request, nethernet::JoinResponse response)
@@ -275,7 +301,7 @@ Awaitable<void> Endpoint::join(nethernet::JoinRequest request, nethernet::JoinRe
         reached = std::move(*cached);
     }
     else if (!request.host.empty()) {
-        asio::ip::udp::resolver resolver(strand_);
+        asio::ip::udp::resolver resolver(event_loop_.getExecutor());
         const auto [error, results] = co_await resolver.async_resolve(
             request.host, "", asio::cancel_after(resolve_timeout, asio::as_tuple(asio::use_awaitable)));
         for (const auto &result : results) {
@@ -312,19 +338,35 @@ Awaitable<void> Endpoint::join(nethernet::JoinRequest request, nethernet::JoinRe
 
     const auto port = local.port();
     auto candidates = nethernet::gatherCandidates(reached, request.port.value_or(port), interfaces, port);
+    const auto created = MinecraftConnection::Clock::now();
     auto credentials = rtc::IceCredentials::generate();
-    while (ufrags_.contains(credentials.ufrag)) {
+    while (!registry_.addPending(PendingJoin{
+        .offer = *offer, .credentials = credentials, .network_id = request.network_id, .created = created})) {
         credentials = rtc::IceCredentials::generate();
     }
-    const auto ufrag = credentials.ufrag;
-    const auto connection = std::make_shared<NetherNetConnection<nethernet::NetworkSession>>(
-        *this, request.network_id, *offer, std::move(credentials), certificate_, session_config_,
-        MinecraftConnection::Clock::now());
-    connection->setSessionHandler(
-        std::make_shared<ClientPlaySessionHandler>(std::make_shared<Player>(server_, connection)));
-    connections_.emplace(connection, Registration{.ufrag = ufrag});
-    ufrags_.emplace(ufrag, connection);
-    connection->answer(*offer, std::move(candidates), next_session_id_++, identity_, std::move(response));
+
+    auto sdp = rtc::Description::answer(*offer, credentials, certificate_->getFingerprint(), candidates)
+                   .generate(registry_.nextSessionId());
+    if (identity_) {
+        const auto assertion = nethernet::IdentityAssertion::create(*identity_, sdp, std::chrono::system_clock::now());
+        if (!assertion) {
+            registry_.removePending(credentials.ufrag);
+            response.reject(static_cast<std::uint32_t>(nethernet::ESessionError::FailedToCreateIdentityAssertion));
+            co_return;
+        }
+        sdp = assertion->injectIntoSdp(sdp);
+    }
+    asio::co_spawn(event_loop_.getExecutor(), expire(credentials.ufrag), asio::detached);
+    response.answer(std::move(sdp));
+}
+
+Awaitable<void> Endpoint::expire(std::string ufrag)
+{
+    asio::steady_timer timer(event_loop_.getExecutor(), session_config_.ice.negotiation_timeout);
+    expiring_.insert(&timer);
+    co_await timer.async_wait(asio::as_tuple(asio::use_awaitable));
+    expiring_.erase(&timer);
+    registry_.removePending(ufrag);
 }
 
 void Endpoint::close()
@@ -333,12 +375,21 @@ void Endpoint::close()
     asio::error_code ignored;
     std::ignore = socket_->cancel(ignored);
     signaling_->close();
+    for (auto *const timer : expiring_) {
+        timer->cancel();
+    }
     for (const auto &[connection, registration] : std::exchange(connections_, {})) {
+        if (registration.guid) {
+            registry_.removeGuid(*registration.guid);
+        }
+        if (!registration.ufrag.empty()) {
+            registry_.release(registration.ufrag);
+        }
         connection->shutdown();
     }
     routes_.clear();
     ufrags_.clear();
-    guids_.clear();
+    forwards_.clear();
     half_open_.clear();
 }
 

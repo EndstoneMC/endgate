@@ -18,6 +18,7 @@
 #include <openssl/evp.h>
 
 #include "endgate/buffer/bytebuf.h"
+#include "endgate/network/eventloop.h"
 #include "endgate/network/nethernet/candidates.h"
 #include "endgate/network/nethernet/identity.h"
 #include "endgate/network/nethernet/session.h"
@@ -36,14 +37,14 @@ using Clock = std::chrono::steady_clock;
 
 class Echo : public endgate::nethernet::JoinHandler {
 public:
-    Echo(asio::io_context &io_context, const asio::ip::address &address)
-        : io_context_(io_context), socket_(io_context, {address, 0}), timer_(io_context),
-          certificate_(endgate::rtc::Certificate::generate()),
+    Echo(endgate::EventLoop &event_loop, const asio::ip::address &address)
+        : event_loop_(event_loop), io_context_(event_loop.getIoContext()), socket_(io_context_, {address, 0}),
+          timer_(io_context_), certificate_(endgate::rtc::Certificate::generate()),
           identity_(endgate::nethernet::PrivateKey{EVP_EC_gen("P-384"), EVP_PKEY_free},
                     endgate::nethernet::ServerIdentityAssertionGenerator::Config{})
     {
         socket_.non_blocking(true);
-        signaling_ = endgate::nethernet::HttpSignalingServer::create(io_context, *this, {}, nullptr);
+        signaling_ = endgate::nethernet::HttpSignalingServer::create(event_loop, *this, {}, nullptr);
         signaling_->listen({address, socket_.local_endpoint().port()});
         receive();
     }
@@ -199,6 +200,7 @@ private:
         });
     }
 
+    endgate::EventLoop &event_loop_;
     asio::io_context &io_context_;
     asio::ip::udp::socket socket_;
     asio::steady_timer timer_;
@@ -218,8 +220,8 @@ private:
 int main(int argc, char **argv)
 {
     std::cout << std::unitbuf;
-    asio::io_context io_context;
-    Echo echo(io_context, asio::ip::make_address(argc > 1 ? argv[1] : "127.0.0.1"));
+    endgate::EventLoop loop;
+    Echo echo(loop, asio::ip::make_address(argc > 1 ? argv[1] : "127.0.0.1"));
     std::cout << "listening " << echo.port() << '\n';
-    io_context.run();
+    loop.awaitTermination();
 }
