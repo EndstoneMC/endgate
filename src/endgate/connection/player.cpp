@@ -69,13 +69,12 @@ void ClientPlaySessionHandler::connected()
 void ClientPlaySessionHandler::handleUnknown(ByteBuf batch)
 {
     const auto &server = player_->getConnectedServer();
-    auto *const connection = server ? server->getConnection() : nullptr;
-    if (connection == nullptr) {
-        logger_.debug("Dropping {} bytes from {}: no backend yet", batch.length(),
+    if (!server) {
+        logger_.debug("Dropping {} bytes from {}: no backend", batch.length(),
                       player_->getConnection().getRemoteAddress());
         return;
     }
-    connection->write(std::move(batch));
+    server->write(std::move(batch));
 }
 
 void ClientPlaySessionHandler::disconnected()

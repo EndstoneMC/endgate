@@ -11,6 +11,7 @@
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/ip/udp.hpp>
+#include <asio/post.hpp>
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 
@@ -67,7 +68,6 @@ asio::awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> s
         player.disconnect();
         co_return;
     }
-    self->logger_.debug("Backend {} speaks {}", info.getAddress(), toString(*transport));
     if (*transport == ServerInfo::Transport::NetherNet) {
         self->logger_.warn("Backend {} speaks NetherNet, which endgate can't connect to yet; disconnecting {}",
                            info.getAddress(), player_address);
@@ -87,9 +87,46 @@ asio::awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> s
 
 void ServerConnection::disconnect()
 {
+    pending_.clear();
+    pending_bytes_ = 0;
     if (connection_) {
         connection_->close();
     }
+}
+
+void ServerConnection::write(ByteBuf batch)
+{
+    constexpr std::size_t max_pending_bytes = 64 * 1024;
+
+    if (connected_) {
+        connection_->write(std::move(batch));
+        return;
+    }
+    if (pending_bytes_ > max_pending_bytes) {
+        return;
+    }
+    pending_bytes_ += batch.length();
+    if (pending_bytes_ > max_pending_bytes) {
+        logger_.warn("{} sent more than {} bytes before backend {} was up; disconnecting",
+                     player_->getConnection().getRemoteAddress(), max_pending_bytes,
+                     server_.getServerInfo().getAddress());
+        pending_.clear();
+        player_->disconnect();
+        return;
+    }
+    pending_.push_back(std::move(batch));
+}
+
+void ServerConnection::connected()
+{
+    if (!player_->isActive() || !connection_) {
+        return;
+    }
+    connected_ = true;
+    for (auto &batch : std::exchange(pending_, {})) {
+        connection_->write(std::move(batch));
+    }
+    pending_bytes_ = 0;
 }
 
 BackendPlaySessionHandler::BackendPlaySessionHandler(std::shared_ptr<ServerConnection> server_connection)
@@ -100,8 +137,10 @@ BackendPlaySessionHandler::BackendPlaySessionHandler(std::shared_ptr<ServerConne
 void BackendPlaySessionHandler::connected()
 {
     connected_ = true;
-    logger_.info("Player {} is now on backend {}", server_connection_->getPlayer().getConnection().getRemoteAddress(),
+    auto &player = server_connection_->getPlayer().getConnection();
+    logger_.info("Player {} is now on backend {}", player.getRemoteAddress(),
                  server_connection_->getConnection()->getRemoteAddress());
+    asio::post(player.getExecutor(), [server_connection = server_connection_] { server_connection->connected(); });
 }
 
 void BackendPlaySessionHandler::handleUnknown(ByteBuf batch)

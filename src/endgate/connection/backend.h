@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <deque>
 #include <memory>
 
 #include <asio/awaitable.hpp>
@@ -14,7 +16,8 @@ class RegisteredServer;
 
 /**
  * The proxy's connection to a backend on behalf of one player. Its methods run on the player's
- * strand; the leg it opens runs on its own.
+ * strand; the leg it opens runs on its own. What the player sends before that leg is up waits here,
+ * in order, up to a bound.
  *
  * @see com.velocitypowered.api.proxy.ServerConnection
  * @see com.velocitypowered.proxy.connection.backend.VelocityServerConnection
@@ -35,6 +38,13 @@ public:
      */
     void disconnect();
 
+    void write(ByteBuf batch);
+
+    /**
+     * Sends what waited for the leg to come up, and everything after it straight through.
+     */
+    void connected();
+
     [[nodiscard]] RegisteredServer &getServer() const { return server_; }
     [[nodiscard]] Player &getPlayer() const { return *player_; }
 
@@ -53,6 +63,9 @@ private:
     std::shared_ptr<Player> player_;
     spdlog::logger &logger_;
     std::shared_ptr<MinecraftConnection> connection_;
+    std::deque<ByteBuf> pending_;
+    std::size_t pending_bytes_{0};
+    bool connected_{false};
 };
 
 /**

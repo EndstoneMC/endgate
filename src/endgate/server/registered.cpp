@@ -13,6 +13,7 @@
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 
+#include "endgate/logging/manager.h"
 #include "endgate/network/raknet/codec.h"
 #include "endgate/network/raknet/message.h"
 #include "endgate/network/raknet/protocol.h"
@@ -79,6 +80,8 @@ std::optional<ServerInfo> ServerInfo::parse(std::string name, std::string_view a
     return ServerInfo{std::move(name), std::string(address), std::string(host), number, transport};
 }
 
+RegisteredServer::RegisteredServer(ServerInfo info) : info_(std::move(info)), logger_(LogManager::getLogger()) {}
+
 asio::awaitable<std::optional<ServerInfo::Transport>> RegisteredServer::detectTransport(asio::ip::udp::endpoint address)
 {
     constexpr std::chrono::milliseconds signaling_timeout{2000};
@@ -102,10 +105,13 @@ asio::awaitable<std::optional<ServerInfo::Transport>> RegisteredServer::detectTr
     else if (co_await ping(address, ping_timeout)) {
         detected = ServerInfo::Transport::RakNet;
     }
-    if (detected) {
-        const std::scoped_lock lock(mutex_);
-        detected_ = detected;
+    if (!detected) {
+        logger_.debug("Backend {} answers neither NetherNet nor RakNet", info_.getAddress());
+        co_return detected;
     }
+    logger_.debug("Backend {} speaks {}", info_.getAddress(), toString(*detected));
+    const std::scoped_lock lock(mutex_);
+    detected_ = detected;
     co_return detected;
 }
 

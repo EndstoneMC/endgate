@@ -9,6 +9,7 @@
 
 #include <asio/awaitable.hpp>
 #include <asio/ip/udp.hpp>
+#include <spdlog/logger.h>
 
 namespace endgate {
 
@@ -65,7 +66,7 @@ private:
  */
 class RegisteredServer {
 public:
-    explicit RegisteredServer(ServerInfo info) : info_(std::move(info)) {}
+    explicit RegisteredServer(ServerInfo info);
 
     [[nodiscard]] const ServerInfo &getServerInfo() const { return info_; }
 
@@ -90,6 +91,7 @@ public:
 
 private:
     ServerInfo info_;
+    spdlog::logger &logger_;
     std::mutex mutex_;
     std::optional<ServerInfo::Transport> detected_;
 };
