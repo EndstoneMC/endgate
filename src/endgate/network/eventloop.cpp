@@ -1,0 +1,54 @@
+#include "endgate/network/eventloop.h"
+
+namespace endgate {
+
+EventLoop::EventLoop()
+    : io_context_(1), work_guard_(asio::make_work_guard(io_context_)), thread_([this] { io_context_.run(); })
+{
+}
+
+EventLoop::~EventLoop()
+{
+    shutdownGracefully();
+    awaitTermination();
+}
+
+void EventLoop::shutdownGracefully()
+{
+    work_guard_.reset();
+}
+
+void EventLoop::awaitTermination()
+{
+    if (thread_.joinable() && !inEventLoop()) {
+        thread_.join();
+    }
+}
+
+EventLoopGroup::EventLoopGroup(std::size_t threads)
+{
+    for (std::size_t i = 0; i < threads; ++i) {
+        loops_.emplace_back();
+    }
+}
+
+EventLoop &EventLoopGroup::next()
+{
+    return loops_[next_.fetch_add(1) % loops_.size()];
+}
+
+void EventLoopGroup::shutdownGracefully()
+{
+    for (auto &loop : loops_) {
+        loop.shutdownGracefully();
+    }
+}
+
+void EventLoopGroup::awaitTermination()
+{
+    for (auto &loop : loops_) {
+        loop.awaitTermination();
+    }
+}
+
+}  // namespace endgate

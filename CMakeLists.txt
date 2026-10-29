@@ -21,6 +21,11 @@ find_package(GTest REQUIRED)
 
 enable_testing()
 
+add_library(endgate_eventloop STATIC src/endgate/network/eventloop.cpp)
+add_library(endgate::eventloop ALIAS endgate_eventloop)
+target_include_directories(endgate_eventloop PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(endgate_eventloop PUBLIC asio::asio)
+
 add_subdirectory(src/endgate/buffer)
 add_subdirectory(src/endgate/network/raknet)
 add_subdirectory(src/endgate/network/rtc)
@@ -29,6 +34,7 @@ add_subdirectory(src/endgate/network/nethernet)
 
 add_subdirectory(tests/unit/buffer)
 add_subdirectory(tests/unit/nethernet)
+add_subdirectory(tests/unit/network)
 add_subdirectory(tests/unit/raknet)
 add_subdirectory(tests/unit/rtc)
 add_subdirectory(tests/unit/sctp)
@@ -58,6 +64,7 @@ target_include_directories(endgate PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}/gener
 target_compile_definitions(endgate PRIVATE ENDGATE_VERSION="${PROJECT_VERSION}")
 
 target_link_libraries(endgate PRIVATE
+        endgate::eventloop
         endgate::nethernet
         endgate::raknet
         asio::asio
