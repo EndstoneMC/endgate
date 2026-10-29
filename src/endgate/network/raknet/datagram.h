@@ -3,11 +3,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <span>
 #include <string_view>
 #include <vector>
 
-#include "endgate/network/raknet/codec.h"
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/raknet/protocol.h"
 
 namespace endgate::raknet {
@@ -32,8 +31,8 @@ struct DatagramHeader {
      */
     static constexpr std::size_t DATA_HEADER_BYTE_LENGTH = 2 + 3 + sizeof(float);
 
-    [[nodiscard]] static std::expected<DatagramHeader, std::string_view> decode(Reader &reader);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::expected<DatagramHeader, std::string_view> decode(ByteBufView &reader);
+    void encode(ByteBuf &writer) const;
 };
 
 /**
@@ -57,7 +56,7 @@ struct FrameHeader {
     /**
      * @see ReliabilityLayer::WriteToBitStreamFromInternalPacket
      */
-    void encode(Writer &writer, std::size_t data_byte_length) const;
+    void encode(ByteBuf &writer, std::size_t data_byte_length) const;
 };
 
 /**
@@ -70,14 +69,14 @@ inline constexpr std::size_t MAXIMUM_FRAME_HEADER_LENGTH = 1 + 2 + 3 + 3 + 3 + 1
  */
 struct Frame {
     FrameHeader header;
-    std::span<const std::byte> data;
+    ByteBufView data;
 
     static constexpr std::size_t MINIMUM_LENGTH = 4;
 
     /**
      * @see ReliabilityLayer::CreateInternalPacketFromBitStream
      */
-    [[nodiscard]] static std::expected<Frame, std::string_view> decode(Reader &reader);
+    [[nodiscard]] static std::expected<Frame, std::string_view> decode(ByteBufView &reader);
 };
 
 /**
@@ -109,12 +108,12 @@ public:
     /**
      * @see DataStructures::RangeList::Serialize
      */
-    void serialize(Writer &writer, std::size_t max_bits);
+    void serialize(ByteBuf &writer, std::size_t max_bits);
 
     /**
      * @see DataStructures::RangeList::Deserialize
      */
-    [[nodiscard]] static std::expected<std::vector<Range>, RangeListError> deserialize(Reader &reader);
+    [[nodiscard]] static std::expected<std::vector<Range>, RangeListError> deserialize(ByteBufView &reader);
 
     static constexpr std::size_t MAX_ACKNOWLEDGEMENT_RANGES_PER_DATAGRAM = 0x400;
     static constexpr std::uint32_t MAX_ACKNOWLEDGEMENTS_PER_DATAGRAM = 0x4000;

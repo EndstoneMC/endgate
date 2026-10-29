@@ -103,7 +103,7 @@ private:
     asio::awaitable<void> receive();
     void handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender);
     void accept(std::span<const std::byte> datagram, const raknet::SystemAddress &sender);
-    void sendTo(const raknet::SystemAddress &address, std::span<const std::byte> datagram) override;
+    void sendTo(const raknet::SystemAddress &address, ByteBufView datagram) override;
     void unroute(const std::shared_ptr<MinecraftConnection> &connection, Registration &registration);
     [[nodiscard]] std::uint16_t getFreeSystemIndex() const;
 

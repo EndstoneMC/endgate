@@ -47,10 +47,10 @@ protected:
     void disconnect(bool wait_for_peer) override;
 
 private:
-    void sendDatagram(std::span<const std::byte> datagram) override;
-    bool sendMtuProbe(std::span<const std::byte> datagram) override;
+    void sendDatagram(ByteBufView datagram) override;
+    bool sendMtuProbe(ByteBufView datagram) override;
     void onConnected() override;
-    void onMessage(LegacyByteBuf message) override;
+    void onMessage(ByteBufView message) override;
     void onDisconnected(raknet::DisconnectReason reason) override;
     void onReliabilityLayerNotification(std::string_view message, bool is_error) override;
 

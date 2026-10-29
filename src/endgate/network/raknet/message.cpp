@@ -5,25 +5,28 @@
 
 namespace endgate::raknet {
 
-bool isOfflineMessage(std::span<const std::byte> datagram)
+bool isOfflineMessage(const ByteBufView &datagram)
 {
-    if (datagram.size() <= 2) {
+    const auto size = datagram.readableBytes();
+    if (size <= 2) {
         return true;
     }
-    const auto magic_at = [datagram](std::size_t offset) {
-        return datagram.size() >= offset + OFFLINE_MESSAGE_DATA_ID.size() &&
-               std::ranges::equal(datagram.subspan(offset, OFFLINE_MESSAGE_DATA_ID.size()), OFFLINE_MESSAGE_DATA_ID);
+    const auto start = datagram.readerIndex();
+    const auto magic_at = [&datagram, size, start](std::size_t offset) {
+        return size >= offset + OFFLINE_MESSAGE_DATA_ID.size() &&
+               std::ranges::equal(datagram.nioBuffer(start + offset, OFFLINE_MESSAGE_DATA_ID.size()),
+                                  OFFLINE_MESSAGE_DATA_ID);
     };
     constexpr std::size_t guid_and_magic =
         sizeof(std::uint8_t) + sizeof(std::uint64_t) + OFFLINE_MESSAGE_DATA_ID.size();
-    switch (static_cast<MessageId>(datagram.front())) {
+    switch (static_cast<MessageId>(datagram.getUnsignedByte(start))) {
     case MessageId::UnconnectedPing:
     case MessageId::UnconnectedPingOpenConnections:
-        return datagram.size() >= guid_and_magic && magic_at(9);
+        return size >= guid_and_magic && magic_at(9);
     case MessageId::UnconnectedPong:
         return magic_at(17);
     case MessageId::OutOfBandInternal:
-        return datagram.size() >= guid_and_magic && magic_at(9);
+        return size >= guid_and_magic && magic_at(9);
     case MessageId::OpenConnectionReply1:
     case MessageId::OpenConnectionReply2:
     case MessageId::OpenConnectionRequest1:
@@ -33,385 +36,388 @@ bool isOfflineMessage(std::span<const std::byte> datagram)
     case MessageId::ConnectionBanned:
     case MessageId::AlreadyConnected:
     case MessageId::IpRecentlyConnected:
-        return datagram.size() >= guid_and_magic && magic_at(1);
+        return size >= guid_and_magic && magic_at(1);
     case MessageId::IncompatibleProtocolVersion:
-        return datagram.size() == guid_and_magic + 1 && magic_at(2);
+        return size == guid_and_magic + 1 && magic_at(2);
     default:
         return false;
     }
 }
 
-std::optional<UnconnectedPing> UnconnectedPing::decode(std::span<const std::byte> message)
+std::optional<UnconnectedPing> UnconnectedPing::decode(ByteBufView message)
 {
-    Reader reader{message};
-    const auto id = reader.readUint8();
-    const auto send_ping_time = reader.readUint64();
-    const auto magic = reader.readBytes(OFFLINE_MESSAGE_DATA_ID.size());
-    if (!id || !send_ping_time || !magic || !std::ranges::equal(*magic, OFFLINE_MESSAGE_DATA_ID)) {
+    if (!message.isReadable(1 + 8 + OFFLINE_MESSAGE_DATA_ID.size())) {
         return std::nullopt;
     }
-    const auto ping_id = static_cast<MessageId>(*id);
+    const auto id = message.readUnsignedByte();
+    const auto send_ping_time = static_cast<std::uint64_t>(message.readLong());
+    const auto magic = message.readSlice(OFFLINE_MESSAGE_DATA_ID.size());
+    if (!std::ranges::equal(magic.nioBuffer(), OFFLINE_MESSAGE_DATA_ID)) {
+        return std::nullopt;
+    }
+    const auto ping_id = static_cast<MessageId>(id);
     if (ping_id != MessageId::UnconnectedPing && ping_id != MessageId::UnconnectedPingOpenConnections) {
         return std::nullopt;
     }
     return UnconnectedPing{.id = ping_id,
-                           .send_ping_time = *send_ping_time,
-                           .client_guid = reader.readUint64().value_or(UNASSIGNED_RAKNET_GUID)};
+                           .send_ping_time = send_ping_time,
+                           .client_guid = message.isReadable(8) ? static_cast<std::uint64_t>(message.readLong())
+                                                                : UNASSIGNED_RAKNET_GUID};
 }
 
-void UnconnectedPing::encode(Writer &writer) const
+void UnconnectedPing::encode(ByteBuf &writer) const
 {
-    writer.writeUint8(static_cast<std::uint8_t>(id));
-    writer.writeUint64(send_ping_time);
+    writer.writeByte(static_cast<std::uint8_t>(id));
+    writer.writeLong(send_ping_time);
     writer.writeBytes(OFFLINE_MESSAGE_DATA_ID);
-    writer.writeUint64(client_guid);
+    writer.writeLong(client_guid);
 }
 
-std::optional<UnconnectedPong> UnconnectedPong::decode(std::span<const std::byte> message)
+std::optional<UnconnectedPong> UnconnectedPong::decode(ByteBufView message)
 {
     constexpr std::size_t max_offline_data_length = 400;
 
-    Reader reader{message};
-    const auto id = reader.readUint8();
-    const auto send_ping_time = reader.readUint64();
-    const auto server_guid = reader.readUint64();
-    const auto magic = reader.readBytes(OFFLINE_MESSAGE_DATA_ID.size());
-    if (!id || static_cast<MessageId>(*id) != MessageId::UnconnectedPong || !send_ping_time || !server_guid || !magic ||
-        !std::ranges::equal(*magic, OFFLINE_MESSAGE_DATA_ID) || reader.remaining() >= max_offline_data_length) {
+    if (!message.isReadable(1 + 8 + 8 + OFFLINE_MESSAGE_DATA_ID.size())) {
         return std::nullopt;
     }
-    return UnconnectedPong{
-        .send_ping_time = *send_ping_time, .server_guid = *server_guid, .data = reader.readRemaining()};
-}
-
-void UnconnectedPong::encode(Writer &writer) const
-{
-    writer.writeUint8(static_cast<std::uint8_t>(MessageId::UnconnectedPong));
-    writer.writeUint64(send_ping_time);
-    writer.writeUint64(server_guid);
-    writer.writeBytes(OFFLINE_MESSAGE_DATA_ID);
-    writer.writeBytes(data);
-}
-
-std::optional<OpenConnectionRequest1> OpenConnectionRequest1::decode(std::span<const std::byte> message)
-{
-    if (message.size() <= 2 || !isOfflineMessage(message) ||
-        static_cast<MessageId>(message.front()) != MessageId::OpenConnectionRequest1) {
+    const auto id = message.readUnsignedByte();
+    const auto send_ping_time = static_cast<std::uint64_t>(message.readLong());
+    const auto server_guid = static_cast<std::uint64_t>(message.readLong());
+    const auto magic = message.readSlice(OFFLINE_MESSAGE_DATA_ID.size());
+    if (static_cast<MessageId>(id) != MessageId::UnconnectedPong ||
+        !std::ranges::equal(magic.nioBuffer(), OFFLINE_MESSAGE_DATA_ID) ||
+        message.readableBytes() >= max_offline_data_length) {
         return std::nullopt;
     }
-    const auto mtu = std::min<std::size_t>(message.size() + UDP_HEADER_SIZE, std::numeric_limits<std::uint16_t>::max());
-    return OpenConnectionRequest1{.protocol =
-                                      std::to_integer<std::uint8_t>(message[1 + OFFLINE_MESSAGE_DATA_ID.size()]),
-                                  .mtu = static_cast<std::uint16_t>(mtu)};
+    return UnconnectedPong{.send_ping_time = send_ping_time, .server_guid = server_guid, .data = message.slice()};
 }
 
-void OpenConnectionRequest1::encode(Writer &writer) const
+void UnconnectedPong::encode(ByteBuf &writer) const
 {
-    const auto start = writer.size();
-    writer.writeUint8(static_cast<std::uint8_t>(MessageId::OpenConnectionRequest1));
+    writer.writeByte(static_cast<std::uint8_t>(MessageId::UnconnectedPong));
+    writer.writeLong(send_ping_time);
+    writer.writeLong(server_guid);
     writer.writeBytes(OFFLINE_MESSAGE_DATA_ID);
-    writer.writeUint8(protocol);
+    writer.writeBytes(data.nioBuffer());
+}
+
+std::optional<OpenConnectionRequest1> OpenConnectionRequest1::decode(ByteBufView message)
+{
+    if (message.readableBytes() <= 2 || !isOfflineMessage(message) ||
+        static_cast<MessageId>(message.getUnsignedByte(message.readerIndex())) != MessageId::OpenConnectionRequest1) {
+        return std::nullopt;
+    }
+    const auto mtu =
+        std::min<std::size_t>(message.readableBytes() + UDP_HEADER_SIZE, std::numeric_limits<std::uint16_t>::max());
+    return OpenConnectionRequest1{
+        .protocol = message.getUnsignedByte(message.readerIndex() + 1 + OFFLINE_MESSAGE_DATA_ID.size()),
+        .mtu = static_cast<std::uint16_t>(mtu)};
+}
+
+void OpenConnectionRequest1::encode(ByteBuf &writer) const
+{
+    const auto start = writer.writerIndex();
+    writer.writeByte(static_cast<std::uint8_t>(MessageId::OpenConnectionRequest1));
+    writer.writeBytes(OFFLINE_MESSAGE_DATA_ID);
+    writer.writeByte(protocol);
     const auto padded_length = std::max<std::size_t>(mtu, UDP_HEADER_SIZE) - UDP_HEADER_SIZE;
-    const auto written = writer.size() - start;
-    writer.writeZeros(padded_length > written ? padded_length - written : 0);
+    const auto written = writer.writerIndex() - start;
+    writer.writeZero(padded_length > written ? padded_length - written : 0);
 }
 
-std::optional<OpenConnectionReply1> OpenConnectionReply1::decode(std::span<const std::byte> message)
+std::optional<OpenConnectionReply1> OpenConnectionReply1::decode(ByteBufView message)
 {
-    if (message.size() <= 2 || !isOfflineMessage(message) ||
-        static_cast<MessageId>(message.front()) != MessageId::OpenConnectionReply1) {
+    if (message.readableBytes() <= 2 || !isOfflineMessage(message) ||
+        static_cast<MessageId>(message.getUnsignedByte(message.readerIndex())) != MessageId::OpenConnectionReply1) {
         return std::nullopt;
     }
-    Reader reader{message.subspan(1 + OFFLINE_MESSAGE_DATA_ID.size())};
-    const auto server_guid = reader.readUint64();
-    const auto security = reader.readUint8();
-    if (!server_guid || !security) {
+    message.skipBytes(1 + OFFLINE_MESSAGE_DATA_ID.size());
+    if (!message.isReadable(8 + 1)) {
         return std::nullopt;
     }
-    OpenConnectionReply1 reply{.server_guid = *server_guid};
-    if (*security != 0) {
-        reply.cookie = reader.readUint32();
-        if (!reply.cookie) {
+    OpenConnectionReply1 reply{.server_guid = static_cast<std::uint64_t>(message.readLong())};
+    const auto security = message.readUnsignedByte();
+    if (security != 0) {
+        if (!message.isReadable(4)) {
             return std::nullopt;
         }
+        reply.cookie = message.readUnsignedInt();
     }
-    const auto mtu = reader.readUint16();
-    if (!mtu) {
+    if (!message.isReadable(2)) {
         return std::nullopt;
     }
-    reply.mtu = *mtu;
+    reply.mtu = message.readUnsignedShort();
     return reply;
 }
 
-void OpenConnectionReply1::encode(Writer &writer) const
+void OpenConnectionReply1::encode(ByteBuf &writer) const
 {
-    writer.writeUint8(static_cast<std::uint8_t>(MessageId::OpenConnectionReply1));
+    writer.writeByte(static_cast<std::uint8_t>(MessageId::OpenConnectionReply1));
     writer.writeBytes(OFFLINE_MESSAGE_DATA_ID);
-    writer.writeUint64(server_guid);
-    writer.writeUint8(cookie ? 1 : 0);
+    writer.writeLong(server_guid);
+    writer.writeByte(cookie ? 1 : 0);
     if (cookie) {
-        writer.writeUint32(*cookie);
+        writer.writeInt(*cookie);
     }
-    writer.writeUint16(mtu);
+    writer.writeShort(mtu);
 }
 
-std::optional<OpenConnectionRequest2> OpenConnectionRequest2::decode(std::span<const std::byte> message)
+std::optional<OpenConnectionRequest2> OpenConnectionRequest2::decode(ByteBufView message)
 {
-    if (message.size() <= 2 || !isOfflineMessage(message) ||
-        static_cast<MessageId>(message.front()) != MessageId::OpenConnectionRequest2) {
+    if (message.readableBytes() <= 2 || !isOfflineMessage(message) ||
+        static_cast<MessageId>(message.getUnsignedByte(message.readerIndex())) != MessageId::OpenConnectionRequest2) {
         return std::nullopt;
     }
-    Reader reader{message.subspan(1 + OFFLINE_MESSAGE_DATA_ID.size())};
-    const auto server_address = reader.readAddress();
-    const auto mtu = reader.readUint16();
-    if (!server_address || !mtu) {
+    message.skipBytes(1 + OFFLINE_MESSAGE_DATA_ID.size());
+    if (!isAddressReadable(message)) {
         return std::nullopt;
     }
-    return OpenConnectionRequest2{.server_address = *server_address,
-                                  .mtu = *mtu,
-                                  .client_guid = reader.readUint64().value_or(UNASSIGNED_RAKNET_GUID)};
+    const auto server_address = readAddress(message);
+    if (!message.isReadable(2)) {
+        return std::nullopt;
+    }
+    const auto mtu = message.readUnsignedShort();
+    return OpenConnectionRequest2{.server_address = server_address,
+                                  .mtu = mtu,
+                                  .client_guid = message.isReadable(8) ? static_cast<std::uint64_t>(message.readLong())
+                                                                       : UNASSIGNED_RAKNET_GUID};
 }
 
-void OpenConnectionRequest2::encode(Writer &writer) const
+void OpenConnectionRequest2::encode(ByteBuf &writer) const
 {
-    writer.writeUint8(static_cast<std::uint8_t>(MessageId::OpenConnectionRequest2));
+    writer.writeByte(static_cast<std::uint8_t>(MessageId::OpenConnectionRequest2));
     writer.writeBytes(OFFLINE_MESSAGE_DATA_ID);
     if (cookie) {
-        writer.writeUint32(*cookie);
-        writer.writeUint8(0);
+        writer.writeInt(*cookie);
+        writer.writeByte(0);
     }
-    writer.writeAddress(server_address);
-    writer.writeUint16(mtu);
-    writer.writeUint64(client_guid);
+    writeAddress(writer, server_address);
+    writer.writeShort(mtu);
+    writer.writeLong(client_guid);
 }
 
-std::optional<OpenConnectionReply2> OpenConnectionReply2::decode(std::span<const std::byte> message)
+std::optional<OpenConnectionReply2> OpenConnectionReply2::decode(ByteBufView message)
 {
-    if (message.size() <= 2 || !isOfflineMessage(message) ||
-        static_cast<MessageId>(message.front()) != MessageId::OpenConnectionReply2) {
+    if (message.readableBytes() <= 2 || !isOfflineMessage(message) ||
+        static_cast<MessageId>(message.getUnsignedByte(message.readerIndex())) != MessageId::OpenConnectionReply2) {
         return std::nullopt;
     }
-    Reader reader{message.subspan(1 + OFFLINE_MESSAGE_DATA_ID.size())};
-    const auto server_guid = reader.readUint64();
-    const auto client_address = reader.readAddress();
-    const auto mtu = reader.readUint16();
-    if (!server_guid || !client_address || !mtu) {
+    message.skipBytes(1 + OFFLINE_MESSAGE_DATA_ID.size());
+    if (!message.isReadable(8)) {
         return std::nullopt;
     }
-    const auto security = reader.readUint8().value_or(0);
-    return OpenConnectionReply2{.server_guid = *server_guid,
-                                .client_address = *client_address,
-                                .mtu = *mtu,
-                                .security = (security & 0x80U) != 0};
+    const auto server_guid = static_cast<std::uint64_t>(message.readLong());
+    if (!isAddressReadable(message)) {
+        return std::nullopt;
+    }
+    const auto client_address = readAddress(message);
+    if (!message.isReadable(2)) {
+        return std::nullopt;
+    }
+    const auto mtu = message.readUnsignedShort();
+    const auto security = message.isReadable() ? message.readUnsignedByte() : 0;
+    return OpenConnectionReply2{
+        .server_guid = server_guid, .client_address = client_address, .mtu = mtu, .security = (security & 0x80U) != 0};
 }
 
-void OpenConnectionReply2::encode(Writer &writer) const
+void OpenConnectionReply2::encode(ByteBuf &writer) const
 {
-    writer.writeUint8(static_cast<std::uint8_t>(MessageId::OpenConnectionReply2));
+    writer.writeByte(static_cast<std::uint8_t>(MessageId::OpenConnectionReply2));
     writer.writeBytes(OFFLINE_MESSAGE_DATA_ID);
-    writer.writeUint64(server_guid);
-    writer.writeAddress(client_address);
-    writer.writeUint16(mtu);
-    writer.writeUint8(security ? 0x80 : 0x00);
+    writer.writeLong(server_guid);
+    writeAddress(writer, client_address);
+    writer.writeShort(mtu);
+    writer.writeByte(security ? 0x80 : 0x00);
 }
 
-std::optional<IncompatibleProtocolVersion> IncompatibleProtocolVersion::decode(std::span<const std::byte> message)
+std::optional<IncompatibleProtocolVersion> IncompatibleProtocolVersion::decode(ByteBufView message)
 {
-    if (message.size() <= 2 || !isOfflineMessage(message) ||
-        static_cast<MessageId>(message.front()) != MessageId::IncompatibleProtocolVersion) {
+    if (message.readableBytes() <= 2 || !isOfflineMessage(message) ||
+        static_cast<MessageId>(message.getUnsignedByte(message.readerIndex())) !=
+            MessageId::IncompatibleProtocolVersion) {
         return std::nullopt;
     }
-    Reader reader{message.subspan(1)};
-    const auto protocol = reader.readUint8();
-    const auto server_guid = Reader{message.subspan(2 + OFFLINE_MESSAGE_DATA_ID.size())}.readUint64();
-    if (!protocol || !server_guid) {
+    message.skipBytes(1);
+    const auto protocol = message.readUnsignedByte();
+    message.skipBytes(OFFLINE_MESSAGE_DATA_ID.size());
+    if (!message.isReadable(8)) {
         return std::nullopt;
     }
-    return IncompatibleProtocolVersion{.protocol = *protocol, .server_guid = *server_guid};
+    return IncompatibleProtocolVersion{.protocol = protocol,
+                                       .server_guid = static_cast<std::uint64_t>(message.readLong())};
 }
 
-void IncompatibleProtocolVersion::encode(Writer &writer) const
+void IncompatibleProtocolVersion::encode(ByteBuf &writer) const
 {
-    writer.writeUint8(static_cast<std::uint8_t>(MessageId::IncompatibleProtocolVersion));
-    writer.writeUint8(protocol);
+    writer.writeByte(static_cast<std::uint8_t>(MessageId::IncompatibleProtocolVersion));
+    writer.writeByte(protocol);
     writer.writeBytes(OFFLINE_MESSAGE_DATA_ID);
-    writer.writeUint64(server_guid);
+    writer.writeLong(server_guid);
 }
 
-std::optional<OfflineRejection> OfflineRejection::decode(std::span<const std::byte> message)
+std::optional<OfflineRejection> OfflineRejection::decode(ByteBufView message)
 {
-    if (message.size() <= 2 || !isOfflineMessage(message)) {
+    if (message.readableBytes() <= 2 || !isOfflineMessage(message)) {
         return std::nullopt;
     }
-    const auto id = static_cast<MessageId>(message.front());
+    const auto id = static_cast<MessageId>(message.readUnsignedByte());
     if (id != MessageId::AlreadyConnected && id != MessageId::NoFreeIncomingConnections &&
         id != MessageId::ConnectionBanned && id != MessageId::IpRecentlyConnected &&
         id != MessageId::ConnectionAttemptFailed) {
         return std::nullopt;
     }
-    const auto server_guid = Reader{message.subspan(1 + OFFLINE_MESSAGE_DATA_ID.size())}.readUint64();
-    if (!server_guid) {
+    message.skipBytes(OFFLINE_MESSAGE_DATA_ID.size());
+    if (!message.isReadable(8)) {
         return std::nullopt;
     }
-    return OfflineRejection{.id = id, .server_guid = *server_guid};
+    return OfflineRejection{.id = id, .server_guid = static_cast<std::uint64_t>(message.readLong())};
 }
 
-void OfflineRejection::encode(Writer &writer) const
+void OfflineRejection::encode(ByteBuf &writer) const
 {
-    writer.writeUint8(static_cast<std::uint8_t>(id));
+    writer.writeByte(static_cast<std::uint8_t>(id));
     writer.writeBytes(OFFLINE_MESSAGE_DATA_ID);
-    writer.writeUint64(server_guid);
+    writer.writeLong(server_guid);
 }
 
-std::optional<ConnectedPing> ConnectedPing::decode(std::span<const std::byte> message)
+std::optional<ConnectedPing> ConnectedPing::decode(ByteBufView message)
 {
-    Reader reader{message};
-    const auto id = reader.readUint8();
-    const auto send_ping_time = reader.readUint64();
-    if (!id || static_cast<MessageId>(*id) != MessageId::ConnectedPing || !send_ping_time || reader.remaining() != 0) {
+    if (message.readableBytes() != 1 + 8 ||
+        static_cast<MessageId>(message.readUnsignedByte()) != MessageId::ConnectedPing) {
         return std::nullopt;
     }
-    return ConnectedPing{.send_ping_time = *send_ping_time};
+    return ConnectedPing{.send_ping_time = static_cast<std::uint64_t>(message.readLong())};
 }
 
-void ConnectedPing::encode(Writer &writer) const
+void ConnectedPing::encode(ByteBuf &writer) const
 {
-    writer.writeUint8(static_cast<std::uint8_t>(MessageId::ConnectedPing));
-    writer.writeUint64(send_ping_time);
+    writer.writeByte(static_cast<std::uint8_t>(MessageId::ConnectedPing));
+    writer.writeLong(send_ping_time);
 }
 
-std::optional<ConnectedPong> ConnectedPong::decode(std::span<const std::byte> message)
+std::optional<ConnectedPong> ConnectedPong::decode(ByteBufView message)
 {
-    Reader reader{message};
-    const auto id = reader.readUint8();
-    const auto send_ping_time = reader.readUint64();
-    const auto send_pong_time = reader.readUint64();
-    if (!id || static_cast<MessageId>(*id) != MessageId::ConnectedPong || !send_ping_time || !send_pong_time ||
-        reader.remaining() != 0) {
+    if (message.readableBytes() != 1 + 8 + 8 ||
+        static_cast<MessageId>(message.readUnsignedByte()) != MessageId::ConnectedPong) {
         return std::nullopt;
     }
-    return ConnectedPong{.send_ping_time = *send_ping_time, .send_pong_time = *send_pong_time};
+    const auto send_ping_time = static_cast<std::uint64_t>(message.readLong());
+    return ConnectedPong{.send_ping_time = send_ping_time,
+                         .send_pong_time = static_cast<std::uint64_t>(message.readLong())};
 }
 
-void ConnectedPong::encode(Writer &writer) const
+void ConnectedPong::encode(ByteBuf &writer) const
 {
-    writer.writeUint8(static_cast<std::uint8_t>(MessageId::ConnectedPong));
-    writer.writeUint64(send_ping_time);
-    writer.writeUint64(send_pong_time);
+    writer.writeByte(static_cast<std::uint8_t>(MessageId::ConnectedPong));
+    writer.writeLong(send_ping_time);
+    writer.writeLong(send_pong_time);
 }
 
-std::optional<ConnectionRequest> ConnectionRequest::decode(std::span<const std::byte> message)
+std::optional<ConnectionRequest> ConnectionRequest::decode(ByteBufView message)
 {
-    Reader reader{message};
-    const auto id = reader.readUint8();
-    const auto client_guid = reader.readUint64();
-    const auto send_ping_time = reader.readUint64();
-    if (!id || static_cast<MessageId>(*id) != MessageId::ConnectionRequest || !client_guid || !send_ping_time) {
+    if (!message.isReadable(1 + 8 + 8) ||
+        static_cast<MessageId>(message.readUnsignedByte()) != MessageId::ConnectionRequest) {
         return std::nullopt;
     }
-    const auto security = reader.readUint8();
-    return ConnectionRequest{.client_guid = *client_guid,
-                             .send_ping_time = *send_ping_time,
-                             .security = security.value_or(0) != 0,
-                             .password = reader.readRemaining()};
+    const auto client_guid = static_cast<std::uint64_t>(message.readLong());
+    const auto send_ping_time = static_cast<std::uint64_t>(message.readLong());
+    const auto security = message.isReadable() ? message.readUnsignedByte() : 0;
+    return ConnectionRequest{.client_guid = client_guid,
+                             .send_ping_time = send_ping_time,
+                             .security = security != 0,
+                             .password = message.slice()};
 }
 
-void ConnectionRequest::encode(Writer &writer) const
+void ConnectionRequest::encode(ByteBuf &writer) const
 {
-    writer.writeUint8(static_cast<std::uint8_t>(MessageId::ConnectionRequest));
-    writer.writeUint64(client_guid);
-    writer.writeUint64(send_ping_time);
-    writer.writeUint8(security ? 1 : 0);
-    writer.writeBytes(password);
+    writer.writeByte(static_cast<std::uint8_t>(MessageId::ConnectionRequest));
+    writer.writeLong(client_guid);
+    writer.writeLong(send_ping_time);
+    writer.writeByte(security ? 1 : 0);
+    writer.writeBytes(password.nioBuffer());
 }
 
-std::optional<ConnectionRequestAccepted> ConnectionRequestAccepted::decode(std::span<const std::byte> message)
+std::optional<ConnectionRequestAccepted> ConnectionRequestAccepted::decode(ByteBufView message)
 {
     constexpr std::size_t minimum_size = sizeof(std::uint8_t) + sizeof(std::uint32_t) + sizeof(std::uint16_t) +
                                          sizeof(std::uint16_t) + 2 * sizeof(std::uint64_t);
 
-    if (message.size() <= minimum_size ||
-        static_cast<MessageId>(message.front()) != MessageId::ConnectionRequestAccepted) {
+    if (message.readableBytes() <= minimum_size ||
+        static_cast<MessageId>(message.readUnsignedByte()) != MessageId::ConnectionRequestAccepted) {
         return std::nullopt;
     }
-    Reader reader{message.subspan(1)};
     ConnectionRequestAccepted accepted;
-    const auto client_address = reader.readAddress();
-    if (!client_address) {
+    if (!isAddressReadable(message)) {
         return accepted;
     }
-    accepted.client_address = *client_address;
-    const auto system_index = reader.readUint16();
-    if (!system_index) {
+    accepted.client_address = readAddress(message);
+    if (!message.isReadable(2)) {
         return accepted;
     }
-    accepted.system_index = *system_index;
+    accepted.system_index = message.readUnsignedShort();
     for (auto &internal_address : accepted.internal_addresses) {
-        const auto address = reader.readAddress();
-        if (!address) {
+        if (!isAddressReadable(message)) {
             return accepted;
         }
-        internal_address = *address;
+        internal_address = readAddress(message);
     }
-    accepted.send_ping_time = reader.readUint64().value_or(0);
-    accepted.send_pong_time = reader.readUint64().value_or(0);
+    accepted.send_ping_time = message.isReadable(8) ? static_cast<std::uint64_t>(message.readLong()) : 0;
+    accepted.send_pong_time = message.isReadable(8) ? static_cast<std::uint64_t>(message.readLong()) : 0;
     return accepted;
 }
 
-void ConnectionRequestAccepted::encode(Writer &writer) const
+void ConnectionRequestAccepted::encode(ByteBuf &writer) const
 {
-    writer.writeUint8(static_cast<std::uint8_t>(MessageId::ConnectionRequestAccepted));
-    writer.writeAddress(client_address);
-    writer.writeUint16(system_index);
+    writer.writeByte(static_cast<std::uint8_t>(MessageId::ConnectionRequestAccepted));
+    writeAddress(writer, client_address);
+    writer.writeShort(system_index);
     for (const auto &internal_address : internal_addresses) {
-        writer.writeAddress(internal_address);
+        writeAddress(writer, internal_address);
     }
-    writer.writeUint64(send_ping_time);
-    writer.writeUint64(send_pong_time);
+    writer.writeLong(send_ping_time);
+    writer.writeLong(send_pong_time);
 }
 
-std::optional<NewIncomingConnection> NewIncomingConnection::decode(std::span<const std::byte> message)
+std::optional<NewIncomingConnection> NewIncomingConnection::decode(ByteBufView message)
 {
     constexpr std::size_t minimum_size =
         sizeof(std::uint8_t) + sizeof(std::uint32_t) + sizeof(std::uint16_t) + 2 * sizeof(std::uint64_t);
 
-    if (message.size() <= minimum_size || static_cast<MessageId>(message.front()) != MessageId::NewIncomingConnection) {
+    if (message.readableBytes() <= minimum_size ||
+        static_cast<MessageId>(message.readUnsignedByte()) != MessageId::NewIncomingConnection) {
         return std::nullopt;
     }
-    Reader reader{message.subspan(1)};
     NewIncomingConnection incoming;
-    const auto server_address = reader.readAddress();
-    if (!server_address) {
+    if (!isAddressReadable(message)) {
         return incoming;
     }
-    incoming.server_address = *server_address;
+    incoming.server_address = readAddress(message);
     for (auto &internal_address : incoming.internal_addresses) {
-        const auto address = reader.readAddress();
-        if (!address) {
+        if (!isAddressReadable(message)) {
             return incoming;
         }
-        internal_address = *address;
+        internal_address = readAddress(message);
     }
-    incoming.send_ping_time = reader.readUint64().value_or(0);
-    incoming.send_pong_time = reader.readUint64().value_or(0);
+    incoming.send_ping_time = message.isReadable(8) ? static_cast<std::uint64_t>(message.readLong()) : 0;
+    incoming.send_pong_time = message.isReadable(8) ? static_cast<std::uint64_t>(message.readLong()) : 0;
     return incoming;
 }
 
-void NewIncomingConnection::encode(Writer &writer) const
+void NewIncomingConnection::encode(ByteBuf &writer) const
 {
-    writer.writeUint8(static_cast<std::uint8_t>(MessageId::NewIncomingConnection));
-    writer.writeAddress(server_address);
+    writer.writeByte(static_cast<std::uint8_t>(MessageId::NewIncomingConnection));
+    writeAddress(writer, server_address);
     for (const auto &internal_address : internal_addresses) {
-        writer.writeAddress(internal_address);
+        writeAddress(writer, internal_address);
     }
-    writer.writeUint64(send_ping_time);
-    writer.writeUint64(send_pong_time);
+    writer.writeLong(send_ping_time);
+    writer.writeLong(send_pong_time);
 }
 
-void InvalidPassword::encode(Writer &writer) const
+void InvalidPassword::encode(ByteBuf &writer) const
 {
-    writer.writeUint8(static_cast<std::uint8_t>(MessageId::InvalidPassword));
-    writer.writeUint64(server_guid);
+    writer.writeByte(static_cast<std::uint8_t>(MessageId::InvalidPassword));
+    writer.writeLong(server_guid);
 }
 
 }  // namespace endgate::raknet

@@ -38,7 +38,7 @@ Endpoint::Endpoint(ProxyServer &server, asio::io_context &io_context, std::share
       identity_(std::move(identity)), session_config_{.max_packet_size = 8 * 1024 * 1024},
       signaling_(nethernet::HttpSignalingServer::create(io_context, *this, {}, std::move(tls)))
 {
-    offline_.setOfflinePingResponse(offline_ping_response);
+    offline_.setOfflinePingResponse(Unpooled::wrappedBuffer(offline_ping_response));
 }
 
 Endpoint::~Endpoint() = default;
@@ -75,20 +75,20 @@ asio::awaitable<void> Endpoint::receive()
     }
 }
 
-void Endpoint::sendTo(const raknet::SystemAddress &address, std::span<const std::byte> datagram)
+void Endpoint::sendTo(const raknet::SystemAddress &address, ByteBufView datagram)
 {
     asio::error_code ignored;
-    socket_->send_to(asio::buffer(datagram), address, 0, ignored);
+    socket_->send_to(asio::buffer(datagram.nioBuffer()), address, 0, ignored);
 }
 
 void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender)
 {
     const auto id = static_cast<raknet::MessageId>(datagram.front());
-    const bool offline_message = raknet::isOfflineMessage(datagram);
+    const bool offline_message = raknet::isOfflineMessage(Unpooled::wrappedBuffer(datagram));
     if (offline_message &&
         (id == raknet::MessageId::UnconnectedPing || id == raknet::MessageId::UnconnectedPingOpenConnections ||
          id == raknet::MessageId::OpenConnectionRequest1)) {
-        static_cast<void>(offline_.handle(datagram, sender, true));
+        static_cast<void>(offline_.handle(Unpooled::wrappedBuffer(datagram), sender, true));
         return;
     }
     if (const auto route = routes_.find(sender); route != routes_.end()) {
@@ -110,7 +110,7 @@ void Endpoint::accept(std::span<const std::byte> datagram, const raknet::SystemA
 {
     constexpr std::size_t half_open_limit = 1024;
 
-    const auto request = offline_.handle(datagram, sender, true);
+    const auto request = offline_.handle(Unpooled::wrappedBuffer(datagram), sender, true);
     if (!request) {
         return;
     }

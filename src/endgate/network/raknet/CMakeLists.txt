@@ -10,4 +10,4 @@ add_library(endgate_raknet STATIC
 add_library(endgate::raknet ALIAS endgate_raknet)
 
 target_include_directories(endgate_raknet PUBLIC ${PROJECT_SOURCE_DIR}/src)
-target_link_libraries(endgate_raknet PUBLIC asio::asio)
+target_link_libraries(endgate_raknet PUBLIC asio::asio endgate::buffer)

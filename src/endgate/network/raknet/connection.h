@@ -4,11 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <span>
 #include <string_view>
 #include <vector>
 
-#include "endgate/network/buffer.h"
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/raknet/message.h"
 #include "endgate/network/raknet/protocol.h"
 #include "endgate/network/raknet/reliability.h"
@@ -68,7 +67,7 @@ struct ConnectionConfiguration {
     std::uint64_t guid{UNASSIGNED_RAKNET_GUID};
     std::chrono::milliseconds timeout_time{10000};
     std::chrono::milliseconds unreliable_timeout{1000};
-    std::vector<std::byte> password;
+    ByteBuf password;
     unsigned send_connection_attempt_count{12};
     std::chrono::milliseconds time_between_send_connection_attempts{500};
     std::size_t maximum_held_bytes{ReliabilityLayer::MAXIMUM_HELD_BYTES};
@@ -82,10 +81,10 @@ class Connection : private ReliabilityLayer::Listener {
 public:
     class Listener {
     public:
-        virtual void sendDatagram(std::span<const std::byte> datagram) = 0;
-        virtual bool sendMtuProbe(std::span<const std::byte> datagram) = 0;
+        virtual void sendDatagram(ByteBufView datagram) = 0;
+        virtual bool sendMtuProbe(ByteBufView datagram) = 0;
         virtual void onConnected() = 0;
-        virtual void onMessage(LegacyByteBuf message) = 0;
+        virtual void onMessage(ByteBufView message) = 0;
         virtual void onDisconnected(DisconnectReason reason) = 0;
         virtual void onReliabilityLayerNotification(std::string_view message, bool is_error) = 0;
 
@@ -117,15 +116,15 @@ public:
     Connection &operator=(Connection &&) = delete;
     ~Connection() = default;
 
-    void handleDatagram(std::span<const std::byte> datagram, TimePoint now);
+    void handleDatagram(ByteBufView datagram, TimePoint now);
     void handleTimeout(TimePoint now);
     [[nodiscard]] std::optional<TimePoint> nextTimeout() const;
 
     /**
      * @see RakNet::RakPeer::Send
      */
-    bool send(LegacyByteBuf message, PacketPriority priority, PacketReliability reliability,
-              std::uint8_t ordering_channel, TimePoint now);
+    bool send(ByteBuf message, PacketPriority priority, PacketReliability reliability, std::uint8_t ordering_channel,
+              TimePoint now);
 
     /**
      * @see RakNet::RakPeer::CloseConnection
@@ -144,18 +143,17 @@ public:
     [[nodiscard]] const SystemAddress &getExternalId() const { return my_external_system_address_; }
 
 private:
-    void sendDatagram(std::span<const std::byte> datagram) override;
+    void sendDatagram(ByteBufView datagram) override;
     void onReliabilityLayerNotification(std::string_view message, bool is_error) override;
 
-    void handleOfflineMessage(std::span<const std::byte> datagram, TimePoint now);
+    void handleOfflineMessage(ByteBufView datagram, TimePoint now);
     void handleMessages(TimePoint now);
-    void handleMessage(LegacyByteBuf message, TimePoint now);
-    void parseConnectionRequestPacket(std::span<const std::byte> message, TimePoint now);
+    void handleMessage(ByteBuf message, TimePoint now);
+    void parseConnectionRequestPacket(ByteBufView message, TimePoint now);
     void onConnectionRequest(std::uint64_t incoming_timestamp, TimePoint now);
     void onConnectedPong(std::uint64_t send_ping_time, TimePoint now);
     void pingInternal(PacketReliability reliability, TimePoint now);
-    void sendImmediate(std::span<const std::byte> message, PacketPriority priority, PacketReliability reliability,
-                       TimePoint now);
+    void sendImmediate(ByteBufView message, PacketPriority priority, PacketReliability reliability, TimePoint now);
     void sendOpenConnectionRequests(TimePoint now);
     void update(TimePoint now);
     void announce();

@@ -22,11 +22,9 @@ constexpr std::string_view MAGIC = "00ffff00fefefefefdfdfdfd12345678";
 template <typename Message>
 std::string encode(const Message &message)
 {
-    std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
-    Writer writer{buffer};
-    message.encode(writer);
-    EXPECT_FALSE(writer.overflowed());
-    return toHex(writer.written());
+    auto buffer = Unpooled::buffer(MAXIMUM_MTU_SIZE, MAXIMUM_MTU_SIZE);
+    message.encode(buffer);
+    return toHex(buffer);
 }
 
 SystemAddress endpoint(std::string_view host, std::uint16_t port)
@@ -34,7 +32,7 @@ SystemAddress endpoint(std::string_view host, std::uint16_t port)
     return {asio::ip::make_address(host), port};
 }
 
-std::vector<std::byte> bytes(std::string_view hex)
+test::Bytes bytes(std::string_view hex)
 {
     return fromHex(hex);
 }
@@ -85,7 +83,7 @@ TEST(Message, OpenConnectionRequest1PadsToTheProbedMtu)
 {
     const auto encoded = bytes(encode(OpenConnectionRequest1{.protocol = RAKNET_PROTOCOL_VERSION, .mtu = 1200}));
     EXPECT_EQ(encoded.size(), 0x494U);
-    EXPECT_EQ(toHex(std::span{encoded}.first(18)), "05" + std::string{MAGIC} + "0b");
+    EXPECT_EQ(toHex(std::span<const std::byte>{encoded}.first(18)), "05" + std::string{MAGIC} + "0b");
     EXPECT_TRUE(std::ranges::all_of(std::span{encoded}.subspan(18), [](std::byte b) { return b == std::byte{0}; }));
 
     const auto decoded = OpenConnectionRequest1::decode(encoded);
@@ -219,7 +217,7 @@ TEST(Message, ConnectionRequestWithoutSecurityByteHasNoPassword)
     const auto message = bytes("090123456789abcdef1122334455667788");
     const auto decoded = ConnectionRequest::decode(message);
     ASSERT_TRUE(decoded);
-    EXPECT_TRUE(decoded->password.empty());
+    EXPECT_FALSE(decoded->password.isReadable());
     EXPECT_FALSE(ConnectionRequest::decode(bytes("090123456789abcdef11223344556677")));
 }
 

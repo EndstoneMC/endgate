@@ -19,20 +19,18 @@ const auto PAYLOAD = fromHex("fe0102");
 
 std::string encodeFrame(const FrameHeader &header)
 {
-    std::array<std::byte, 64> buffer{};
-    Writer writer{buffer};
-    header.encode(writer, PAYLOAD.size());
-    writer.writeBytes(PAYLOAD);
-    EXPECT_EQ(writer.size(), header.length() + PAYLOAD.size());
-    return toHex(writer.written());
+    auto buffer = Unpooled::buffer(64, 64);
+    header.encode(buffer, PAYLOAD.size());
+    buffer.writeBytes(PAYLOAD);
+    EXPECT_EQ(buffer.writerIndex(), header.length() + PAYLOAD.size());
+    return toHex(buffer);
 }
 
 std::string encodeHeader(const DatagramHeader &header)
 {
-    std::array<std::byte, 16> buffer{};
-    Writer writer{buffer};
-    header.encode(writer);
-    return toHex(writer.written());
+    auto buffer = Unpooled::buffer(16, 16);
+    header.encode(buffer);
+    return toHex(buffer);
 }
 
 struct GoldenFrame {
@@ -101,7 +99,7 @@ TEST(Datagram, FramesRoundTrip)
 {
     for (const auto &frame : std::span{GOLDEN_FRAMES}.first(6)) {
         const auto bytes = fromHex(frame.legacy);
-        Reader reader{bytes};
+        ByteBufView reader = bytes;
         const auto decoded = Frame::decode(reader);
         ASSERT_TRUE(decoded) << frame.legacy;
         EXPECT_EQ(decoded->header.reliability, frame.header.reliability);
@@ -113,21 +111,21 @@ TEST(Datagram, FramesRoundTrip)
         EXPECT_EQ(decoded->header.split_packet_id, frame.header.split_packet_id);
         EXPECT_EQ(decoded->header.split_packet_index, frame.header.split_packet_index);
         EXPECT_EQ(toHex(decoded->data), "fe0102");
-        EXPECT_EQ(reader.remaining(), 0U);
+        EXPECT_EQ(reader.readableBytes(), 0U);
     }
 }
 
 TEST(Datagram, ReceiptReliabilitiesOnTheWireDecodeAsTheReferenceDoes)
 {
     const auto unreliable_receipt = fromHex("a00010fe01");
-    Reader first{unreliable_receipt};
+    ByteBufView first = unreliable_receipt;
     const auto five = Frame::decode(first);
     ASSERT_TRUE(five);
     EXPECT_EQ(five->header.reliability, PacketReliability::UnreliableWithAckReceipt);
     EXPECT_EQ(toHex(five->data), "fe01");
 
     const auto reliable_receipt = fromHex("c000100c0b0afe01");
-    Reader second{reliable_receipt};
+    ByteBufView second = reliable_receipt;
     const auto six = Frame::decode(second);
     ASSERT_TRUE(six);
     EXPECT_EQ(six->header.reliable_message_number, UINT24_MASK);
@@ -135,7 +133,7 @@ TEST(Datagram, ReceiptReliabilitiesOnTheWireDecodeAsTheReferenceDoes)
 
     const auto ordered_receipt = fromHex("e00010060504"
                                          "02fe01");
-    Reader third{ordered_receipt};
+    ByteBufView third = ordered_receipt;
     const auto seven = Frame::decode(third);
     ASSERT_TRUE(seven);
     EXPECT_EQ(seven->header.ordering_index, 0x040506U);
@@ -147,7 +145,7 @@ TEST(Datagram, PartialBitLengthsRoundUp)
 {
     const auto frame = fromHex("000009"
                                "1801");
-    Reader reader{frame};
+    ByteBufView reader = frame;
     const auto decoded = Frame::decode(reader);
     ASSERT_TRUE(decoded);
     EXPECT_EQ(toHex(decoded->data), "1801");
@@ -179,7 +177,7 @@ TEST(Datagram, MalformedFramesAreRejected)
              "000000020000",
          }) {
         const auto bytes = fromHex(hex);
-        Reader reader{bytes};
+        ByteBufView reader = bytes;
         EXPECT_FALSE(Frame::decode(reader)) << hex;
     }
 }
@@ -215,7 +213,7 @@ TEST(Datagram, AckAndNakHeadersMatchLegacyPort)
 TEST(Datagram, HeadersDecode)
 {
     const auto data = fromHex("8c563412");
-    Reader data_reader{data};
+    ByteBufView data_reader = data;
     const auto decoded = DatagramHeader::decode(data_reader);
     ASSERT_TRUE(decoded);
     EXPECT_FALSE(decoded->is_ack);
@@ -225,29 +223,28 @@ TEST(Datagram, HeadersDecode)
     EXPECT_EQ(decoded->datagram_number, 0x123456U);
 
     const auto ack = fromHex("e03fc00000");
-    Reader ack_reader{ack};
+    ByteBufView ack_reader = ack;
     const auto decoded_ack = DatagramHeader::decode(ack_reader);
     ASSERT_TRUE(decoded_ack);
     EXPECT_TRUE(decoded_ack->is_ack);
     EXPECT_EQ(decoded_ack->as, 1.5F);
 
     const auto nak = fromHex("a0");
-    Reader nak_reader{nak};
+    ByteBufView nak_reader = nak;
     EXPECT_TRUE(DatagramHeader::decode(nak_reader)->is_nak);
 
     for (const auto *hex : {"40000000", "8c5634", "e03fc0"}) {
         const auto bytes = fromHex(hex);
-        Reader reader{bytes};
+        ByteBufView reader = bytes;
         EXPECT_FALSE(DatagramHeader::decode(reader)) << hex;
     }
 }
 
 std::string serialize(RangeList &list, std::size_t max_bits)
 {
-    std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
-    Writer writer{buffer};
-    list.serialize(writer, max_bits);
-    return toHex(writer.written());
+    auto buffer = Unpooled::buffer(MAXIMUM_MTU_SIZE, MAXIMUM_MTU_SIZE);
+    list.serialize(buffer, max_bits);
+    return toHex(buffer);
 }
 
 TEST(Datagram, AckRangesMatchLegacyPortAndWirePy)
@@ -291,7 +288,7 @@ TEST(Datagram, RangeInsertMergesNeighbours)
 TEST(Datagram, RangesDeserialize)
 {
     const auto bytes = fromHex("00040001000003000001070000000900000a000001563412");
-    Reader reader{bytes};
+    ByteBufView reader = bytes;
     const auto ranges = RangeList::deserialize(reader);
     ASSERT_TRUE(ranges);
     EXPECT_EQ(*ranges, (std::vector<Range>{{1, 3}, {7, 7}, {9, 10}, {0x123456, 0x123456}}));
@@ -301,13 +298,13 @@ TEST(Datagram, MalformedRangesAreRejected)
 {
     for (const auto *hex : {"", "00", "0001", "000100050000", "0001000500000200000", "000100050000020000"}) {
         const auto bytes = fromHex(hex);
-        Reader reader{bytes};
+        ByteBufView reader = bytes;
         EXPECT_EQ(RangeList::deserialize(reader).error_or(RangeListError::TooManyRanges), RangeListError::Truncated)
             << hex;
     }
     const auto truncated_count = fromHex("0401"
                                          "01000000");
-    Reader truncated_reader{truncated_count};
+    ByteBufView truncated_reader = truncated_count;
     EXPECT_EQ(RangeList::deserialize(truncated_reader).error(), RangeListError::Truncated);
 
     std::string too_many = "0401";
@@ -315,7 +312,7 @@ TEST(Datagram, MalformedRangesAreRejected)
         too_many += "01" + toHex(std::array{std::byte(i * 2 & 0xFF), std::byte(i * 2 >> 8), std::byte{0}});
     }
     const auto too_many_bytes = fromHex(too_many);
-    Reader reader{too_many_bytes};
+    ByteBufView reader = too_many_bytes;
     EXPECT_EQ(RangeList::deserialize(reader).error(), RangeListError::TooManyRanges);
 }
 

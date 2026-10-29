@@ -139,18 +139,17 @@ asio::awaitable<bool> RegisteredServer::ping(asio::ip::udp::endpoint address, st
     }
 
     const auto started = std::chrono::steady_clock::now();
-    std::array<std::byte, 64> request{};
-    raknet::Writer writer{request};
+    auto request = Unpooled::buffer(64, 64);
     raknet::UnconnectedPing{
         .id = raknet::MessageId::UnconnectedPing,
         .send_ping_time = static_cast<std::uint64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(started.time_since_epoch()).count()),
         .client_guid = std::mt19937_64{std::random_device{}()}()}
-        .encode(writer);
+        .encode(request);
 
     std::array<std::byte, raknet::MAXIMUM_MTU_SIZE> response{};
     for (int attempt = 1; attempt <= attempts; ++attempt) {
-        socket.send(asio::buffer(writer.written()), 0, ec);
+        socket.send(asio::buffer(request.nioBuffer()), 0, ec);
         if (ec) {
             co_return false;
         }
@@ -164,7 +163,7 @@ asio::awaitable<bool> RegisteredServer::ping(asio::ip::udp::endpoint address, st
             if (error) {
                 co_return false;
             }
-            if (raknet::UnconnectedPong::decode(std::span{response}.first(size))) {
+            if (raknet::UnconnectedPong::decode(Unpooled::wrappedBuffer(std::span{response}.first(size)))) {
                 co_return true;
             }
         }

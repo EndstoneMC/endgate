@@ -4,8 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <span>
 
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/raknet/codec.h"
 #include "endgate/network/raknet/protocol.h"
 
@@ -14,7 +14,7 @@ namespace endgate::raknet {
 /**
  * @see RakNet::ProcessOfflineNetworkPacket
  */
-[[nodiscard]] bool isOfflineMessage(std::span<const std::byte> datagram);
+[[nodiscard]] bool isOfflineMessage(const ByteBufView &datagram);
 
 /**
  * @see ID_UNCONNECTED_PING
@@ -24,8 +24,8 @@ struct UnconnectedPing {
     std::uint64_t send_ping_time{};
     std::uint64_t client_guid{UNASSIGNED_RAKNET_GUID};
 
-    [[nodiscard]] static std::optional<UnconnectedPing> decode(std::span<const std::byte> message);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::optional<UnconnectedPing> decode(ByteBufView message);
+    void encode(ByteBuf &writer) const;
 };
 
 /**
@@ -34,10 +34,10 @@ struct UnconnectedPing {
 struct UnconnectedPong {
     std::uint64_t send_ping_time{};
     std::uint64_t server_guid{};
-    std::span<const std::byte> data;
+    ByteBufView data;
 
-    [[nodiscard]] static std::optional<UnconnectedPong> decode(std::span<const std::byte> message);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::optional<UnconnectedPong> decode(ByteBufView message);
+    void encode(ByteBuf &writer) const;
 };
 
 /**
@@ -47,8 +47,8 @@ struct OpenConnectionRequest1 {
     std::uint8_t protocol{RAKNET_PROTOCOL_VERSION};
     std::uint16_t mtu{};
 
-    [[nodiscard]] static std::optional<OpenConnectionRequest1> decode(std::span<const std::byte> message);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::optional<OpenConnectionRequest1> decode(ByteBufView message);
+    void encode(ByteBuf &writer) const;
 };
 
 /**
@@ -59,8 +59,8 @@ struct OpenConnectionReply1 {
     std::optional<std::uint32_t> cookie;
     std::uint16_t mtu{};
 
-    [[nodiscard]] static std::optional<OpenConnectionReply1> decode(std::span<const std::byte> message);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::optional<OpenConnectionReply1> decode(ByteBufView message);
+    void encode(ByteBuf &writer) const;
 };
 
 /**
@@ -72,8 +72,8 @@ struct OpenConnectionRequest2 {
     std::uint16_t mtu{};
     std::uint64_t client_guid{UNASSIGNED_RAKNET_GUID};
 
-    [[nodiscard]] static std::optional<OpenConnectionRequest2> decode(std::span<const std::byte> message);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::optional<OpenConnectionRequest2> decode(ByteBufView message);
+    void encode(ByteBuf &writer) const;
 };
 
 /**
@@ -85,8 +85,8 @@ struct OpenConnectionReply2 {
     std::uint16_t mtu{};
     bool security{false};
 
-    [[nodiscard]] static std::optional<OpenConnectionReply2> decode(std::span<const std::byte> message);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::optional<OpenConnectionReply2> decode(ByteBufView message);
+    void encode(ByteBuf &writer) const;
 };
 
 /**
@@ -96,8 +96,8 @@ struct IncompatibleProtocolVersion {
     std::uint8_t protocol{RAKNET_PROTOCOL_VERSION};
     std::uint64_t server_guid{};
 
-    [[nodiscard]] static std::optional<IncompatibleProtocolVersion> decode(std::span<const std::byte> message);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::optional<IncompatibleProtocolVersion> decode(ByteBufView message);
+    void encode(ByteBuf &writer) const;
 };
 
 /**
@@ -111,8 +111,8 @@ struct OfflineRejection {
     MessageId id{MessageId::AlreadyConnected};
     std::uint64_t server_guid{};
 
-    [[nodiscard]] static std::optional<OfflineRejection> decode(std::span<const std::byte> message);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::optional<OfflineRejection> decode(ByteBufView message);
+    void encode(ByteBuf &writer) const;
 };
 
 /**
@@ -121,8 +121,8 @@ struct OfflineRejection {
 struct ConnectedPing {
     std::uint64_t send_ping_time{};
 
-    [[nodiscard]] static std::optional<ConnectedPing> decode(std::span<const std::byte> message);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::optional<ConnectedPing> decode(ByteBufView message);
+    void encode(ByteBuf &writer) const;
 };
 
 /**
@@ -132,8 +132,8 @@ struct ConnectedPong {
     std::uint64_t send_ping_time{};
     std::uint64_t send_pong_time{};
 
-    [[nodiscard]] static std::optional<ConnectedPong> decode(std::span<const std::byte> message);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::optional<ConnectedPong> decode(ByteBufView message);
+    void encode(ByteBuf &writer) const;
 };
 
 /**
@@ -143,10 +143,10 @@ struct ConnectionRequest {
     std::uint64_t client_guid{};
     std::uint64_t send_ping_time{};
     bool security{false};
-    std::span<const std::byte> password;
+    ByteBufView password;
 
-    [[nodiscard]] static std::optional<ConnectionRequest> decode(std::span<const std::byte> message);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::optional<ConnectionRequest> decode(ByteBufView message);
+    void encode(ByteBuf &writer) const;
 };
 
 using InternalAddresses = std::array<SystemAddress, MAXIMUM_NUMBER_OF_INTERNAL_IDS>;
@@ -161,8 +161,8 @@ struct ConnectionRequestAccepted {
     std::uint64_t send_ping_time{};
     std::uint64_t send_pong_time{};
 
-    [[nodiscard]] static std::optional<ConnectionRequestAccepted> decode(std::span<const std::byte> message);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::optional<ConnectionRequestAccepted> decode(ByteBufView message);
+    void encode(ByteBuf &writer) const;
 };
 
 /**
@@ -174,8 +174,8 @@ struct NewIncomingConnection {
     std::uint64_t send_ping_time{};
     std::uint64_t send_pong_time{};
 
-    [[nodiscard]] static std::optional<NewIncomingConnection> decode(std::span<const std::byte> message);
-    void encode(Writer &writer) const;
+    [[nodiscard]] static std::optional<NewIncomingConnection> decode(ByteBufView message);
+    void encode(ByteBuf &writer) const;
 };
 
 /**
@@ -184,7 +184,7 @@ struct NewIncomingConnection {
 struct InvalidPassword {
     std::uint64_t server_guid{};
 
-    void encode(Writer &writer) const;
+    void encode(ByteBuf &writer) const;
 };
 
 }  // namespace endgate::raknet

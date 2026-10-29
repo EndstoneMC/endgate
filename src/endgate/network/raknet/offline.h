@@ -3,9 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <span>
-#include <vector>
 
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/raknet/codec.h"
 #include "endgate/network/raknet/message.h"
 #include "endgate/network/raknet/protocol.h"
@@ -19,7 +18,7 @@ class OfflineHandler {
 public:
     class Listener {
     public:
-        virtual void sendTo(const SystemAddress &address, std::span<const std::byte> datagram) = 0;
+        virtual void sendTo(const SystemAddress &address, ByteBufView datagram) = 0;
 
     protected:
         ~Listener() = default;
@@ -32,13 +31,9 @@ public:
     /**
      * @see RakNet::RakPeer::SetOfflinePingResponse
      */
-    void setOfflinePingResponse(std::span<const std::byte> data)
-    {
-        offline_ping_response_.assign(data.begin(), data.end());
-    }
+    void setOfflinePingResponse(ByteBufView data) { offline_ping_response_ = data.copy(); }
 
-    [[nodiscard]] std::optional<OpenConnectionRequest2> handle(std::span<const std::byte> datagram,
-                                                               const SystemAddress &address,
+    [[nodiscard]] std::optional<OpenConnectionRequest2> handle(ByteBufView datagram, const SystemAddress &address,
                                                                bool allow_incoming_connections);
 
     void reject(const SystemAddress &address, MessageId reason);
@@ -46,7 +41,7 @@ public:
 private:
     Listener &listener_;
     std::uint64_t guid_;
-    std::vector<std::byte> offline_ping_response_;
+    ByteBuf offline_ping_response_;
 };
 
 }  // namespace endgate::raknet

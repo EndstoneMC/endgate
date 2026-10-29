@@ -1,7 +1,6 @@
 #include "endgate/network/raknet/reliability.h"
 
 #include <algorithm>
-#include <cstring>
 #include <iterator>
 #include <utility>
 
@@ -37,11 +36,12 @@ bool isOlderOrderedPacket(std::uint32_t new_packet_ordering_index, std::uint32_t
            new_packet_ordering_index < waiting_for_packet_ordering_index;
 }
 
-LegacyByteBuf receipt(MessageId id, std::uint32_t serial)
+ByteBuf receipt(MessageId id, std::uint32_t serial)
 {
-    std::array<std::byte, sizeof(MessageId) + sizeof(serial)> bytes{static_cast<std::byte>(id)};
-    std::memcpy(bytes.data() + sizeof(MessageId), &serial, sizeof(serial));
-    return LegacyByteBuf::copyBuffer(bytes);
+    auto buffer = Unpooled::buffer(sizeof(MessageId) + sizeof(serial));
+    buffer.writeByte(static_cast<std::uint8_t>(id));
+    buffer.writeIntLE(serial);
+    return buffer;
 }
 
 }  // namespace
@@ -91,32 +91,32 @@ void ReliabilityLayer::HasReceivedPacketQueue::pop()
 
 ReliabilityLayer::ReliabilityLayer(Listener &listener, std::size_t mtu, TimePoint now)
     : listener_(listener), congestion_manager_(std::clamp(mtu, MINIMUM_MTU_SIZE, MAXIMUM_MTU_SIZE) - UDP_HEADER_SIZE),
+      datagram_(Unpooled::buffer(congestion_manager_.getMtu(), congestion_manager_.getMtu())),
       time_last_datagram_arrived_(now), last_update_time_(now)
 {
     initHeapWeights();
 }
 
-void ReliabilityLayer::handleSocketReceiveFromConnectedPlayer(std::span<const std::byte> datagram, TimePoint now)
+void ReliabilityLayer::handleSocketReceiveFromConnectedPlayer(ByteBufView datagram, TimePoint now)
 {
     last_update_time_ = now;
-    if (datagram.size() <= 2) {
+    if (datagram.readableBytes() <= 2) {
         notify("length <= 2 || buffer == 0", true);
         return;
     }
     time_last_datagram_arrived_ = now;
 
-    Reader reader{datagram};
-    const auto header = DatagramHeader::decode(reader);
+    const auto header = DatagramHeader::decode(datagram);
     if (!header) {
         notify(header.error(), true);
         return;
     }
     if (header->is_ack) {
-        handleAcknowledgements(reader, now);
+        handleAcknowledgements(datagram, now);
         return;
     }
     if (header->is_nak) {
-        handleNegativeAcknowledgements(reader, now);
+        handleNegativeAcknowledgements(datagram, now);
         return;
     }
 
@@ -132,27 +132,27 @@ void ReliabilityLayer::handleSocketReceiveFromConnectedPlayer(std::span<const st
     acknowlegements_.insert(header->datagram_number);
 
     for (bool first = true;; first = false) {
-        if (reader.remaining() < Frame::MINIMUM_LENGTH) {
+        if (!datagram.isReadable(Frame::MINIMUM_LENGTH)) {
             if (first) {
                 notify("CreateInternalPacketFromBitStream failed", true);
             }
             return;
         }
-        const auto frame = Frame::decode(reader);
+        const auto frame = Frame::decode(datagram);
         if (!frame) {
             if (first) {
                 notify("CreateInternalPacketFromBitStream failed", true);
             }
             return;
         }
-        handleFrame(frame->header, LegacyByteBuf::copyBuffer(frame->data), now);
+        handleFrame(frame->header, frame->data, now);
         if (dead_connection_) {
             return;
         }
     }
 }
 
-void ReliabilityLayer::handleAcknowledgements(Reader &reader, TimePoint now)
+void ReliabilityLayer::handleAcknowledgements(ByteBufView &reader, TimePoint now)
 {
     const auto ranges = RangeList::deserialize(reader);
     if (!ranges) {
@@ -199,7 +199,7 @@ void ReliabilityLayer::handleAcknowledgements(Reader &reader, TimePoint now)
     }
 }
 
-void ReliabilityLayer::handleNegativeAcknowledgements(Reader &reader, TimePoint now)
+void ReliabilityLayer::handleNegativeAcknowledgements(ByteBufView &reader, TimePoint now)
 {
     const auto ranges = RangeList::deserialize(reader);
     if (!ranges) {
@@ -243,7 +243,7 @@ void ReliabilityLayer::handleNegativeAcknowledgements(Reader &reader, TimePoint 
     }
 }
 
-void ReliabilityLayer::handleFrame(const FrameHeader &header, LegacyByteBuf data, TimePoint now)
+void ReliabilityLayer::handleFrame(const FrameHeader &header, ByteBufView data, TimePoint now)
 {
     const auto reliability = header.reliability;
     if (reliability == PacketReliability::Reliable || reliability == PacketReliability::ReliableSequenced ||
@@ -280,7 +280,7 @@ void ReliabilityLayer::handleFrame(const FrameHeader &header, LegacyByteBuf data
     }
 
     if (header.split_packet_count > 0) {
-        auto assembled = insertIntoSplitPacketList(header, std::move(data), now);
+        auto assembled = insertIntoSplitPacketList(header, data, now);
         if (assembled) {
             deliver(std::move(assembled->first), assembled->second);
         }
@@ -289,14 +289,14 @@ void ReliabilityLayer::handleFrame(const FrameHeader &header, LegacyByteBuf data
 
     InternalPacket packet;
     static_cast<FrameHeader &>(packet) = header;
-    packet.data = std::move(data);
+    packet.data = data.copy();
     packet.creation_time = now;
-    const auto held_bytes = packet.data.length() + HELD_PACKET_OVERHEAD;
+    const auto held_bytes = packet.data.readableBytes() + HELD_PACKET_OVERHEAD;
     deliver(std::move(packet), held_bytes);
 }
 
 std::optional<std::pair<InternalPacket, std::size_t>> ReliabilityLayer::insertIntoSplitPacketList(
-    const FrameHeader &header, LegacyByteBuf data, TimePoint now)
+    const FrameHeader &header, ByteBufView data, TimePoint now)
 {
     if (header.split_packet_count > MAX_SPLIT_PACKET_COUNT) {
         notify("splitPacketCount exceeds MAX_SPLIT_PACKET_COUNT", true);
@@ -322,17 +322,17 @@ std::optional<std::pair<InternalPacket, std::size_t>> ReliabilityLayer::insertIn
     auto position = split.parts.end();
     if (!split.parts.empty() && header.split_packet_index <= split.parts.back().first) {
         position = std::ranges::lower_bound(split.parts, header.split_packet_index, {},
-                                            &std::pair<std::uint32_t, LegacyByteBuf>::first);
+                                            &std::pair<std::uint32_t, ByteBuf>::first);
         if (position->first == header.split_packet_index) {
             return std::nullopt;
         }
     }
-    const auto held = data.length() + HELD_PACKET_OVERHEAD;
+    const auto held = data.readableBytes() + HELD_PACKET_OVERHEAD;
     if (!hold(held)) {
         return std::nullopt;
     }
     split.bytes += held;
-    split.parts.emplace(position, header.split_packet_index, std::move(data));
+    split.parts.emplace(position, header.split_packet_index, data.copy());
     if (split.parts.size() < split.split_packet_count) {
         return std::nullopt;
     }
@@ -342,8 +342,13 @@ std::optional<std::pair<InternalPacket, std::size_t>> ReliabilityLayer::insertIn
     static_cast<FrameHeader &>(packet) = split.first_header;
     packet.split_packet_count = 0;
     packet.creation_time = now;
-    for (auto &[index, part] : split.parts) {
-        packet.data.appendToChain(std::move(part));
+    std::size_t assembled_length = 0;
+    for (const auto &[index, part] : split.parts) {
+        assembled_length += part.readableBytes();
+    }
+    packet.data = Unpooled::buffer(assembled_length);
+    for (const auto &[index, part] : split.parts) {
+        packet.data.writeBytes(part.nioBuffer());
     }
     const auto held_bytes = split.bytes;
     held_bytes_ -= held_bytes;
@@ -423,7 +428,7 @@ bool ReliabilityLayer::hold(std::size_t bytes)
     return true;
 }
 
-std::optional<LegacyByteBuf> ReliabilityLayer::receive()
+std::optional<ByteBuf> ReliabilityLayer::receive()
 {
     if (output_queue_.empty()) {
         return std::nullopt;
@@ -441,7 +446,7 @@ void ReliabilityLayer::removePacketFromResendList(std::uint32_t message_number)
     }
     const auto packet = *slot;
     slot.reset();
-    unacknowledged_bytes_ -= packet->header_length + packet->data.length();
+    unacknowledged_bytes_ -= packet->header_length + packet->data.readableBytes();
     if ((packet->reliability == PacketReliability::ReliableWithAckReceipt ||
          packet->reliability == PacketReliability::ReliableOrderedWithAckReceipt) &&
         (packet->split_packet_count == 0 || packet->split_packet_index + 1 == packet->split_packet_count)) {
@@ -450,11 +455,11 @@ void ReliabilityLayer::removePacketFromResendList(std::uint32_t message_number)
     resend_list_.erase(packet);
 }
 
-bool ReliabilityLayer::send(LegacyByteBuf data, PacketPriority priority, PacketReliability reliability,
+bool ReliabilityLayer::send(ByteBuf data, PacketPriority priority, PacketReliability reliability,
                             std::uint8_t ordering_channel, std::uint32_t receipt, TimePoint now)
 {
     last_update_time_ = now;
-    if (data.empty()) {
+    if (!data.isReadable()) {
         return false;
     }
     if (ordering_channel >= NUMBER_OF_ORDERED_STREAMS) {
@@ -469,7 +474,7 @@ bool ReliabilityLayer::send(LegacyByteBuf data, PacketPriority priority, PacketR
     packet.data = std::move(data);
 
     const auto max_data_size = getMaxDatagramSizeExcludingMessageHeaderBytes() - MAXIMUM_FRAME_HEADER_LENGTH;
-    const bool split = packet.data.length() > max_data_size;
+    const bool split = packet.data.readableBytes() > max_data_size;
     if (split) {
         if (packet.reliability == PacketReliability::Unreliable) {
             packet.reliability = PacketReliability::Reliable;
@@ -508,15 +513,20 @@ void ReliabilityLayer::splitPacket(InternalPacket packet)
 {
     const auto max_data_size = getMaxDatagramSizeExcludingMessageHeaderBytes() - MAXIMUM_FRAME_HEADER_LENGTH;
     const auto data = std::move(packet.data);
-    const auto length = data.length();
+    const auto length = data.readableBytes();
     packet.split_packet_count = static_cast<std::uint32_t>((length - 1) / max_data_size + 1);
     packet.split_packet_id = split_packet_id_++;
     packet.header_length = packet.length();
     for (std::uint32_t index = 0; index < packet.split_packet_count; ++index) {
         const auto offset = index * max_data_size;
-        auto part = packet;
+        InternalPacket part;
+        static_cast<FrameHeader &>(part) = packet;
+        part.priority = packet.priority;
+        part.send_receipt_serial = packet.send_receipt_serial;
+        part.header_length = packet.header_length;
+        part.creation_time = packet.creation_time;
         part.split_packet_index = index;
-        part.data = data.retainedSlice(offset, std::min(max_data_size, length - offset));
+        part.data = data.copy(offset, std::min(max_data_size, length - offset));
         pushOutgoing(std::move(part));
     }
 }
@@ -610,17 +620,17 @@ void ReliabilityLayer::sendAcks()
 {
     const auto max_bits = getMaxDatagramSizeExcludingMessageHeaderBytes() * 8;
     while (!acknowlegements_.empty()) {
-        Writer writer{update_buffer_};
-        DatagramHeader{.is_ack = true}.encode(writer);
-        acknowlegements_.serialize(writer, max_bits);
-        listener_.sendDatagram(writer.written());
+        datagram_.clear();
+        DatagramHeader{.is_ack = true}.encode(datagram_);
+        acknowlegements_.serialize(datagram_, max_bits);
+        listener_.sendDatagram(datagram_.slice());
         congestion_manager_.onSendAck();
     }
 }
 
 void ReliabilityLayer::pushPacket(const InternalPacket &packet)
 {
-    const auto bytes = packet.header_length + packet.data.length();
+    const auto bytes = packet.header_length + packet.data.readableBytes();
     datagram_size_so_far_ += bytes;
     all_datagram_sizes_so_far_ += bytes;
     datagram_packets_.push_back(&packet);
@@ -635,15 +645,15 @@ void ReliabilityLayer::pushDatagram(TimePoint now)
     header.is_continuous_send = header.is_continuous_send || datagrams_this_update_ > 0;
     header.datagram_number = congestion_manager_.getAndIncrementNextDatagramSequenceNumber();
 
-    Writer writer{update_buffer_};
-    header.encode(writer);
+    datagram_.clear();
+    header.encode(datagram_);
     DatagramHistoryNode history{.time_sent = now};
     for (const auto *packet : datagram_packets_) {
         if (isReliable(packet->reliability)) {
             history.message_numbers.push_back(packet->reliable_message_number);
         }
-        packet->encode(writer, packet->data.length());
-        packet->data.copyTo(writer.claim(packet->data.length()));
+        packet->encode(datagram_, packet->data.readableBytes());
+        datagram_.writeBytes(packet->data.nioBuffer());
     }
     if (datagram_history_.size() > DATAGRAM_MESSAGE_ID_ARRAY_LENGTH) {
         datagram_history_.pop_front();
@@ -651,7 +661,7 @@ void ReliabilityLayer::pushDatagram(TimePoint now)
     }
     datagram_history_.push_back(std::move(history));
 
-    listener_.sendDatagram(writer.written());
+    listener_.sendDatagram(datagram_.slice());
     datagram_packets_.clear();
     datagram_size_so_far_ = 0;
     ++datagrams_this_update_;
@@ -683,10 +693,10 @@ void ReliabilityLayer::update(TimePoint now)
     }
     const auto max_bytes = getMaxDatagramSizeExcludingMessageHeaderBytes();
     if (!naks_.empty()) {
-        Writer writer{update_buffer_};
-        DatagramHeader{.is_nak = true}.encode(writer);
-        naks_.serialize(writer, max_bytes * 8);
-        listener_.sendDatagram(writer.written());
+        datagram_.clear();
+        DatagramHeader{.is_nak = true}.encode(datagram_);
+        naks_.serialize(datagram_, max_bytes * 8);
+        listener_.sendDatagram(datagram_.slice());
     }
 
     datagram_header_ = DatagramHeader{.is_continuous_send = bandwidth_exceeded_statistic_,
@@ -723,7 +733,7 @@ void ReliabilityLayer::update(TimePoint now)
             while (!resend_list_.empty()) {
                 auto &packet = resend_list_.front();
                 if (now < packet.next_action_time ||
-                    datagram_size_so_far_ + packet.header_length + packet.data.length() > max_bytes) {
+                    datagram_size_so_far_ + packet.header_length + packet.data.readableBytes() > max_bytes) {
                     pushDatagram(now);
                     break;
                 }
@@ -756,7 +766,7 @@ void ReliabilityLayer::update(TimePoint now)
                     continue;
                 }
                 head.header_length = head.length();
-                if (datagram_size_so_far_ + head.header_length + head.data.length() > max_bytes) {
+                if (datagram_size_so_far_ + head.header_length + head.data.readableBytes() > max_bytes) {
                     break;
                 }
                 auto packet = std::move(head);
@@ -767,7 +777,7 @@ void ReliabilityLayer::update(TimePoint now)
                     packet.reliable_message_number = number;
                     packet.first_send_time = now;
                     packet.next_action_time = now + congestion_manager_.getRtoForRetransmission();
-                    unacknowledged_bytes_ += packet.header_length + packet.data.length();
+                    unacknowledged_bytes_ += packet.header_length + packet.data.readableBytes();
                     resend_list_.push_back(std::move(packet));
                     resend_buffer_[number % RESEND_BUFFER_ARRAY_LENGTH] = std::prev(resend_list_.end());
                     send_reliable_message_number_index_ = (number + 1) & UINT24_MASK;

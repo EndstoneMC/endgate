@@ -27,25 +27,27 @@ public:
     Peer(Simulation &simulation, std::size_t index, std::size_t mtu = 1400)
         : simulation_(simulation), index_(index), layer(*this, mtu, simulation.now())
     {
-        simulation.attach(index, {.receive =
-                                      [this](std::span<const std::byte> datagram, TimePoint now) {
-                                          layer.handleSocketReceiveFromConnectedPlayer(datagram, now);
-                                          drain();
-                                          layer.update(now);
-                                          drain();
-                                      },
-                                  .next_timeout = [this] { return layer.nextTimeout(); },
-                                  .timeout =
-                                      [this](TimePoint now) {
-                                          layer.update(now);
-                                          drain();
-                                      }});
+        simulation.attach(index,
+                          {.receive =
+                               [this](std::span<const std::byte> datagram, TimePoint now) {
+                                   layer.handleSocketReceiveFromConnectedPlayer(Unpooled::wrappedBuffer(datagram), now);
+                                   drain();
+                                   layer.update(now);
+                                   drain();
+                               },
+                           .next_timeout = [this] { return layer.nextTimeout(); },
+                           .timeout =
+                               [this](TimePoint now) {
+                                   layer.update(now);
+                                   drain();
+                               }});
     }
 
-    void sendDatagram(std::span<const std::byte> datagram) override
+    void sendDatagram(ByteBufView datagram) override
     {
-        datagrams.emplace_back(datagram.begin(), datagram.end());
-        simulation_.transmit(index_, datagram);
+        const auto bytes = datagram.nioBuffer();
+        datagrams.emplace_back(bytes.begin(), bytes.end());
+        simulation_.transmit(index_, bytes);
     }
 
     void onReliabilityLayerNotification(std::string_view message, bool is_error) override
@@ -57,7 +59,7 @@ public:
     void send(const std::vector<std::byte> &message, PacketReliability reliability, std::uint8_t channel = 0,
               std::uint32_t receipt = 0, PacketPriority priority = PacketPriority::High)
     {
-        layer.send(LegacyByteBuf::copyBuffer(message), priority, reliability, channel, receipt, simulation_.now());
+        layer.send(Unpooled::copiedBuffer(message), priority, reliability, channel, receipt, simulation_.now());
         layer.update(simulation_.now());
         drain();
     }
@@ -74,9 +76,8 @@ public:
     void drain()
     {
         while (auto message = layer.receive()) {
-            std::vector<std::byte> bytes(message->length());
-            message->copyTo(bytes);
-            received.push_back(std::move(bytes));
+            const auto bytes = message->nioBuffer();
+            received.emplace_back(bytes.begin(), bytes.end());
         }
     }
 
@@ -326,8 +327,8 @@ TEST(Reliability, SmallMessagesShareADatagram)
     Pair pair;
     pair.simulation.setConditions(0, {.loss = 1.0});
     for (std::uint32_t i = 0; i < 20; ++i) {
-        pair.a.layer.send(LegacyByteBuf::copyBuffer(message(i)), PacketPriority::High, PacketReliability::Reliable, 0,
-                          0, pair.simulation.now());
+        pair.a.layer.send(Unpooled::copiedBuffer(message(i)), PacketPriority::High, PacketReliability::Reliable, 0, 0,
+                          pair.simulation.now());
     }
     pair.a.layer.update(pair.simulation.now());
     EXPECT_EQ(pair.a.datagrams.size(), 1U);
@@ -337,11 +338,11 @@ TEST(Reliability, ImmediatePriorityOvertakesQueuedHighPriority)
 {
     Pair pair;
     for (std::uint32_t i = 0; i < 4; ++i) {
-        pair.a.layer.send(LegacyByteBuf::copyBuffer(message(i)), PacketPriority::Low, PacketReliability::Reliable, 0, 0,
+        pair.a.layer.send(Unpooled::copiedBuffer(message(i)), PacketPriority::Low, PacketReliability::Reliable, 0, 0,
                           pair.simulation.now());
     }
-    pair.a.layer.send(LegacyByteBuf::copyBuffer(message(99)), PacketPriority::Immediate, PacketReliability::Reliable, 0,
-                      0, pair.simulation.now());
+    pair.a.layer.send(Unpooled::copiedBuffer(message(99)), PacketPriority::Immediate, PacketReliability::Reliable, 0, 0,
+                      pair.simulation.now());
     pair.a.layer.update(pair.simulation.now());
     ASSERT_TRUE(pair.simulation.runUntil([&] { return pair.b.received.size() == 5; }, 5s));
     EXPECT_EQ(sequenceOf(pair.b.received[0]), 99U);

@@ -28,17 +28,18 @@ const SystemAddress SERVER_ADDRESS{asio::ip::make_address("10.0.0.1"), 19132};
 struct Events : Connection::Listener {
     Events(Simulation &simulation, std::size_t index) : simulation(simulation), index(index) {}
 
-    void sendDatagram(std::span<const std::byte> datagram) override
+    void sendDatagram(ByteBufView datagram) override
     {
-        datagrams.emplace_back(datagram.begin(), datagram.end());
-        simulation.transmit(index, datagram);
+        const auto bytes = datagram.nioBuffer();
+        datagrams.emplace_back(bytes.begin(), bytes.end());
+        simulation.transmit(index, bytes);
     }
 
-    bool sendMtuProbe(std::span<const std::byte> datagram) override
+    bool sendMtuProbe(ByteBufView datagram) override
     {
-        probes.push_back(datagram.size());
+        probes.push_back(datagram.readableBytes());
         probe_times.push_back(simulation.now());
-        if (datagram.size() > path_mtu) {
+        if (datagram.readableBytes() > path_mtu) {
             return false;
         }
         sendDatagram(datagram);
@@ -47,11 +48,10 @@ struct Events : Connection::Listener {
 
     void onConnected() override { ++connected; }
 
-    void onMessage(LegacyByteBuf message) override
+    void onMessage(ByteBufView message) override
     {
-        std::vector<std::byte> bytes(message.length());
-        message.copyTo(bytes);
-        messages.push_back(std::move(bytes));
+        const auto bytes = message.nioBuffer();
+        messages.emplace_back(bytes.begin(), bytes.end());
     }
 
     void onDisconnected(DisconnectReason reason) override { disconnected.push_back(reason); }
@@ -78,16 +78,17 @@ struct Events : Connection::Listener {
 struct Server : OfflineHandler::Listener {
     explicit Server(Simulation &simulation) : simulation(simulation), events(simulation, 1), offline(*this, 0x5E5E) {}
 
-    void sendTo(const SystemAddress &address, std::span<const std::byte> datagram) override
+    void sendTo(const SystemAddress &address, ByteBufView datagram) override
     {
         EXPECT_EQ(address, CLIENT_ADDRESS);
-        offline_replies.emplace_back(datagram.begin(), datagram.end());
-        simulation.transmit(1, datagram);
+        const auto bytes = datagram.nioBuffer();
+        offline_replies.emplace_back(bytes.begin(), bytes.end());
+        simulation.transmit(1, bytes);
     }
 
-    void receive(std::span<const std::byte> datagram, TimePoint now)
+    void receive(ByteBufView datagram, TimePoint now)
     {
-        const auto id = static_cast<MessageId>(datagram.front());
+        const auto id = static_cast<MessageId>(datagram.getUnsignedByte(datagram.readerIndex()));
         const bool offline_message = isOfflineMessage(datagram);
         if (offline_message && (id == MessageId::UnconnectedPing || id == MessageId::UnconnectedPingOpenConnections ||
                                 id == MessageId::OpenConnectionRequest1)) {
@@ -109,7 +110,9 @@ struct Server : OfflineHandler::Listener {
             offline.reject(CLIENT_ADDRESS, MessageId::NoFreeIncomingConnections);
             return;
         }
-        connection = std::make_unique<Connection>(events, configuration, CLIENT_ADDRESS, *request, 0, now);
+        connection = std::make_unique<Connection>(
+            events, ConnectionConfiguration{.guid = configuration.guid, .password = configuration.password.copy()},
+            CLIENT_ADDRESS, *request, 0, now);
         connection->handleDatagram(datagram, now);
     }
 
@@ -127,13 +130,15 @@ struct Handshake {
         : simulation(seed), client_events(simulation, 0), server(simulation),
           client(client_events, std::move(client_configuration), SERVER_ADDRESS, simulation.now())
     {
-        simulation.attach(0, {.receive = [this](std::span<const std::byte> datagram,
-                                                TimePoint now) { client.handleDatagram(datagram, now); },
-                              .next_timeout = [this] { return client.nextTimeout(); },
-                              .timeout = [this](TimePoint now) { client.handleTimeout(now); }});
+        simulation.attach(
+            0, {.receive = [this](std::span<const std::byte> datagram,
+                                  TimePoint now) { client.handleDatagram(Unpooled::wrappedBuffer(datagram), now); },
+                .next_timeout = [this] { return client.nextTimeout(); },
+                .timeout = [this](TimePoint now) { client.handleTimeout(now); }});
         simulation.attach(
             1,
-            {.receive = [this](std::span<const std::byte> datagram, TimePoint now) { server.receive(datagram, now); },
+            {.receive = [this](std::span<const std::byte> datagram,
+                               TimePoint now) { server.receive(Unpooled::wrappedBuffer(datagram), now); },
              .next_timeout =
                  [this] { return server.connection ? server.connection->nextTimeout() : std::optional<TimePoint>{}; },
              .timeout = [this](TimePoint now) { server.connection->handleTimeout(now); }});
@@ -185,9 +190,9 @@ TEST(Connection, MessagesCrossBothWaysAfterTheHandshake)
     handshake.simulation.setConditions(1, {.loss = 0.1, .duplicate = 0.05, .reorder = 0.1});
     const auto up = payload(300000, 1);
     const auto down = payload(70000, 2);
-    ASSERT_TRUE(handshake.client.send(LegacyByteBuf::copyBuffer(up), PacketPriority::High,
+    ASSERT_TRUE(handshake.client.send(Unpooled::copiedBuffer(up), PacketPriority::High,
                                       PacketReliability::ReliableOrdered, 0, handshake.simulation.now()));
-    ASSERT_TRUE(handshake.server.connection->send(LegacyByteBuf::copyBuffer(down), PacketPriority::High,
+    ASSERT_TRUE(handshake.server.connection->send(Unpooled::copiedBuffer(down), PacketPriority::High,
                                                   PacketReliability::ReliableOrdered, 0, handshake.simulation.now()));
     ASSERT_TRUE(handshake.simulation.runUntil(
         [&] { return !handshake.client_events.messages.empty() && !handshake.server.events.messages.empty(); }, 60s));
@@ -307,7 +312,7 @@ TEST(Connection, IncompatibleProtocolEndsTheAttempt)
 
 TEST(Connection, WrongPasswordIsRejectedOnBothSides)
 {
-    Handshake handshake{{.guid = 0xC1C1, .password = fromHex("736563726574")}};
+    Handshake handshake{{.guid = 0xC1C1, .password = Unpooled::copiedBuffer(fromHex("736563726574"))}};
     ASSERT_TRUE(handshake.simulation.runUntil(
         [&] { return !handshake.client_events.disconnected.empty() && !handshake.server.events.disconnected.empty(); },
         15s));
@@ -318,8 +323,8 @@ TEST(Connection, WrongPasswordIsRejectedOnBothSides)
 
 TEST(Connection, CorrectPasswordIsAccepted)
 {
-    Handshake handshake{{.guid = 0xC1C1, .password = fromHex("736563726574")}};
-    handshake.server.configuration.password = fromHex("736563726574");
+    Handshake handshake{{.guid = 0xC1C1, .password = Unpooled::copiedBuffer(fromHex("736563726574"))}};
+    handshake.server.configuration.password = Unpooled::copiedBuffer(fromHex("736563726574"));
     ASSERT_TRUE(handshake.connect());
 }
 
@@ -370,10 +375,10 @@ TEST(Connection, HalfOpenConnectionIsReapedAfterTenSeconds)
 {
     Simulation simulation;
     Server server{simulation};
-    simulation.attach(
-        1, {.receive = [&](std::span<const std::byte> datagram, TimePoint now) { server.receive(datagram, now); },
-            .next_timeout = [&] { return server.connection->nextTimeout(); },
-            .timeout = [&](TimePoint now) { server.connection->handleTimeout(now); }});
+    simulation.attach(1, {.receive = [&](std::span<const std::byte> datagram,
+                                         TimePoint now) { server.receive(Unpooled::wrappedBuffer(datagram), now); },
+                          .next_timeout = [&] { return server.connection->nextTimeout(); },
+                          .timeout = [&](TimePoint now) { server.connection->handleTimeout(now); }});
     server.receive(fromHex("07"
                            "00ffff00fefefefefdfdfdfd12345678"
                            "04f5fffffe4abc"
@@ -418,7 +423,7 @@ TEST(Connection, GracefulCloseReachesThePeer)
     Handshake handshake;
     ASSERT_TRUE(handshake.connect());
     handshake.client.close(true, handshake.simulation.now());
-    EXPECT_FALSE(handshake.client.send(LegacyByteBuf::copyBuffer(payload(10)), PacketPriority::High,
+    EXPECT_FALSE(handshake.client.send(Unpooled::copiedBuffer(payload(10)), PacketPriority::High,
                                        PacketReliability::Reliable, 0, handshake.simulation.now()));
     ASSERT_TRUE(handshake.simulation.runUntil(
         [&] { return !handshake.client_events.disconnected.empty() && !handshake.server.events.disconnected.empty(); },

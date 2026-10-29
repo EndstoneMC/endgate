@@ -46,7 +46,7 @@ std::uint64_t Connection::getTime(TimePoint now)
         std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
 }
 
-void Connection::sendDatagram(std::span<const std::byte> datagram)
+void Connection::sendDatagram(ByteBufView datagram)
 {
     listener_.sendDatagram(datagram);
 }
@@ -56,7 +56,7 @@ void Connection::onReliabilityLayerNotification(std::string_view message, bool i
     listener_.onReliabilityLayerNotification(message, is_error);
 }
 
-void Connection::handleDatagram(std::span<const std::byte> datagram, TimePoint now)
+void Connection::handleDatagram(ByteBufView datagram, TimePoint now)
 {
     if (isClosed()) {
         return;
@@ -78,29 +78,28 @@ void Connection::handleTimeout(TimePoint now)
     update(now);
 }
 
-void Connection::handleOfflineMessage(std::span<const std::byte> datagram, TimePoint now)
+void Connection::handleOfflineMessage(ByteBufView datagram, TimePoint now)
 {
-    if (datagram.size() <= 2) {
+    if (datagram.readableBytes() <= 2) {
         return;
     }
-    const auto id = static_cast<MessageId>(datagram.front());
+    const auto id = static_cast<MessageId>(datagram.getUnsignedByte(datagram.readerIndex()));
     if (id == MessageId::OpenConnectionRequest2) {
         const auto request = OpenConnectionRequest2::decode(datagram);
         if (!request) {
             return;
         }
-        std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
-        Writer writer{buffer};
+        auto buffer = Unpooled::buffer(MAXIMUM_MTU_SIZE, MAXIMUM_MTU_SIZE);
         if (!we_initiated_the_connection_ && connect_mode_ == ConnectMode::UnverifiedSender &&
             request->client_guid == guid_) {
             OpenConnectionReply2{
                 .server_guid = configuration_.guid, .client_address = system_address_, .mtu = request->mtu}
-                .encode(writer);
+                .encode(buffer);
         }
         else {
-            OfflineRejection{.id = MessageId::AlreadyConnected, .server_guid = configuration_.guid}.encode(writer);
+            OfflineRejection{.id = MessageId::AlreadyConnected, .server_guid = configuration_.guid}.encode(buffer);
         }
-        listener_.sendDatagram(writer.written());
+        listener_.sendDatagram(buffer.slice());
         return;
     }
     if (connect_mode_ != ConnectMode::RequestingOpenConnection) {
@@ -112,14 +111,13 @@ void Connection::handleOfflineMessage(std::span<const std::byte> datagram, TimeP
         if (!reply) {
             return;
         }
-        std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
-        Writer writer{buffer};
+        auto buffer = Unpooled::buffer(MAXIMUM_MTU_SIZE, MAXIMUM_MTU_SIZE);
         OpenConnectionRequest2{.cookie = reply->cookie,
                                .server_address = system_address_,
                                .mtu = reply->mtu,
                                .client_guid = configuration_.guid}
-            .encode(writer);
-        listener_.sendDatagram(writer.written());
+            .encode(buffer);
+        listener_.sendDatagram(buffer.slice());
         return;
     }
 
@@ -140,12 +138,12 @@ void Connection::handleOfflineMessage(std::span<const std::byte> datagram, TimeP
         last_reliable_send_ = now;
         next_ping_time_ = now;
 
-        std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
-        Writer writer{buffer};
-        ConnectionRequest{
-            .client_guid = configuration_.guid, .send_ping_time = getTime(now), .password = configuration_.password}
-            .encode(writer);
-        sendImmediate(writer.written(), PacketPriority::Immediate, PacketReliability::Reliable, now);
+        auto buffer = Unpooled::buffer(MAXIMUM_MTU_SIZE, MAXIMUM_MTU_SIZE);
+        ConnectionRequest{.client_guid = configuration_.guid,
+                          .send_ping_time = getTime(now),
+                          .password = configuration_.password.slice()}
+            .encode(buffer);
+        sendImmediate(buffer.slice(), PacketPriority::Immediate, PacketReliability::Reliable, now);
         update(now);
         return;
     }
@@ -188,28 +186,26 @@ void Connection::handleMessages(TimePoint now)
     delivering_ = false;
 }
 
-void Connection::handleMessage(LegacyByteBuf message, TimePoint now)
+void Connection::handleMessage(ByteBuf message, TimePoint now)
 {
     if (!reliability_layer_) {
         return;
     }
     auto &reliability_layer = *reliability_layer_;
-    std::array<std::byte, 1> first{};
-    message.copyTo(first);
-    const auto id = static_cast<MessageId>(first[0]);
+    const auto first = message.getUnsignedByte(message.readerIndex());
+    const auto id = static_cast<MessageId>(first);
     if (id == MessageId::ConnectionAttemptFailed) {
         return;
     }
 
-    const auto is_user_message = first[0] >= static_cast<std::byte>(MessageId::Timestamp) ||
+    const auto is_user_message = first >= static_cast<std::uint8_t>(MessageId::Timestamp) ||
                                  id == MessageId::SndReceiptAcked || id == MessageId::SndReceiptLoss;
     if (connect_mode_ != ConnectMode::UnverifiedSender && is_user_message) {
-        listener_.onMessage(std::move(message));
+        listener_.onMessage(message.slice());
         return;
     }
 
-    std::vector<std::byte> bytes(message.length());
-    message.copyTo(bytes);
+    const auto bytes = message.slice();
 
     if (connect_mode_ == ConnectMode::UnverifiedSender) {
         if (id == MessageId::ConnectionRequest) {
@@ -258,10 +254,9 @@ void Connection::handleMessage(LegacyByteBuf message, TimePoint now)
         if (!ping) {
             return;
         }
-        std::array<std::byte, 17> buffer{};
-        Writer writer{buffer};
-        ConnectedPong{.send_ping_time = ping->send_ping_time, .send_pong_time = getTime(now)}.encode(writer);
-        sendImmediate(writer.written(), PacketPriority::Immediate, PacketReliability::Unreliable, now);
+        auto buffer = Unpooled::buffer(17, 17);
+        ConnectedPong{.send_ping_time = ping->send_ping_time, .send_pong_time = getTime(now)}.encode(buffer);
+        sendImmediate(buffer.slice(), PacketPriority::Immediate, PacketReliability::Unreliable, now);
         return;
     }
     case MessageId::DisconnectionNotification:
@@ -287,13 +282,12 @@ void Connection::handleMessage(LegacyByteBuf message, TimePoint now)
         connect_mode_ = ConnectMode::Connected;
         reliability_layer.setMaximumHeldBytes(configuration_.maximum_held_bytes);
 
-        std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
-        Writer writer{buffer};
+        auto buffer = Unpooled::buffer(MAXIMUM_MTU_SIZE, MAXIMUM_MTU_SIZE);
         NewIncomingConnection{.server_address = system_address_,
                               .send_ping_time = accepted->send_pong_time,
                               .send_pong_time = getTime(now)}
-            .encode(writer);
-        sendImmediate(writer.written(), PacketPriority::Immediate, PacketReliability::ReliableOrdered, now);
+            .encode(buffer);
+        sendImmediate(buffer.slice(), PacketPriority::Immediate, PacketReliability::ReliableOrdered, now);
         if (!already_connected) {
             pingInternal(PacketReliability::Unreliable, now);
         }
@@ -305,14 +299,13 @@ void Connection::handleMessage(LegacyByteBuf message, TimePoint now)
     }
 }
 
-void Connection::parseConnectionRequestPacket(std::span<const std::byte> message, TimePoint now)
+void Connection::parseConnectionRequestPacket(ByteBufView message, TimePoint now)
 {
     const auto request = ConnectionRequest::decode(message);
-    if (!request || !std::ranges::equal(request->password, configuration_.password)) {
-        std::array<std::byte, 9> buffer{};
-        Writer writer{buffer};
-        InvalidPassword{configuration_.guid}.encode(writer);
-        sendImmediate(writer.written().first(2), PacketPriority::Immediate, PacketReliability::Reliable, now);
+    if (!request || request->password != configuration_.password) {
+        auto buffer = Unpooled::buffer(9, 9);
+        InvalidPassword{configuration_.guid}.encode(buffer);
+        sendImmediate(buffer.slice(0, 2), PacketPriority::Immediate, PacketReliability::Reliable, now);
         silent_disconnect_reason_ = DisconnectReason::Rejected;
         connect_mode_ = ConnectMode::DisconnectAsapSilently;
         return;
@@ -323,14 +316,13 @@ void Connection::parseConnectionRequestPacket(std::span<const std::byte> message
 
 void Connection::onConnectionRequest(std::uint64_t incoming_timestamp, TimePoint now)
 {
-    std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
-    Writer writer{buffer};
+    auto buffer = Unpooled::buffer(MAXIMUM_MTU_SIZE, MAXIMUM_MTU_SIZE);
     ConnectionRequestAccepted{.client_address = system_address_,
                               .system_index = system_index_,
                               .send_ping_time = incoming_timestamp,
                               .send_pong_time = getTime(now)}
-        .encode(writer);
-    sendImmediate(writer.written(), PacketPriority::Immediate, PacketReliability::ReliableOrdered, now);
+        .encode(buffer);
+    sendImmediate(buffer.slice(), PacketPriority::Immediate, PacketReliability::ReliableOrdered, now);
 }
 
 void Connection::onConnectedPong(std::uint64_t send_ping_time, TimePoint now)
@@ -345,21 +337,20 @@ void Connection::onConnectedPong(std::uint64_t send_ping_time, TimePoint now)
 
 void Connection::pingInternal(PacketReliability reliability, TimePoint now)
 {
-    std::array<std::byte, 9> buffer{};
-    Writer writer{buffer};
-    ConnectedPing{getTime(now)}.encode(writer);
-    sendImmediate(writer.written(), PacketPriority::Immediate, reliability, now);
+    auto buffer = Unpooled::buffer(9, 9);
+    ConnectedPing{getTime(now)}.encode(buffer);
+    sendImmediate(buffer.slice(), PacketPriority::Immediate, reliability, now);
 }
 
-void Connection::sendImmediate(std::span<const std::byte> message, PacketPriority priority,
-                               PacketReliability reliability, TimePoint now)
+void Connection::sendImmediate(ByteBufView message, PacketPriority priority, PacketReliability reliability,
+                               TimePoint now)
 {
     if (!reliability_layer_ || connect_mode_ == ConnectMode::DisconnectAsap ||
         connect_mode_ == ConnectMode::DisconnectAsapSilently || connect_mode_ == ConnectMode::DisconnectOnNoAck ||
         connect_mode_ == ConnectMode::Closed) {
         return;
     }
-    reliability_layer_->send(LegacyByteBuf::copyBuffer(message), priority, reliability, 0, 0, now);
+    reliability_layer_->send(message.copy(), priority, reliability, 0, 0, now);
     if (reliability == PacketReliability::Reliable || reliability == PacketReliability::ReliableOrdered ||
         reliability == PacketReliability::ReliableSequenced ||
         reliability == PacketReliability::ReliableWithAckReceipt ||
@@ -368,10 +359,10 @@ void Connection::sendImmediate(std::span<const std::byte> message, PacketPriorit
     }
 }
 
-bool Connection::send(LegacyByteBuf message, PacketPriority priority, PacketReliability reliability,
+bool Connection::send(ByteBuf message, PacketPriority priority, PacketReliability reliability,
                       std::uint8_t ordering_channel, TimePoint now)
 {
-    if (!reliability_layer_ || message.empty() || connect_mode_ == ConnectMode::DisconnectAsap ||
+    if (!reliability_layer_ || !message.isReadable() || connect_mode_ == ConnectMode::DisconnectAsap ||
         connect_mode_ == ConnectMode::DisconnectAsapSilently || connect_mode_ == ConnectMode::DisconnectOnNoAck ||
         connect_mode_ == ConnectMode::Closed) {
         return false;
@@ -402,7 +393,7 @@ void Connection::close(bool send_disconnection_notification, TimePoint now)
         return;
     }
     constexpr std::array notification{static_cast<std::byte>(MessageId::DisconnectionNotification)};
-    sendImmediate(notification, PacketPriority::Low, PacketReliability::ReliableOrdered, now);
+    sendImmediate(Unpooled::wrappedBuffer(notification), PacketPriority::Low, PacketReliability::ReliableOrdered, now);
     connect_mode_ = ConnectMode::DisconnectAsap;
     if (!delivering_) {
         update(now);
@@ -422,12 +413,11 @@ void Connection::sendOpenConnectionRequests(TimePoint now)
         ++requests_made_;
         next_request_time_ = now + configuration_.time_between_send_connection_attempts;
 
-        std::array<std::byte, MAXIMUM_MTU_SIZE> buffer{};
-        Writer writer{buffer};
+        auto buffer = Unpooled::buffer(MAXIMUM_MTU_SIZE, MAXIMUM_MTU_SIZE);
         OpenConnectionRequest1{.protocol = RAKNET_PROTOCOL_VERSION,
                                .mtu = static_cast<std::uint16_t>(MTU_SIZES[mtu_size_index])}
-            .encode(writer);
-        if (!listener_.sendMtuProbe(writer.written()) && mtu_size_index + 1 < MTU_SIZES.size()) {
+            .encode(buffer);
+        if (!listener_.sendMtuProbe(buffer.slice()) && mtu_size_index + 1 < MTU_SIZES.size()) {
             requests_made_ = static_cast<unsigned>((mtu_size_index + 1) * per_size);
             next_request_time_ = now;
         }

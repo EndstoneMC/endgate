@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "endgate/network/buffer.h"
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/raknet/congestion.h"
 #include "endgate/network/raknet/datagram.h"
 #include "endgate/network/raknet/protocol.h"
@@ -26,7 +26,7 @@ namespace endgate::raknet {
 struct InternalPacket : FrameHeader {
     PacketPriority priority{PacketPriority::High};
     std::uint32_t send_receipt_serial{0};
-    LegacyByteBuf data;
+    ByteBuf data;
     std::size_t header_length{0};
     std::uint8_t times_sent{0};
     TimePoint creation_time;
@@ -41,7 +41,7 @@ class ReliabilityLayer {
 public:
     class Listener {
     public:
-        virtual void sendDatagram(std::span<const std::byte> datagram) = 0;
+        virtual void sendDatagram(ByteBufView datagram) = 0;
         virtual void onReliabilityLayerNotification(std::string_view message, bool is_error) = 0;
 
     protected:
@@ -68,17 +68,17 @@ public:
     /**
      * @see RakNet::ReliabilityLayer::HandleSocketReceiveFromConnectedPlayer
      */
-    void handleSocketReceiveFromConnectedPlayer(std::span<const std::byte> datagram, TimePoint now);
+    void handleSocketReceiveFromConnectedPlayer(ByteBufView datagram, TimePoint now);
 
     /**
      * @see RakNet::ReliabilityLayer::Receive
      */
-    [[nodiscard]] std::optional<LegacyByteBuf> receive();
+    [[nodiscard]] std::optional<ByteBuf> receive();
 
     /**
      * @see RakNet::ReliabilityLayer::Send
      */
-    bool send(LegacyByteBuf data, PacketPriority priority, PacketReliability reliability, std::uint8_t ordering_channel,
+    bool send(ByteBuf data, PacketPriority priority, PacketReliability reliability, std::uint8_t ordering_channel,
               std::uint32_t receipt, TimePoint now);
 
     /**
@@ -129,7 +129,7 @@ private:
         std::uint32_t split_packet_count;
         std::size_t bytes{0};
         FrameHeader first_header;
-        std::vector<std::pair<std::uint32_t, LegacyByteBuf>> parts;
+        std::vector<std::pair<std::uint32_t, ByteBuf>> parts;
     };
 
     /**
@@ -155,12 +155,12 @@ private:
         listener_.onReliabilityLayerNotification(message, is_error);
     }
 
-    void handleAcknowledgements(Reader &reader, TimePoint now);
-    void handleNegativeAcknowledgements(Reader &reader, TimePoint now);
-    void handleFrame(const FrameHeader &header, LegacyByteBuf data, TimePoint now);
+    void handleAcknowledgements(ByteBufView &reader, TimePoint now);
+    void handleNegativeAcknowledgements(ByteBufView &reader, TimePoint now);
+    void handleFrame(const FrameHeader &header, ByteBufView data, TimePoint now);
     [[nodiscard]] bool hold(std::size_t bytes);
     [[nodiscard]] std::optional<std::pair<InternalPacket, std::size_t>> insertIntoSplitPacketList(
-        const FrameHeader &header, LegacyByteBuf data, TimePoint now);
+        const FrameHeader &header, ByteBufView data, TimePoint now);
     void deliver(InternalPacket packet, std::size_t held_bytes);
     void removePacketFromResendList(std::uint32_t message_number);
 
@@ -179,6 +179,7 @@ private:
 
     Listener &listener_;
     CCRakNetSlidingWindow congestion_manager_;
+    ByteBuf datagram_;
     std::chrono::milliseconds timeout_time_{10000};
     std::chrono::milliseconds unreliable_timeout_{0};
     TimePoint next_unreliable_cull_;
@@ -186,7 +187,7 @@ private:
     TimePoint last_update_time_;
     bool dead_connection_{false};
 
-    std::deque<LegacyByteBuf> output_queue_;
+    std::deque<ByteBuf> output_queue_;
     RangeList acknowlegements_;
     RangeList naks_;
     bool remote_system_needs_b_and_as_{false};
@@ -220,7 +221,6 @@ private:
     std::size_t all_datagram_sizes_so_far_{0};
     std::size_t datagrams_this_update_{0};
     DatagramHeader datagram_header_;
-    std::array<std::byte, MAXIMUM_MTU_SIZE> update_buffer_{};
 };
 
 }  // namespace endgate::raknet

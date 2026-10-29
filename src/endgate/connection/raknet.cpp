@@ -92,7 +92,7 @@ void RakNetConnection::handleDatagram(std::span<const std::byte> datagram, const
     if (datagram.empty() || connection_.isClosed()) {
         return;
     }
-    connection_.handleDatagram(datagram, raknet::Clock::now());
+    connection_.handleDatagram(Unpooled::wrappedBuffer(datagram), raknet::Clock::now());
     arm();
 }
 
@@ -102,9 +102,10 @@ void RakNetConnection::send(LegacyByteBuf batch)
         logger_.debug("Dropping {} bytes for {}: not connected", batch.length(), getRemoteAddress());
         return;
     }
-    static const auto header = LegacyByteBuf::copyBuffer(std::array{BATCH_HEADER});
-    auto message = header;
-    message.appendToChain(std::move(batch));
+    auto message = Unpooled::buffer(1 + batch.length());
+    message.writeByte(std::to_integer<std::uint8_t>(BATCH_HEADER));
+    message.writeZero(batch.length());
+    batch.copyTo(message.nioBuffer(1, batch.length()));
     connection_.send(std::move(message), raknet::PacketPriority::High, raknet::PacketReliability::ReliableOrdered, 0,
                      raknet::Clock::now());
     arm();
@@ -120,17 +121,17 @@ void RakNetConnection::disconnect(bool wait_for_peer)
     arm();
 }
 
-void RakNetConnection::sendDatagram(std::span<const std::byte> datagram)
+void RakNetConnection::sendDatagram(ByteBufView datagram)
 {
     asio::error_code ignored;
     if (endpoint_socket_) {
-        endpoint_socket_->send_to(asio::buffer(datagram), address_, 0, ignored);
+        endpoint_socket_->send_to(asio::buffer(datagram.nioBuffer()), address_, 0, ignored);
         return;
     }
-    socket_.send(asio::buffer(datagram), 0, ignored);
+    socket_.send(asio::buffer(datagram.nioBuffer()), 0, ignored);
 }
 
-bool RakNetConnection::sendMtuProbe(std::span<const std::byte> datagram)
+bool RakNetConnection::sendMtuProbe(ByteBufView datagram)
 {
     if (endpoint_socket_) {
         sendDatagram(datagram);
@@ -138,7 +139,7 @@ bool RakNetConnection::sendMtuProbe(std::span<const std::byte> datagram)
     }
     asio::error_code ec;
     setDontFragment(socket_, true);
-    socket_.send(asio::buffer(datagram), 0, ec);
+    socket_.send(asio::buffer(datagram.nioBuffer()), 0, ec);
     setDontFragment(socket_, false);
     return ec != asio::error::message_size;
 }
@@ -149,15 +150,14 @@ void RakNetConnection::onConnected()
     channelActive();
 }
 
-void RakNetConnection::onMessage(LegacyByteBuf message)
+void RakNetConnection::onMessage(ByteBufView message)
 {
-    std::array<std::byte, 1> first{};
-    message.copyTo(first);
-    if (message.empty() || first.front() != BATCH_HEADER) {
-        logger_.debug("Dropping {} bytes from {}: not a batch", message.length(), getRemoteAddress());
+    if (!message.isReadable() ||
+        message.getUnsignedByte(message.readerIndex()) != std::to_integer<std::uint8_t>(BATCH_HEADER)) {
+        logger_.debug("Dropping {} bytes from {}: not a batch", message.readableBytes(), getRemoteAddress());
         return;
     }
-    channelRead(message.retainedSlice(1, message.length() - 1));
+    channelRead(LegacyByteBuf::copyBuffer(message.nioBuffer().subspan(1)));
 }
 
 void RakNetConnection::onDisconnected(raknet::DisconnectReason reason)
