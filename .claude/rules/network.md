@@ -8,7 +8,8 @@ paths:
 
 ## Engines
 
-- `raknet`, `rtc`, `rtc/sctp` and `nethernet` are sans-IO engines: no asio I/O objects, no threads, no locks, no clock reads.
+- The protocol engines in `raknet`, `rtc`, `rtc/sctp` and `nethernet` are sans-IO: no asio I/O objects, no threads, no locks, no clock reads. NetherNet's HTTP signalling server and client (`signaling`, `client`) are the I/O around them and follow `threading.md`.
+- Engines read with `ByteBufView` and write with `ByteBuf`. No private reader, writer or byte-vector plumbing.
 - Time is passed in. An engine reports `nextTimeout()` and is driven by `handleTimeout(now)`.
 - Outputs are pushed synchronously to the engine's `Listener` interface. A received message arrives as a `ByteBufView`; an engine copies it into a `ByteBuf` only when it must keep it.
 - Bound every length and count read from the wire before using it.
