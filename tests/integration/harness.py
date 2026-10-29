@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import signal
@@ -10,9 +11,12 @@ import time
 from pathlib import Path
 
 import raknet
+from nethernet import serve_http
+from nethernet.identity import IdentitySigner, generate_operator_key
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 DEFAULT_BINARY = REPOSITORY / "build" / "RelWithDebInfo" / "endgate"
+DEFAULT_ECHO = REPOSITORY / "build" / "RelWithDebInfo" / "tests" / "interop" / "endgate_nethernet_echo"
 
 
 def free_port() -> int:
@@ -174,3 +178,73 @@ class EchoBackend:
 
     def close(self) -> None:
         self.server.close(0)
+
+
+class Echo:
+    """endgate's NetherNet stack behind one port, echoing every packet it receives."""
+
+    def __init__(self, binary: Path) -> None:
+        self.process = subprocess.Popen(
+            [str(binary), "127.0.0.1"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True
+        )
+        first = self.process.stdout.readline().split()
+        if first[:1] != ["listening"]:
+            self.process.kill()
+            raise RuntimeError(f"echo did not start: {first}")
+        self.port = int(first[1])
+        self.lines: list[str] = []
+        threading.Thread(target=self._pump, daemon=True).start()
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.port}"
+
+    def _pump(self) -> None:
+        for line in self.process.stdout:
+            self.lines.append(line.rstrip())
+
+    def stop(self) -> None:
+        self.process.terminate()
+        self.process.wait(5)
+
+
+class PythonServer:
+    """nethernet-python's serve_http, an independent aiortc NetherNet server, running in its own loop."""
+
+    def __init__(self) -> None:
+        self._loop = asyncio.new_event_loop()
+        self._ready = threading.Event()
+        self._server = None
+        self.port = 0
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        if not self._ready.wait(20):
+            raise RuntimeError("python server did not start")
+
+    def _run(self) -> None:
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_until_complete(self._start())
+        self._loop.run_forever()
+
+    async def _start(self) -> None:
+        signer = IdentitySigner(generate_operator_key(), domain="endgate-test")
+
+        async def handler(connection) -> None:
+            try:
+                while True:
+                    await connection.send(await connection.recv())
+            except Exception:
+                pass
+
+        self._server = serve_http(handler, host="127.0.0.1", port=0, identity_signer=signer)
+        await self._server.start()
+        self.port = self._server.bound_port
+        self._ready.set()
+
+    def stop(self) -> None:
+        async def close() -> None:
+            await self._server.aclose()
+
+        asyncio.run_coroutine_threadsafe(close(), self._loop).result(10)
+        self._loop.call_soon_threadsafe(self._loop.stop)
+        self._thread.join(10)

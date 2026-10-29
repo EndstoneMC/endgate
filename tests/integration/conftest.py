@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 import raknet
-from harness import DEFAULT_BINARY, EchoBackend, Proxy, free_port
+from harness import DEFAULT_BINARY, DEFAULT_ECHO, Echo, EchoBackend, Proxy, PythonServer, free_port
 
 _observations: dict[str, object] = {}
 
@@ -53,6 +53,22 @@ def echo_backend():
     server = EchoBackend()
     yield server
     server.close()
+
+
+@pytest.fixture(params=["endgate", "aiortc"])
+def nethernet_backend(request: pytest.FixtureRequest):
+    """A NetherNet server that sends every batch back: endgate's own echo harness, or nethernet-python's."""
+    if request.param == "aiortc":
+        server = PythonServer()
+        yield server
+        server.stop()
+        return
+    binary = Path(os.environ.get("ENDGATE_NETHERNET_ECHO", DEFAULT_ECHO))
+    if not binary.exists():
+        pytest.exit(f"endgate_nethernet_echo not found at {binary}")
+    server = Echo(binary)
+    yield server
+    server.stop()
 
 
 @pytest.fixture
