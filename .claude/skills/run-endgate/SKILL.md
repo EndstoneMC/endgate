@@ -41,6 +41,6 @@ A Bedrock client joins at the `bind` address once the backend is a real server.
 | --- | --- |
 | `Unable to read the configuration` or `Your configuration is invalid` | fix `endgate.toml`; a parse error points at the line and column |
 | no `Listening on` line | the bind address is taken or malformed |
-| `Opening backend`, then both legs `Disconnected` seconds later | nothing answers on the backend address |
-| the client's first message gets no reply | endgate drops what a player sends before its backend connects; send after `is now on backend` |
+| `unable to connect to server <name>` | `no NetherNet or RakNet response` means nothing on the backend address supports either transport; `can't resolve the address` means the host name failed to resolve |
+| the client's first message gets no reply | endgate holds at most 64 KiB until the backend leg is up, then disconnects the player; send after `[server connection] <player> -> <server> has connected` |
 | `nanobind: leaked ...` when a script exits | noise from the raknet binding at interpreter exit |

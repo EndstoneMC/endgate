@@ -15,7 +15,7 @@ Velocity is PaperMC/Velocity. Read the Java before writing any C++.
 
    | Velocity | endgate |
    | --- | --- |
-   | Netty event loops, channels | asio, strands (`threading.md`) |
+   | Netty `EventLoop`, `EventLoopGroup`, channels | `network/eventloop.h` (`threading.md`) |
    | Netty pipeline and `ByteBuf` | `network/pipeline.h`, `network/codec.h`, `buffer/bytebuf.h` |
    | `private static final Logger` | a `spdlog::logger &` member |
    | JLine, TerminalConsoleAppender | replxx, `logging/appender.h` |
@@ -23,5 +23,5 @@ Velocity is PaperMC/Velocity. Read the Java before writing any C++.
 
 6. Write the docstring from Velocity's javadoc, adapted to endgate, with `@see` on the interface then the implementation (`docstring.md`).
 7. A setting goes in `resources/endgate.toml` under Velocity's key, with velocity.toml's comment adapted.
-8. Velocity speaks Java Edition. Its structure carries over; its packets and states do not. Take every packet, state and wire detail from the Bedrock sources in `bedrock.md`.
+8. Velocity implements Java Edition. Its structure carries over; its packets and states do not. Take every packet, state and wire detail from the Bedrock sources in `bedrock.md`.
 9. Run `/verify`.
