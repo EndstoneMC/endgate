@@ -31,16 +31,10 @@ public:
                           {.receive =
                                [this](std::span<const std::byte> datagram, TimePoint now) {
                                    layer.handleSocketReceiveFromConnectedPlayer(Unpooled::wrappedBuffer(datagram), now);
-                                   drain();
                                    layer.update(now);
-                                   drain();
                                },
                            .next_timeout = [this] { return layer.nextTimeout(); },
-                           .timeout =
-                               [this](TimePoint now) {
-                                   layer.update(now);
-                                   drain();
-                               }});
+                           .timeout = [this](TimePoint now) { layer.update(now); }});
     }
 
     void sendDatagram(ByteBufView datagram) override
@@ -48,6 +42,12 @@ public:
         const auto bytes = datagram.nioBuffer();
         datagrams.emplace_back(bytes.begin(), bytes.end());
         simulation_.transmit(index_, bytes);
+    }
+
+    void onMessage(ByteBufView message, TimePoint) override
+    {
+        const auto bytes = message.nioBuffer();
+        received.emplace_back(bytes.begin(), bytes.end());
     }
 
     void onReliabilityLayerNotification(std::string_view message, bool is_error) override
@@ -61,24 +61,13 @@ public:
     {
         layer.send(Unpooled::copiedBuffer(message), priority, reliability, channel, receipt, simulation_.now());
         layer.update(simulation_.now());
-        drain();
     }
 
     void inject(std::string_view hex)
     {
         const auto bytes = fromHex(hex);
         layer.handleSocketReceiveFromConnectedPlayer(bytes, simulation_.now());
-        drain();
         layer.update(simulation_.now());
-        drain();
-    }
-
-    void drain()
-    {
-        while (auto message = layer.receive()) {
-            const auto bytes = message->nioBuffer();
-            received.emplace_back(bytes.begin(), bytes.end());
-        }
     }
 
     ReliabilityLayer layer;

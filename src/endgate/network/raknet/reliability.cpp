@@ -36,15 +36,15 @@ bool isOlderOrderedPacket(std::uint32_t new_packet_ordering_index, std::uint32_t
            new_packet_ordering_index < waiting_for_packet_ordering_index;
 }
 
-ByteBuf receipt(MessageId id, std::uint32_t serial)
-{
-    auto buffer = Unpooled::buffer(sizeof(MessageId) + sizeof(serial));
-    buffer.writeByte(static_cast<std::uint8_t>(id));
-    buffer.writeIntLE(serial);
-    return buffer;
-}
-
 }  // namespace
+
+void ReliabilityLayer::deliverReceipt(MessageId id, std::uint32_t serial, TimePoint now)
+{
+    auto receipt = Unpooled::buffer(sizeof(MessageId) + sizeof(serial));
+    receipt.writeByte(static_cast<std::uint8_t>(id));
+    receipt.writeIntLE(serial);
+    listener_.onMessage(receipt.slice(), now);
+}
 
 bool ReliabilityLayer::HasReceivedPacketQueue::operator[](std::size_t index) const
 {
@@ -180,8 +180,9 @@ void ReliabilityLayer::handleAcknowledgements(ByteBufView &reader, TimePoint now
                     ++node;
                     continue;
                 }
-                output_queue_.push_back(receipt(MessageId::SndReceiptAcked, node->send_receipt_serial));
+                const auto serial = node->send_receipt_serial;
                 node = unreliable_with_ack_receipt_history_.erase(node);
+                deliverReceipt(MessageId::SndReceiptAcked, serial, now);
             }
             auto *history = getDatagramHistoryNode(datagram_number);
             if (history == nullptr || history->message_numbers.empty()) {
@@ -192,7 +193,7 @@ void ReliabilityLayer::handleAcknowledgements(ByteBufView &reader, TimePoint now
                                : CCRakNetSlidingWindow::Duration{0};
             congestion_manager_.onAck(rtt, bandwidth_exceeded_statistic_, datagram_number);
             for (const auto message_number : history->message_numbers) {
-                removePacketFromResendList(message_number);
+                removePacketFromResendList(message_number, now);
             }
             history->message_numbers.clear();
         }
@@ -282,17 +283,12 @@ void ReliabilityLayer::handleFrame(const FrameHeader &header, ByteBufView data, 
     if (header.split_packet_count > 0) {
         auto assembled = insertIntoSplitPacketList(header, data, now);
         if (assembled) {
-            deliver(std::move(assembled->first), assembled->second);
+            deliver(assembled->first, assembled->first.data.slice(), assembled->second, &assembled->first.data, now);
         }
         return;
     }
 
-    InternalPacket packet;
-    static_cast<FrameHeader &>(packet) = header;
-    packet.data = data.copy();
-    packet.creation_time = now;
-    const auto held_bytes = packet.data.readableBytes() + HELD_PACKET_OVERHEAD;
-    deliver(std::move(packet), held_bytes);
+    deliver(header, data, data.readableBytes() + HELD_PACKET_OVERHEAD, nullptr, now);
 }
 
 std::optional<std::pair<InternalPacket, std::size_t>> ReliabilityLayer::insertIntoSplitPacketList(
@@ -356,32 +352,33 @@ std::optional<std::pair<InternalPacket, std::size_t>> ReliabilityLayer::insertIn
     return std::pair{std::move(packet), held_bytes};
 }
 
-void ReliabilityLayer::deliver(InternalPacket packet, std::size_t held_bytes)
+void ReliabilityLayer::deliver(const FrameHeader &header, ByteBufView data, std::size_t held_bytes, ByteBuf *assembled,
+                               TimePoint now)
 {
-    const auto reliability = packet.reliability;
+    const auto reliability = header.reliability;
     const bool sequenced = isSequenced(reliability);
     if (!sequenced && reliability != PacketReliability::ReliableOrdered) {
-        output_queue_.push_back(std::move(packet.data));
+        listener_.onMessage(data, now);
         return;
     }
 
-    const auto channel = packet.ordering_channel;
+    const auto channel = header.ordering_channel;
     auto &heap = ordering_heaps_[channel];
     constexpr auto lighter = [](const OrderedPacket &a, const OrderedPacket &b) {
         return a.weight > b.weight;
     };
-    if (packet.ordering_index == ordered_read_index_[channel]) {
+    if (header.ordering_index == ordered_read_index_[channel]) {
         if (sequenced) {
-            if (isOlderOrderedPacket(packet.sequencing_index, highest_sequenced_read_index_[channel])) {
+            if (isOlderOrderedPacket(header.sequencing_index, highest_sequenced_read_index_[channel])) {
                 return;
             }
-            highest_sequenced_read_index_[channel] = (packet.sequencing_index + 1) & UINT24_MASK;
-            output_queue_.push_back(std::move(packet.data));
+            highest_sequenced_read_index_[channel] = (header.sequencing_index + 1) & UINT24_MASK;
+            listener_.onMessage(data, now);
             return;
         }
-        output_queue_.push_back(std::move(packet.data));
         ordered_read_index_[channel] = (ordered_read_index_[channel] + 1) & UINT24_MASK;
         highest_sequenced_read_index_[channel] = 0;
+        listener_.onMessage(data, now);
         while (!heap.empty() && heap.front().packet.ordering_index == ordered_read_index_[channel]) {
             std::ranges::pop_heap(heap, lighter);
             auto next = std::move(heap.back().packet);
@@ -393,11 +390,11 @@ void ReliabilityLayer::deliver(InternalPacket packet, std::size_t held_bytes)
             else {
                 highest_sequenced_read_index_[channel] = next.sequencing_index;
             }
-            output_queue_.push_back(std::move(next.data));
+            listener_.onMessage(next.data.slice(), now);
         }
         return;
     }
-    if (isOlderOrderedPacket(packet.ordering_index, ordered_read_index_[channel])) {
+    if (isOlderOrderedPacket(header.ordering_index, ordered_read_index_[channel])) {
         return;
     }
     if (heap.size() >= MAXIMUM_ORDERED_PACKETS_PER_HEAP) {
@@ -411,8 +408,12 @@ void ReliabilityLayer::deliver(InternalPacket packet, std::size_t held_bytes)
         heap_index_offsets_[channel] = ordered_read_index_[channel];
     }
     constexpr std::uint64_t ordered_slot = 1048576;
-    const std::uint64_t ordered_hole_count = (packet.ordering_index - heap_index_offsets_[channel]) & UINT24_MASK;
-    const auto weight = ordered_hole_count * ordered_slot + (sequenced ? packet.sequencing_index : ordered_slot - 1);
+    const std::uint64_t ordered_hole_count = (header.ordering_index - heap_index_offsets_[channel]) & UINT24_MASK;
+    const auto weight = ordered_hole_count * ordered_slot + (sequenced ? header.sequencing_index : ordered_slot - 1);
+    InternalPacket packet;
+    static_cast<FrameHeader &>(packet) = header;
+    packet.data = assembled != nullptr ? std::move(*assembled) : data.copy();
+    packet.creation_time = now;
     heap.push_back({.weight = weight, .held_bytes = held_bytes, .packet = std::move(packet)});
     std::ranges::push_heap(heap, lighter);
 }
@@ -428,17 +429,7 @@ bool ReliabilityLayer::hold(std::size_t bytes)
     return true;
 }
 
-std::optional<ByteBuf> ReliabilityLayer::receive()
-{
-    if (output_queue_.empty()) {
-        return std::nullopt;
-    }
-    auto message = std::move(output_queue_.front());
-    output_queue_.pop_front();
-    return message;
-}
-
-void ReliabilityLayer::removePacketFromResendList(std::uint32_t message_number)
+void ReliabilityLayer::removePacketFromResendList(std::uint32_t message_number, TimePoint now)
 {
     auto &slot = resend_buffer_[message_number % RESEND_BUFFER_ARRAY_LENGTH];
     if (!slot || (*slot)->reliable_message_number != message_number) {
@@ -447,12 +438,15 @@ void ReliabilityLayer::removePacketFromResendList(std::uint32_t message_number)
     const auto packet = *slot;
     slot.reset();
     unacknowledged_bytes_ -= packet->header_length + packet->data.readableBytes();
-    if ((packet->reliability == PacketReliability::ReliableWithAckReceipt ||
+    const bool receipt_wanted =
+        (packet->reliability == PacketReliability::ReliableWithAckReceipt ||
          packet->reliability == PacketReliability::ReliableOrderedWithAckReceipt) &&
-        (packet->split_packet_count == 0 || packet->split_packet_index + 1 == packet->split_packet_count)) {
-        output_queue_.push_back(receipt(MessageId::SndReceiptAcked, packet->send_receipt_serial));
-    }
+        (packet->split_packet_count == 0 || packet->split_packet_index + 1 == packet->split_packet_count);
+    const auto serial = packet->send_receipt_serial;
     resend_list_.erase(packet);
+    if (receipt_wanted) {
+        deliverReceipt(MessageId::SndReceiptAcked, serial, now);
+    }
 }
 
 bool ReliabilityLayer::send(ByteBuf data, PacketPriority priority, PacketReliability reliability,
@@ -710,8 +704,9 @@ void ReliabilityLayer::update(TimePoint now)
             ++node;
             continue;
         }
-        output_queue_.push_back(receipt(MessageId::SndReceiptLoss, node->send_receipt_serial));
+        const auto serial = node->send_receipt_serial;
         node = unreliable_with_ack_receipt_history_.erase(node);
+        deliverReceipt(MessageId::SndReceiptLoss, serial, now);
     }
 
     if (!has_data_to_send_or_resend) {

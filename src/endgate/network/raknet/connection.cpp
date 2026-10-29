@@ -68,8 +68,9 @@ void Connection::handleDatagram(ByteBufView datagram, TimePoint now)
     if (!reliability_layer_) {
         return;
     }
+    delivering_ = true;
     reliability_layer_->handleSocketReceiveFromConnectedPlayer(datagram, now);
-    handleMessages(now);
+    delivering_ = false;
     update(now);
 }
 
@@ -173,22 +174,9 @@ void Connection::handleOfflineMessage(ByteBufView datagram, TimePoint now)
     }
 }
 
-void Connection::handleMessages(TimePoint now)
+void Connection::onMessage(ByteBufView message, TimePoint now)
 {
-    delivering_ = true;
-    while (!isClosed() && reliability_layer_) {
-        auto message = reliability_layer_->receive();
-        if (!message) {
-            break;
-        }
-        handleMessage(*std::move(message), now);
-    }
-    delivering_ = false;
-}
-
-void Connection::handleMessage(ByteBuf message, TimePoint now)
-{
-    if (!reliability_layer_) {
+    if (isClosed() || !reliability_layer_) {
         return;
     }
     auto &reliability_layer = *reliability_layer_;
@@ -201,11 +189,11 @@ void Connection::handleMessage(ByteBuf message, TimePoint now)
     const auto is_user_message = first >= static_cast<std::uint8_t>(MessageId::Timestamp) ||
                                  id == MessageId::SndReceiptAcked || id == MessageId::SndReceiptLoss;
     if (connect_mode_ != ConnectMode::UnverifiedSender && is_user_message) {
-        listener_.onMessage(message.slice());
+        listener_.onMessage(message);
         return;
     }
 
-    const auto bytes = message.slice();
+    const auto bytes = message;
 
     if (connect_mode_ == ConnectMode::UnverifiedSender) {
         if (id == MessageId::ConnectionRequest) {
@@ -447,8 +435,9 @@ void Connection::update(TimePoint now)
         pingInternal(PacketReliability::Unreliable, now);
     }
 
+    delivering_ = true;
     reliability_layer.update(now);
-    handleMessages(now);
+    delivering_ = false;
     if (isClosed()) {
         return;
     }

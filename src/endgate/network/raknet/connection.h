@@ -147,8 +147,7 @@ private:
     void onReliabilityLayerNotification(std::string_view message, bool is_error) override;
 
     void handleOfflineMessage(ByteBufView datagram, TimePoint now);
-    void handleMessages(TimePoint now);
-    void handleMessage(ByteBuf message, TimePoint now);
+    void onMessage(ByteBufView message, TimePoint now) override;
     void parseConnectionRequestPacket(ByteBufView message, TimePoint now);
     void onConnectionRequest(std::uint64_t incoming_timestamp, TimePoint now);
     void onConnectedPong(std::uint64_t send_ping_time, TimePoint now);

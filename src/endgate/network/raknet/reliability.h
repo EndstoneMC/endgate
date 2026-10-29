@@ -42,6 +42,14 @@ public:
     class Listener {
     public:
         virtual void sendDatagram(ByteBufView datagram) = 0;
+
+        /**
+         * A message that is ready, in the order its reliability promises. The view is only good for the
+         * call.
+         *
+         * @see RakNet::ReliabilityLayer::Receive
+         */
+        virtual void onMessage(ByteBufView message, TimePoint now) = 0;
         virtual void onReliabilityLayerNotification(std::string_view message, bool is_error) = 0;
 
     protected:
@@ -69,11 +77,6 @@ public:
      * @see RakNet::ReliabilityLayer::HandleSocketReceiveFromConnectedPlayer
      */
     void handleSocketReceiveFromConnectedPlayer(ByteBufView datagram, TimePoint now);
-
-    /**
-     * @see RakNet::ReliabilityLayer::Receive
-     */
-    [[nodiscard]] std::optional<ByteBuf> receive();
 
     /**
      * @see RakNet::ReliabilityLayer::Send
@@ -161,8 +164,10 @@ private:
     [[nodiscard]] bool hold(std::size_t bytes);
     [[nodiscard]] std::optional<std::pair<InternalPacket, std::size_t>> insertIntoSplitPacketList(
         const FrameHeader &header, ByteBufView data, TimePoint now);
-    void deliver(InternalPacket packet, std::size_t held_bytes);
-    void removePacketFromResendList(std::uint32_t message_number);
+    void deliver(const FrameHeader &header, ByteBufView data, std::size_t held_bytes, ByteBuf *assembled,
+                 TimePoint now);
+    void deliverReceipt(MessageId id, std::uint32_t serial, TimePoint now);
+    void removePacketFromResendList(std::uint32_t message_number, TimePoint now);
 
     [[nodiscard]] std::size_t getMaxDatagramSizeExcludingMessageHeaderBytes() const;
     [[nodiscard]] std::deque<OutgoingPacket> *peekOutgoing();
@@ -187,7 +192,6 @@ private:
     TimePoint last_update_time_;
     bool dead_connection_{false};
 
-    std::deque<ByteBuf> output_queue_;
     RangeList acknowlegements_;
     RangeList naks_;
     bool remote_system_needs_b_and_as_{false};
