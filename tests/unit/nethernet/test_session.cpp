@@ -6,6 +6,7 @@
 #include <deque>
 #include <memory>
 #include <optional>
+#include <random>
 #include <span>
 #include <string>
 #include <utility>
@@ -240,6 +241,99 @@ TEST_F(NetworkSessionTest, CarriesPacketsBothWaysOnBothChannels)
     ASSERT_EQ(client_.packets.size(), 2U);
     EXPECT_TRUE(std::ranges::contains(client_.packets, chunk));
     EXPECT_TRUE(std::ranges::contains(client_.packets, update));
+}
+
+TEST_F(NetworkSessionTest, CarriesLargePacketsIntactOverALossyReorderingLink)
+{
+    using namespace std::chrono_literals;
+
+    struct Flight {
+        Clock::time_point arrival;
+        bool to_client;
+        std::vector<std::byte> datagram;
+    };
+
+    connect();
+    ASSERT_TRUE(session_.isOpen());
+
+    std::seed_seq seed{7U};
+    std::mt19937 engine{seed};
+    std::vector<Flight> in_flight;
+    auto next_check = now_;
+    const auto chance = [&](double probability) {
+        return std::uniform_real_distribution<double>{0, 1}(engine) < probability;
+    };
+    const auto launch = [&](const std::vector<std::byte> &datagram, bool to_client) {
+        if (chance(0.1)) {
+            return;
+        }
+        const auto delay = 20ms + (chance(0.3) ? 15ms : 0ms) + (chance(0.004) ? 1500ms : 0ms);
+        in_flight.push_back({.arrival = now_ + delay, .to_client = to_client, .datagram = datagram});
+        if (chance(0.05)) {
+            in_flight.push_back({.arrival = now_ + 25ms, .to_client = to_client, .datagram = datagram});
+        }
+    };
+    for (const auto size : {300000UZ, 1000000UZ, 1000000UZ}) {
+        const auto upstream = payloadOf(size, static_cast<std::uint8_t>(size >> 4));
+        const auto downstream = payloadOf(size, static_cast<std::uint8_t>(size >> 5));
+        const auto upstream_received = recorder_.packets.size();
+        const auto downstream_received = client_.packets.size();
+        client_.queue.push(Unpooled::wrappedBuffer(upstream), ESendType::Reliable);
+        EXPECT_TRUE(session_.send(Unpooled::wrappedBuffer(downstream), ESendType::Reliable, now_));
+        for (auto step = 0; step < 1000000 && (recorder_.packets.size() == upstream_received ||
+                                               client_.packets.size() == downstream_received);
+             ++step) {
+            if (now_ >= next_check) {
+                nominate();
+                next_check = now_ + 1s;
+            }
+            client_.drive(now_);
+            for (const auto &[remote, datagram] : std::exchange(recorder_.outgoing, {})) {
+                if (std::to_integer<std::uint8_t>(datagram.front()) >= 20) {
+                    launch(datagram, true);
+                }
+            }
+            for (const auto &datagram : std::exchange(client_.outgoing, {})) {
+                launch(datagram, false);
+            }
+            std::ranges::stable_sort(in_flight, {}, &Flight::arrival);
+
+            auto next = std::optional<Clock::time_point>{};
+            for (const auto deadline : {session_.nextTimeout(), client_.dtls.nextTimeout(), client_.sctp.nextTimeout(),
+                                        in_flight.empty() ? std::nullopt : std::optional{in_flight.front().arrival}}) {
+                if (deadline && (!next || *deadline < *next)) {
+                    next = deadline;
+                }
+            }
+            ASSERT_TRUE(next);
+            now_ = std::max(now_, *next);
+            if (!in_flight.empty() && in_flight.front().arrival <= now_) {
+                const auto flight = std::move(in_flight.front());
+                in_flight.erase(in_flight.begin());
+                if (flight.to_client) {
+                    client_.dtls.handleDatagram(now_, Unpooled::wrappedBuffer(flight.datagram));
+                    client_.drive(now_);
+                }
+                else {
+                    session_.handleDatagram(now_, client_address_, Unpooled::wrappedBuffer(flight.datagram));
+                }
+            }
+            if (const auto deadline = session_.nextTimeout(); deadline && *deadline <= now_) {
+                session_.handleTimeout(now_);
+            }
+            if (const auto deadline = client_.dtls.nextTimeout(); deadline && *deadline <= now_) {
+                client_.dtls.handleTimeout(now_);
+            }
+            if (const auto deadline = client_.sctp.nextTimeout(); deadline && *deadline <= now_) {
+                client_.sctp.handleTimeout(now_);
+            }
+        }
+        ASSERT_EQ(recorder_.packets.size(), upstream_received + 1) << size;
+        ASSERT_EQ(client_.packets.size(), downstream_received + 1) << size;
+        EXPECT_EQ(recorder_.packets.back(), upstream) << size;
+        EXPECT_EQ(client_.packets.back(), downstream) << size;
+        EXPECT_TRUE(recorder_.closed.empty());
+    }
 }
 
 TEST_F(NetworkSessionTest, RefusesToSendBeforeItOpens)
