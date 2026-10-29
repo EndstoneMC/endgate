@@ -114,6 +114,20 @@ TEST(StunMessageTest, DecodesTheRfc5769Request)
     EXPECT_FALSE(message->verifyIntegrity(Unpooled::wrappedBuffer(SAMPLE_REQUEST), "wrong password"));
 }
 
+TEST(StunMessageTest, DecodesFromTheReaderIndex)
+{
+    auto buf = Unpooled::buffer();
+    buf.writeByte(0xFF);
+    buf.writeBytes(SAMPLE_REQUEST);
+    auto datagram = buf.slice();
+    datagram.skipBytes(1);
+    const auto message = StunMessage::decode(datagram);
+    ASSERT_TRUE(message);
+    EXPECT_EQ(message->username, "evtj:h6vY");
+    EXPECT_TRUE(message->verifyIntegrity(datagram, SAMPLE_PASSWORD));
+    EXPECT_EQ(StunMessage::peekLocalUfrag(datagram), "evtj");
+}
+
 TEST(StunMessageTest, DecodesTheRfc5769Ipv4Response)
 {
     const auto message = StunMessage::decode(Unpooled::wrappedBuffer(SAMPLE_IPV4_RESPONSE));

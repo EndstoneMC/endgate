@@ -30,6 +30,7 @@ std::optional<std::vector<std::uint16_t>> parseStreams(ByteBufView data)
 
 std::optional<Packet> Packet::parse(ByteBufView data)
 {
+    data = data.slice();
     constexpr std::size_t max_packet_size = 65535;
     if (!data.isReadable(CommonHeader::SIZE + Chunk::HEADER_SIZE) || data.readableBytes() > max_packet_size) {
         return std::nullopt;
@@ -92,6 +93,7 @@ void Chunk::write(ByteBuf &out) const
 
 std::optional<std::vector<Tlv>> Tlv::parseAll(ByteBufView data)
 {
+    data = data.slice();
     std::vector<Tlv> tlvs;
     while (data.isReadable()) {
         if (!data.isReadable(HEADER_SIZE)) {

@@ -102,6 +102,7 @@ bool isHeaderValid(const ByteBufView &datagram)
 
 std::optional<StunMessage> StunMessage::decode(ByteBufView datagram)
 {
+    datagram = datagram.slice();
     if (!isHeaderValid(datagram)) {
         return std::nullopt;
     }
@@ -241,6 +242,7 @@ std::optional<StunMessage> StunMessage::decode(ByteBufView datagram)
 
 std::optional<std::string_view> StunMessage::peekLocalUfrag(ByteBufView datagram)
 {
+    datagram = datagram.slice();
     if (!isHeaderValid(datagram) || datagram.getUnsignedShort(0) != static_cast<std::uint16_t>(StunMethod::Binding)) {
         return std::nullopt;
     }
@@ -372,6 +374,7 @@ ByteBuf StunMessage::encode(std::optional<std::string_view> integrity_key) const
 
 bool StunMessage::verifyIntegrity(ByteBufView datagram, std::string_view key) const
 {
+    datagram = datagram.slice();
     if (!integrity_offset || *integrity_offset + ATTRIBUTE_HEADER_SIZE + INTEGRITY_SIZE > datagram.readableBytes()) {
         return false;
     }

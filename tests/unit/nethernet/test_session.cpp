@@ -69,9 +69,9 @@ public:
     {
     }
 
-    void drive(Clock::time_point now)
+    void drive(Clock::time_point time)
     {
-        now = now;
+        now = time;
         if (dtls.getState() == rtc::DtlsTransport::State::Connected && !sctp_started) {
             sctp_started = true;
             sctp.start(now);
