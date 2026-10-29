@@ -76,6 +76,7 @@ struct Description {
     std::uint32_t max_message_size{65536};
     std::vector<IceCandidate> candidates;
     bool end_of_candidates{false};
+    std::optional<asio::ip::udp::endpoint> connection;
 
     [[nodiscard]] static std::optional<Description> parse(std::string_view sdp);
 
@@ -86,6 +87,15 @@ struct Description {
     [[nodiscard]] static Description answer(const Description &offer, const IceCredentials &credentials,
                                             const CertificateFingerprint &fingerprint,
                                             std::span<const CandidateAddress> addresses);
+
+    /**
+     * The offer a Bedrock client sends: BUNDLE, extmap-allow-mixed, msid-semantic, setup:actpass,
+     * ice-options:trickle, one data-channel m-section, and a host candidate for every address given.
+     *
+     * @see RFC 8829 section 5.2
+     */
+    [[nodiscard]] static Description offer(const IceCredentials &credentials, const CertificateFingerprint &fingerprint,
+                                           std::span<const asio::ip::udp::endpoint> host_addresses);
 
     [[nodiscard]] std::string generate(std::uint64_t session_id) const;
 };

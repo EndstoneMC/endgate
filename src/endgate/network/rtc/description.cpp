@@ -298,6 +298,45 @@ Description Description::answer(const Description &offer, const IceCredentials &
     return answer;
 }
 
+Description Description::offer(const IceCredentials &credentials, const CertificateFingerprint &fingerprint,
+                               std::span<const asio::ip::udp::endpoint> host_addresses)
+{
+    Description offer;
+    offer.bundle = {"0"};
+    offer.extmap_allow_mixed = true;
+    offer.msid_semantic = " WMS";
+    offer.mid = "0";
+    offer.ice_ufrag = credentials.ufrag;
+    offer.ice_pwd = credentials.pwd;
+    offer.ice_options = {"trickle"};
+    offer.fingerprints = {fingerprint};
+    offer.setup = DtlsSetup::ActPass;
+    offer.sctp_port = 5000;
+    offer.max_message_size = 262144;
+    const auto unmapped = [](const asio::ip::address &address) {
+        return address.is_v6() && address.to_v6().is_v4_mapped()
+                 ? asio::ip::address{asio::ip::make_address_v4(asio::ip::v4_mapped, address.to_v6())}
+                 : address;
+    };
+    for (std::size_t index = 0; index < std::min(host_addresses.size(), MAX_CANDIDATES); ++index) {
+        constexpr std::uint32_t host_type_preference = 126;
+        const auto address = unmapped(host_addresses[index].address());
+        offer.candidates.push_back({
+            .foundation = std::to_string(index + 1),
+            .component = 1,
+            .transport = "udp",
+            .priority = (host_type_preference << 24U) | ((65535U - static_cast<std::uint32_t>(index)) << 8U) | 255U,
+            .address = address.to_string(),
+            .port = host_addresses[index].port(),
+            .type = "host",
+        });
+        if (!offer.connection) {
+            offer.connection = asio::ip::udp::endpoint{address, host_addresses[index].port()};
+        }
+    }
+    return offer;
+}
+
 std::string Description::generate(std::uint64_t session_id) const
 {
     std::string sdp;
@@ -329,8 +368,14 @@ std::string Description::generate(std::uint64_t session_id) const
     if (identity) {
         line(std::format("a=identity:{}", *identity));
     }
-    line("m=application 9 UDP/DTLS/SCTP webrtc-datachannel");
-    line("c=IN IP4 0.0.0.0");
+    if (connection) {
+        line(std::format("m=application {} UDP/DTLS/SCTP webrtc-datachannel", connection->port()));
+        line(std::format("c=IN IP{} {}", connection->address().is_v6() ? '6' : '4', connection->address().to_string()));
+    }
+    else {
+        line("m=application 9 UDP/DTLS/SCTP webrtc-datachannel");
+        line("c=IN IP4 0.0.0.0");
+    }
     line(std::format("a=ice-ufrag:{}", ice_ufrag));
     line(std::format("a=ice-pwd:{}", ice_pwd));
     if (!ice_options.empty()) {

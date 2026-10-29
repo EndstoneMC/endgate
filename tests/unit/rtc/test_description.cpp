@@ -353,6 +353,68 @@ TEST(DescriptionTest, RejectsWhatItCannotAnswer)
     EXPECT_FALSE(Description::parse(MOJANG_GUIDE_OFFER + std::string(65536, 'a')));
 }
 
+TEST(DescriptionTest, WritesTheOfferABedrockClientWouldSend)
+{
+    const std::vector<asio::ip::udp::endpoint> addresses{{asio::ip::make_address("192.0.2.10"), 51855},
+                                                         {asio::ip::make_address("::ffff:198.51.100.20"), 51856}};
+    const auto offer = Description::offer({.ufrag = "t6mk", .pwd = "K2r6gSr8elsFGxr6FWjjsgwk"},
+                                          MOJANG_GUIDE_ANSWER_FINGERPRINT, addresses);
+
+    EXPECT_EQ(offer.generate(8262678597354354447ULL), crlf(R"(v=0
+o=- 8262678597354354447 2 IN IP4 127.0.0.1
+s=-
+t=0 0
+a=group:BUNDLE 0
+a=extmap-allow-mixed
+a=msid-semantic: WMS
+m=application 51855 UDP/DTLS/SCTP webrtc-datachannel
+c=IN IP4 192.0.2.10
+a=ice-ufrag:t6mk
+a=ice-pwd:K2r6gSr8elsFGxr6FWjjsgwk
+a=ice-options:trickle
+a=fingerprint:sha-256 11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00
+a=setup:actpass
+a=mid:0
+a=sctp-port:5000
+a=max-message-size:262144
+a=candidate:1 1 udp 2130706431 192.0.2.10 51855 typ host
+a=candidate:2 1 udp 2130706175 198.51.100.20 51856 typ host
+)"));
+}
+
+TEST(DescriptionTest, OffersWhatABedrockClientOfferParsesBackTo)
+{
+    const std::vector<asio::ip::udp::endpoint> addresses{{asio::ip::make_address("192.0.2.10"), 51855}};
+    const auto offer = Description::offer(IceCredentials::generate(), MOJANG_GUIDE_ANSWER_FINGERPRINT, addresses);
+    const auto parsed = Description::parse(offer.generate(1));
+    ASSERT_TRUE(parsed);
+    EXPECT_EQ(parsed->bundle, std::vector<std::string>{"0"});
+    EXPECT_TRUE(parsed->extmap_allow_mixed);
+    EXPECT_EQ(parsed->msid_semantic, " WMS");
+    EXPECT_EQ(parsed->mid, "0");
+    EXPECT_EQ(parsed->ice_options, std::vector<std::string>{"trickle"});
+    EXPECT_EQ(parsed->setup, DtlsSetup::ActPass);
+    EXPECT_EQ(parsed->sctp_port, 5000);
+    EXPECT_EQ(parsed->max_message_size, 262144U);
+    ASSERT_EQ(parsed->candidates.size(), 1U);
+    EXPECT_EQ(parsed->candidates[0].address, "192.0.2.10");
+    EXPECT_EQ(parsed->candidates[0].port, 51855);
+    EXPECT_EQ(parsed->candidates[0].type, "host");
+}
+
+TEST(DescriptionTest, DialerPicksTheDtlsRoleOppositeTheAnswer)
+{
+    const auto active = Description::parse(MOJANG_GUIDE_ANSWER);
+    ASSERT_TRUE(active);
+    EXPECT_EQ(active->setup, DtlsSetup::Active);
+
+    auto passive_sdp = MOJANG_GUIDE_ANSWER;
+    passive_sdp.replace(passive_sdp.find("a=setup:active"), 14, "a=setup:passive");
+    const auto passive = Description::parse(passive_sdp);
+    ASSERT_TRUE(passive);
+    EXPECT_EQ(passive->setup, DtlsSetup::Passive);
+}
+
 TEST(DescriptionTest, SkipsBrokenCandidatesAndBoundsTheRest)
 {
     auto sdp = MOJANG_GUIDE_OFFER;
