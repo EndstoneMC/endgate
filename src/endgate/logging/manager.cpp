@@ -28,10 +28,6 @@ spdlog::logger &LogManager::getLogger(const std::string &name)
         return appenders;
     }();
 
-    if (name.empty()) {
-        return *spdlog::default_logger();
-    }
-
     const std::scoped_lock lock(mutex);
     if (const auto existing = spdlog::get(name)) {
         return *existing;

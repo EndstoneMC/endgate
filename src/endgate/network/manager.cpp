@@ -18,7 +18,7 @@
 namespace endgate {
 
 ConnectionManager::ConnectionManager(ProxyServer &server)
-    : server_(server), logger_(LogManager::getLogger()), offline_(server),
+    : server_(server), logger_(LogManager::getLogger("endgate::ConnectionManager")), offline_(server),
       work_guard_(asio::make_work_guard(io_context_)), signals_(io_context_, SIGINT, SIGTERM),
       threads_(std::max(1U, std::thread::hardware_concurrency()))
 {
@@ -32,7 +32,7 @@ ConnectionManager::~ConnectionManager()
 
 void ConnectionManager::logChannelInformation()
 {
-    logger_.info("Connections will use asio channels, {} worker threads", threads_);
+    logger_.info("Connections will use {} channels, {} compression, {} ciphers", "asio", "libdeflate", "OpenSSL");
 }
 
 bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t port)

@@ -29,7 +29,7 @@ bool isInteractive()
 }
 }  // namespace
 
-Console::Console(ProxyServer &server) : server_(server), logger_(LogManager::getLogger())
+Console::Console(ProxyServer &server) : server_(server), logger_(LogManager::getLogger("endgate::Console"))
 {
     constexpr std::size_t max_history_size = 1000;
 
@@ -116,6 +116,9 @@ bool Console::isRunning() const
 void Console::runCommand(const std::string &command)
 {
     if (command == "shutdown" || command == "end" || command == "stop") {
+        if (server_.getConfiguration().isLogCommandExecutions()) {
+            logger_.info("CONSOLE -> executed command /{}", command);
+        }
         shutdown();
         return;
     }

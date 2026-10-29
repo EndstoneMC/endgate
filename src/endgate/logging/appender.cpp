@@ -135,7 +135,7 @@ void TerminalConsoleAppender::sink_it_(const spdlog::details::log_msg &msg)
     msg.color_range_end = 0;
 
     spdlog::memory_buf_t formatted;
-    auto &formatter = msg.logger_name.size() == 0 ? formatters_[1] : formatters_[0];
+    auto &formatter = std::string_view(msg.logger_name).starts_with("endgate::") ? formatters_[1] : formatters_[0];
     formatter.format(msg, formatted);
 
     std::string out;
@@ -176,12 +176,9 @@ RollingRandomAccessFileAppender::RollingRandomAccessFileAppender(std::filesystem
     }
     rotation_tp_ = nextRotation();
 
-    for (auto &formatter : formatters_) {
-        formatter.add_flag<LevelFormatter>('L');
-        formatter.add_flag<ThreadFormatter>('t');
-    }
-    formatters_[0].set_pattern("[%H:%M:%S] [%t/%L] [%n]: %v");
-    formatters_[1].set_pattern("[%H:%M:%S] [%t/%L]: %v");
+    formatter_.add_flag<LevelFormatter>('L');
+    formatter_.add_flag<ThreadFormatter>('t');
+    formatter_.set_pattern("[%H:%M:%S] [%t/%L] [%n]: %v");
 }
 
 std::filesystem::path RollingRandomAccessFileAppender::calcFilename(std::size_t index) const
@@ -205,8 +202,7 @@ void RollingRandomAccessFileAppender::sink_it_(const spdlog::details::log_msg &m
     }
 
     spdlog::memory_buf_t formatted;
-    auto &formatter = msg.logger_name.size() == 0 ? formatters_[1] : formatters_[0];
-    formatter.format(msg, formatted);
+    formatter_.format(msg, formatted);
     file_helper_.write(formatted);
 }
 

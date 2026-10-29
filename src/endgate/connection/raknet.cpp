@@ -16,6 +16,7 @@
 #include "endgate/awaitable.h"
 #include "endgate/logging/manager.h"
 #include "endgate/network/endpoint.h"
+#include "endgate/server.h"
 
 namespace endgate {
 
@@ -40,16 +41,18 @@ void setDontFragment(asio::ip::udp::socket &socket, bool dont_fragment)
 RakNetConnection::RakNetConnection(Endpoint &endpoint, const raknet::SystemAddress &address,
                                    const raknet::OpenConnectionRequest2 &request, std::uint64_t guid,
                                    std::uint16_t system_index, raknet::TimePoint now)
-    : MinecraftConnection(endpoint, endpoint.getIoContext(), toString(address)), logger_(LogManager::getLogger()),
-      endpoint_socket_(endpoint.getSocket()), socket_(getExecutor()), address_(address), timer_(getExecutor()),
+    : MinecraftConnection(endpoint, endpoint.getIoContext(), toString(address)),
+      logger_(LogManager::getLogger("endgate::RakNetConnection")), endpoint_socket_(endpoint.getSocket()),
+      socket_(getExecutor()), address_(address), timer_(getExecutor()),
       connection_(*this, {.guid = guid}, address, request, system_index, now)
 {
 }
 
 RakNetConnection::RakNetConnection(Endpoint &endpoint, const raknet::SystemAddress &address, std::uint64_t guid,
                                    raknet::TimePoint now)
-    : MinecraftConnection(endpoint, endpoint.getIoContext(), toString(address)), logger_(LogManager::getLogger()),
-      socket_(getExecutor()), address_(address), timer_(getExecutor()), connection_(*this, {.guid = guid}, address, now)
+    : MinecraftConnection(endpoint, endpoint.getIoContext(), toString(address)),
+      logger_(LogManager::getLogger("endgate::RakNetConnection")), socket_(getExecutor()), address_(address),
+      timer_(getExecutor()), connection_(*this, {.guid = guid}, address, now)
 {
 }
 
@@ -62,7 +65,7 @@ void RakNetConnection::connect()
         asio::error_code ec;
         if (self->socket_.open(self->address_.protocol(), ec) || self->socket_.connect(self->address_, ec) ||
             self->socket_.non_blocking(true, ec)) {
-            self->logger_.warn("Can't open a socket to backend {}: {}", self->getRemoteAddress(), ec.message());
+            self->logger_.error("{}: unable to connect: {}", self->getRemoteAddress(), ec.message());
             self->connection_.close(false, raknet::Clock::now());
             return;
         }
@@ -100,7 +103,7 @@ void RakNetConnection::handleDatagram(std::span<const std::byte> datagram, const
 void RakNetConnection::send(ByteBuf batch)
 {
     if (!active_) {
-        logger_.debug("Dropping {} bytes for {}: not connected", batch.readableBytes(), getRemoteAddress());
+        logger_.debug("{}: dropping {} bytes, not connected", getRemoteAddress(), batch.readableBytes());
         return;
     }
     auto message = Unpooled::buffer(1 + batch.readableBytes());
@@ -154,7 +157,7 @@ void RakNetConnection::onMessage(ByteBufView message)
 {
     if (!message.isReadable() ||
         message.getUnsignedByte(message.readerIndex()) != std::to_integer<std::uint8_t>(BATCH_HEADER)) {
-        logger_.debug("Dropping {} bytes from {}: not a batch", message.readableBytes(), getRemoteAddress());
+        logger_.debug("{}: dropping {} bytes, not a batch", getRemoteAddress(), message.readableBytes());
         return;
     }
     channelRead(Unpooled::copiedBuffer(message.nioBuffer().subspan(1)));
@@ -169,14 +172,20 @@ void RakNetConnection::onDisconnected(raknet::DisconnectReason reason)
         asio::error_code ignored;
         std::ignore = socket_.close(ignored);
     }
-    logger_.debug("{} ended: {}", getRemoteAddress(), raknet::toString(reason));
+    logger_.debug("{}: connection ended: {}", getRemoteAddress(), raknet::toString(reason));
     channelInactive();
 }
 
 void RakNetConnection::onReliabilityLayerNotification(std::string_view message, bool is_error)
 {
     if (is_error) {
-        logger_.warn("Malformed datagram from {}: {}", getRemoteAddress(), message);
+        if (getEndpoint().getServer().getConfiguration().isPacketDecodeLogging()) {
+            logger_.error("{}: invalid packet received: {}", getRemoteAddress(), message);
+        }
+        else {
+            logger_.warn("Invalid packet received. Turn on packet-decode-logging under [debug] in endgate.toml to see "
+                         "more.");
+        }
     }
 }
 

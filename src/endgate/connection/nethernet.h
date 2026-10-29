@@ -118,8 +118,9 @@ NetherNetConnection<Session>::NetherNetConnection(Endpoint &endpoint, const std:
                                                   const nethernet::NetworkSession::Config &config,
                                                   Clock::time_point now)
     requires(!DIALING)
-    : MinecraftConnection(endpoint, endpoint.getIoContext(), network_id), logger_(LogManager::getLogger()),
-      socket_(endpoint.getSocket()), certificate_(certificate), timer_(getExecutor())
+    : MinecraftConnection(endpoint, endpoint.getIoContext(), network_id),
+      logger_(LogManager::getLogger("endgate::NetherNetConnection")), socket_(endpoint.getSocket()),
+      certificate_(certificate), timer_(getExecutor())
 {
     session_.emplace(static_cast<nethernet::NetworkSession::Listener &>(*this), offer, std::move(local),
                      std::move(certificate), config, now);
@@ -129,7 +130,8 @@ template <typename Session>
 NetherNetConnection<Session>::NetherNetConnection(Endpoint &endpoint, const asio::ip::udp::endpoint &address,
                                                   std::shared_ptr<const rtc::Certificate> certificate)
     requires DIALING
-    : MinecraftConnection(endpoint, endpoint.getIoContext(), toString(address)), logger_(LogManager::getLogger()),
+    : MinecraftConnection(endpoint, endpoint.getIoContext(), toString(address)),
+      logger_(LogManager::getLogger("endgate::NetherNetConnection")),
       socket_(std::make_shared<asio::ip::udp::socket>(getExecutor())), certificate_(std::move(certificate)),
       address_(address), timer_(getExecutor())
 {
@@ -195,7 +197,7 @@ Awaitable<void> NetherNetConnection<Session>::dial(
         local = {route.local_endpoint(ec).address(), self->socket_->local_endpoint(ec).port()};
     }
     if (ec) {
-        self->logger_.warn("Can't open a socket to backend {}: {}", self->getRemoteAddress(), ec.message());
+        self->logger_.error("{}: unable to connect: {}", self->getRemoteAddress(), ec.message());
         self->finish();
         co_return;
     }
@@ -207,7 +209,7 @@ Awaitable<void> NetherNetConnection<Session>::dial(
     if (identity) {
         const auto assertion = nethernet::IdentityAssertion::create(*identity, offer, std::chrono::system_clock::now());
         if (!assertion) {
-            self->logger_.warn("Can't sign an offer to backend {}", self->getRemoteAddress());
+            self->logger_.error("{}: unable to connect: can't sign the offer", self->getRemoteAddress());
             self->finish();
             co_return;
         }
@@ -220,14 +222,14 @@ Awaitable<void> NetherNetConnection<Session>::dial(
         co_return;
     }
     if (!answer) {
-        self->logger_.warn("Backend {} refused the connection: NetherNet session error {}", self->getRemoteAddress(),
-                           static_cast<std::uint32_t>(answer.error()));
+        self->logger_.error("{}: unable to connect: NetherNet session error {}", self->getRemoteAddress(),
+                            static_cast<std::uint32_t>(answer.error()));
         self->finish();
         co_return;
     }
     const auto description = rtc::Description::parse(answer->sdp);
     if (!description) {
-        self->logger_.warn("Backend {} answered with an SDP endgate can't read", self->getRemoteAddress());
+        self->logger_.error("{}: unable to connect: unreadable SDP answer", self->getRemoteAddress());
         self->finish();
         co_return;
     }
@@ -272,7 +274,7 @@ template <typename Session>
 void NetherNetConnection<Session>::send(ByteBuf batch)
 {
     if (!active_ || !session_) {
-        logger_.debug("Dropping {} bytes for {}: not connected", batch.readableBytes(), getRemoteAddress());
+        logger_.debug("{}: dropping {} bytes, not connected", getRemoteAddress(), batch.readableBytes());
         return;
     }
     session_->send(batch.slice(), nethernet::ESendType::Reliable, Clock::now());
@@ -335,7 +337,8 @@ void NetherNetConnection<Session>::onPacket(ByteBufView packet)
 template <typename Session>
 void NetherNetConnection<Session>::onClosed(nethernet::ESessionError reason)
 {
-    logger_.debug("{} ended: NetherNet session error {}", getRemoteAddress(), static_cast<std::uint32_t>(reason));
+    logger_.debug("{}: connection ended: NetherNet session error {}", getRemoteAddress(),
+                  static_cast<std::uint32_t>(reason));
     finish();
 }
 

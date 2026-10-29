@@ -22,11 +22,12 @@
 #include "endgate/connection/raknet.h"
 #include "endgate/logging/manager.h"
 #include "endgate/network/endpoint.h"
+#include "endgate/server.h"
 
 namespace endgate {
 
 ServerConnection::ServerConnection(BackendServer &server, std::shared_ptr<Player> player)
-    : server_(server), player_(std::move(player)), logger_(LogManager::getLogger())
+    : server_(server), player_(std::move(player)), logger_(LogManager::getLogger("endgate::ServerConnection"))
 {
 }
 
@@ -67,7 +68,8 @@ Awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> self)
         co_return;
     }
     if (!address || !transport) {
-        self->logger_.warn("Can't reach backend {} for {}", info.getAddress(), player_address);
+        self->logger_.error("[initial connection] {}: unable to connect to server {}: {}", player_address,
+                            info.getName(), address ? "no NetherNet or RakNet response" : "can't resolve the address");
         player.disconnect();
         co_return;
     }
@@ -77,7 +79,7 @@ Awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> self)
         connection->setSessionHandler(std::make_shared<BackendPlaySessionHandler>(self));
         self->connection_ = connection;
         endpoint.registerConnection(connection, std::nullopt);
-        self->logger_.info("Opening backend {} for {}", info.getAddress(), player_address);
+        self->logger_.debug("[server connection] {} -> {}: connecting over NetherNet", player_address, info.getName());
         connection->connect(info.getHost(), info.getPort(), endpoint.getIdentity());
         co_return;
     }
@@ -87,7 +89,7 @@ Awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> self)
     connection->setSessionHandler(std::make_shared<BackendPlaySessionHandler>(self));
     self->connection_ = connection;
     endpoint.registerConnection(connection, guid);
-    self->logger_.info("Opening backend {} for {}", info.getAddress(), player_address);
+    self->logger_.debug("[server connection] {} -> {}: connecting over RakNet", player_address, info.getName());
     connection->connect();
 }
 
@@ -113,9 +115,9 @@ void ServerConnection::write(ByteBuf batch)
     }
     pending_bytes_ += batch.readableBytes();
     if (pending_bytes_ > max_pending_bytes) {
-        logger_.warn("{} sent more than {} bytes before backend {} was up; disconnecting",
-                     player_->getConnection().getRemoteAddress(), max_pending_bytes,
-                     server_.getServerInfo().getAddress());
+        logger_.warn("[server connection] {} -> {}: more than {} bytes arrived before the server was up, "
+                     "disconnecting",
+                     player_->getConnection().getRemoteAddress(), server_.getServerInfo().getName(), max_pending_bytes);
         pending_.clear();
         player_->disconnect();
         return;
@@ -136,7 +138,8 @@ void ServerConnection::connected()
 }
 
 BackendPlaySessionHandler::BackendPlaySessionHandler(std::shared_ptr<ServerConnection> server_connection)
-    : logger_(LogManager::getLogger()), server_connection_(std::move(server_connection))
+    : logger_(LogManager::getLogger("endgate::BackendPlaySessionHandler")),
+      server_connection_(std::move(server_connection))
 {
 }
 
@@ -144,8 +147,10 @@ void BackendPlaySessionHandler::connected()
 {
     connected_ = true;
     auto &player = server_connection_->getPlayer().getConnection();
-    logger_.info("Player {} is now on backend {}", player.getRemoteAddress(),
-                 server_connection_->getConnection()->getRemoteAddress());
+    if (player.getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
+        logger_.info("[server connection] {} -> {} has connected", player.getRemoteAddress(),
+                     server_connection_->getServer().getServerInfo().getName());
+    }
     asio::post(player.getExecutor(), [server_connection = server_connection_] { server_connection->connected(); });
 }
 
@@ -156,7 +161,11 @@ void BackendPlaySessionHandler::handleUnknown(ByteBuf batch)
 
 void BackendPlaySessionHandler::disconnected()
 {
-    logger_.info("Disconnected: {}", server_connection_->getConnection()->getRemoteAddress());
+    auto &player = server_connection_->getPlayer().getConnection();
+    if (connected_ && player.getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
+        logger_.info("[server connection] {} -> {} has disconnected", player.getRemoteAddress(),
+                     server_connection_->getServer().getServerInfo().getName());
+    }
     if (!connected_) {
         server_connection_->getServer().forgetTransport();
     }

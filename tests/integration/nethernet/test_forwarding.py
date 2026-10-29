@@ -20,7 +20,7 @@ async def join(proxy, backend):
     """A NetherNet player on the proxy, and the connection the proxy opened to the RakNet backend for it."""
     player = await nethernet.connect_http(proxy.url, timeout=20)
     upstream = await asyncio.to_thread(backend.accept, 10)
-    assert await asyncio.to_thread(proxy.wait_for, "is now on backend", 5), proxy.lines
+    assert await asyncio.to_thread(proxy.wait_for, "-> lobby has connected", 5), proxy.lines
     return player, upstream
 
 
@@ -134,16 +134,15 @@ def test_the_player_is_logged_like_a_raknet_player(proxy, backend):
         player, upstream = await join(proxy, backend)
         upstream.close()
         await player.wait_closed()
-        await asyncio.to_thread(proxy.wait_for, "Disconnected: [0-9]", 5)
+        await asyncio.to_thread(proxy.wait_for, r"\[initial connection\] [0-9.:]+ has disconnected", 5)
 
     run(body())
     address = r"\d+\.\d+\.\d+\.\d+:\d+"
     expected = [
-        rf"INFO Connected: (?P<player>{address})",
-        r"INFO Opening backend <backend> for (?P=player)",
-        r"INFO Player (?P=player) is now on backend <backend>",
-        r"INFO Disconnected: <backend>",
-        r"INFO Disconnected: (?P=player)",
+        rf"INFO \[initial connection\] (?P<player>{address}) has connected",
+        r"INFO \[server connection\] (?P=player) -> lobby has connected",
+        r"INFO \[server connection\] (?P=player) -> lobby has disconnected",
+        r"INFO \[initial connection\] (?P=player) has disconnected",
     ]
     events = proxy.events("INFO")
     assert re.fullmatch("\n".join(expected), "\n".join(events)), events

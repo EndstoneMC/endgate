@@ -81,9 +81,21 @@ def make_proxy(binary: Path, tmp_path: Path):
         backend: str | None = None,
         debug: bool = False,
         tls: tuple[Path, Path] | None = None,
+        log_player_connections: bool = True,
+        packet_decode_logging: bool = False,
     ) -> Proxy:
         workdir = tmp_path / f"proxy{len(started)}"
-        proxy = Proxy(binary, workdir, backend_port, max_players, backend, debug, tls).start()
+        proxy = Proxy(
+            binary,
+            workdir,
+            backend_port,
+            max_players,
+            backend,
+            debug,
+            tls,
+            log_player_connections,
+            packet_decode_logging,
+        ).start()
         started.append(proxy)
         return proxy
 

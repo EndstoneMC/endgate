@@ -5,12 +5,13 @@
 #include "endgate/config.h"
 #include "endgate/connection/backend.h"
 #include "endgate/logging/manager.h"
+#include "endgate/network/endpoint.h"
 #include "endgate/server.h"
 
 namespace endgate {
 
 Player::Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection)
-    : server_(server), logger_(LogManager::getLogger()), connection_(std::move(connection))
+    : server_(server), logger_(LogManager::getLogger("endgate::Player")), connection_(std::move(connection))
 {
 }
 
@@ -18,7 +19,7 @@ BackendServer *Player::getNextServerToTry() const
 {
     const auto &order = server_.getConfiguration().getAttemptConnectionOrder();
     if (order.empty()) {
-        logger_.warn("No servers configured to try; {} has nowhere to go", connection_->getRemoteAddress());
+        logger_.warn("[initial connection] {}: no available servers, try is empty", connection_->getRemoteAddress());
         return nullptr;
     }
     for (const auto &name : order) {
@@ -26,7 +27,8 @@ BackendServer *Player::getNextServerToTry() const
             return server;
         }
     }
-    logger_.warn("None of the servers in try are configured; {} has nowhere to go", connection_->getRemoteAddress());
+    logger_.warn("[initial connection] {}: no available servers, none of try is configured",
+                 connection_->getRemoteAddress());
     return nullptr;
 }
 
@@ -50,14 +52,16 @@ void Player::teardown()
 }
 
 ClientPlaySessionHandler::ClientPlaySessionHandler(std::shared_ptr<Player> player)
-    : logger_(LogManager::getLogger()), player_(std::move(player))
+    : logger_(LogManager::getLogger("endgate::ClientPlaySessionHandler")), player_(std::move(player))
 {
 }
 
 void ClientPlaySessionHandler::connected()
 {
     connected_ = true;
-    logger_.info("Connected: {}", player_->getConnection().getRemoteAddress());
+    if (player_->getConnection().getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
+        logger_.info("[initial connection] {} has connected", player_->getConnection().getRemoteAddress());
+    }
     auto *const server = player_->getNextServerToTry();
     if (server == nullptr) {
         player_->disconnect();
@@ -70,8 +74,8 @@ void ClientPlaySessionHandler::handleUnknown(ByteBuf batch)
 {
     const auto &server = player_->getConnectedServer();
     if (!server) {
-        logger_.debug("Dropping {} bytes from {}: no backend", batch.readableBytes(),
-                      player_->getConnection().getRemoteAddress());
+        logger_.debug("[initial connection] {}: dropping {} bytes, no server connection",
+                      player_->getConnection().getRemoteAddress(), batch.readableBytes());
         return;
     }
     server->write(std::move(batch));
@@ -79,8 +83,8 @@ void ClientPlaySessionHandler::handleUnknown(ByteBuf batch)
 
 void ClientPlaySessionHandler::disconnected()
 {
-    if (connected_) {
-        logger_.info("Disconnected: {}", player_->getConnection().getRemoteAddress());
+    if (connected_ && player_->getConnection().getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
+        logger_.info("[initial connection] {} has disconnected", player_->getConnection().getRemoteAddress());
     }
     player_->teardown();
 }

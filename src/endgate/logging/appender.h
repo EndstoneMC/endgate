@@ -65,7 +65,7 @@ private:
     std::uint16_t max_files_;
     spdlog::log_clock::time_point rotation_tp_;
     spdlog::details::file_helper file_helper_;
-    std::array<spdlog::pattern_formatter, 2> formatters_;
+    spdlog::pattern_formatter formatter_;
 };
 
 }  // namespace endgate

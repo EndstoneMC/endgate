@@ -21,8 +21,8 @@ def test_a_raknet_player_reaches_a_nethernet_backend(make_proxy, nethernet_backe
             assert player.recv(timeout=20) == message, size
     finally:
         player.close()
-    assert proxy.events("DEBUG Backend <backend> speaks NetherNet")
-    assert proxy.wait_for("INFO Player .* is now on backend <backend>")
+    assert proxy.events("DEBUG Server lobby uses NetherNet")
+    assert proxy.wait_for(r"INFO \[server connection\] .* -> lobby has connected")
 
 
 def test_a_nethernet_player_reaches_a_nethernet_backend(make_proxy, nethernet_backend):
@@ -37,14 +37,14 @@ def test_a_nethernet_player_reaches_a_nethernet_backend(make_proxy, nethernet_ba
         await player.close()
 
     asyncio.run(asyncio.wait_for(body(), 120))
-    assert proxy.wait_for("INFO Player .* is now on backend <backend>")
+    assert proxy.wait_for(r"INFO \[server connection\] .* -> lobby has connected")
 
 
 def test_a_burst_to_a_nethernet_backend_keeps_its_order(make_proxy, nethernet_backend):
     proxy = make_proxy(nethernet_backend.port)
     player = raknet.create_connection(proxy.address, timeout=5)
     try:
-        assert proxy.wait_for("INFO Player .* is now on backend <backend>", 20), proxy.lines[-20:]
+        assert proxy.wait_for(r"INFO \[server connection\] .* -> lobby has connected", 20), proxy.lines[-20:]
         sent = [BATCH + payload(1024, i) + i.to_bytes(4, "big") for i in range(500)]
         for message in sent:
             player.send(message)
@@ -59,4 +59,4 @@ def test_closing_the_player_closes_the_nethernet_backend_leg(make_proxy, nethern
     player.send(BATCH + b"\x01hello")
     assert player.recv(timeout=20) == BATCH + b"\x01hello"
     player.close()
-    assert proxy.wait_for("INFO Disconnected: <backend>", 10), proxy.lines[-20:]
+    assert proxy.wait_for(r"INFO \[server connection\] .* -> lobby has disconnected", 10), proxy.lines[-20:]

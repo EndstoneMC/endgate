@@ -82,7 +82,10 @@ std::optional<ServerInfo> ServerInfo::parse(std::string name, std::string_view a
     return ServerInfo{std::move(name), std::string(address), std::string(host), number, transport};
 }
 
-BackendServer::BackendServer(ServerInfo info) : info_(std::move(info)), logger_(LogManager::getLogger()) {}
+BackendServer::BackendServer(ServerInfo info)
+    : info_(std::move(info)), logger_(LogManager::getLogger("endgate::BackendServer"))
+{
+}
 
 Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(asio::io_context &io_context,
                                                                                asio::ip::udp::endpoint address)
@@ -114,10 +117,10 @@ Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(a
         detected = ServerInfo::Transport::RakNet;
     }
     if (!detected) {
-        logger_.debug("Backend {} answers neither NetherNet nor RakNet", info_.getAddress());
+        logger_.debug("Server {} supports neither NetherNet nor RakNet", info_.getName());
         co_return detected;
     }
-    logger_.debug("Backend {} speaks {}", info_.getAddress(), toString(*detected));
+    logger_.debug("Server {} uses {}", info_.getName(), toString(*detected));
     const std::scoped_lock lock(mutex_);
     detected_ = detected;
     co_return detected;

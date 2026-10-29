@@ -70,4 +70,4 @@ def test_too_much_before_the_backend_is_up_closes_the_player(make_proxy, silent_
             player.recv(timeout=5)
     finally:
         player.close()
-    assert proxy.events("WARN .* sent more than 65536 bytes before backend")
+    assert proxy.events(r"WARN \[server connection\] .* -> lobby: more than 65536 bytes arrived before the server was up")

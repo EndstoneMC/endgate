@@ -137,6 +137,24 @@ def test_second_connection_request_is_accepted_again(player, observe):
 
 
 @pytest.mark.parametrize(
+    "decode_logging, line",
+    [
+        (False, r"WARN Invalid packet received\. Turn on packet-decode-logging under \[debug\] in endgate\.toml"),
+        (True, r"ERROR \d+\.\d+\.\d+\.\d+:\d+: invalid packet received: .+"),
+    ],
+)
+def test_a_malformed_datagram_is_logged(make_proxy, backend, decode_logging, line):
+    proxy = make_proxy(backend.local_address[1], packet_decode_logging=decode_logging)
+    client = RawClient(proxy.address)
+    client.connect()
+    backend.accept(timeout=5)
+    session = client.session
+    client.exchange(wire.data_datagram(session.datagram_sequence, [Frame(R.RELIABLE, USER * 20, 50)])[:-10])
+    assert proxy.wait_for(line), proxy.lines[-20:]
+    client.close()
+
+
+@pytest.mark.parametrize(
     "name, datagram",
     [
         ("tiny", b"\x84\x00"),

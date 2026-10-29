@@ -12,7 +12,7 @@
  */
 int main()
 {
-    auto &logger = endgate::LogManager::getLogger();
+    auto &logger = endgate::LogManager::getLogger("endgate::main");
     const auto start_time = std::chrono::steady_clock::now();
 
     endgate::ProxyServer server;

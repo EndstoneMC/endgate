@@ -9,18 +9,22 @@
 
 namespace endgate {
 
-ProxyServer::ProxyServer() : logger_(LogManager::getLogger()), cm_(*this), console_(*this), ping_handler_(*this) {}
+ProxyServer::ProxyServer()
+    : logger_(LogManager::getLogger("endgate::ProxyServer")), cm_(*this), console_(*this), ping_handler_(*this)
+{
+}
 
 bool ProxyServer::start()
 {
     constexpr auto config_path = "endgate.toml";
 
     const auto version = getVersion();
-    logger_.info("Booting up {} {}...", version.getName(), version.getVersion());
+    logger_.info("Starting {} {}...", version.getName(), version.getVersion());
 
     auto configuration = ProxyConfig::read(config_path);
     if (!configuration) {
-        logger_.error("Unable to read the configuration: {}", configuration.error());
+        logger_.error("Unable to read/load/save your endgate.toml. The server will shut down. {}",
+                      configuration.error());
         return false;
     }
     configuration_ = std::move(*configuration);
@@ -40,7 +44,7 @@ bool ProxyServer::start()
     const auto &bind = configuration_.getBind();
     const auto colon = bind.rfind(':');
     if (colon == std::string::npos) {
-        logger_.error("Invalid bind address: {}", bind);
+        logger_.error("'bind' option does not specify a valid IP address.");
         return false;
     }
 
@@ -49,7 +53,7 @@ bool ProxyServer::start()
     const auto digits = bind.substr(colon + 1);
     std::uint16_t port{};
     if (ec || std::from_chars(digits.data(), digits.data() + digits.size(), port).ec != std::errc{}) {
-        logger_.error("Invalid bind address: {}", bind);
+        logger_.error("'bind' option does not specify a valid IP address.");
         return false;
     }
 
@@ -68,7 +72,7 @@ void ProxyServer::shutdown([[maybe_unused]] bool explicit_exit)
         return;
     }
 
-    logger_.info("Shutting down the proxy...");
+    logger_.info("Stopping the proxy...");
     cm_.shutdown();
     shutdown_.store(true);
 }

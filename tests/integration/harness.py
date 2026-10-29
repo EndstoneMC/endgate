@@ -51,6 +51,8 @@ class Proxy:
         backend: str | None = None,
         debug: bool = False,
         tls: tuple[Path, Path] | None = None,
+        log_player_connections: bool = True,
+        packet_decode_logging: bool = False,
     ) -> None:
         self.binary = binary
         self.workdir = workdir
@@ -60,6 +62,8 @@ class Proxy:
         self.max_players = max_players
         self.debug = debug
         self.tls = tls
+        self.log_player_connections = log_player_connections
+        self.packet_decode_logging = packet_decode_logging
         self.lines: list[str] = []
         self._listening = threading.Event()
         self.process: subprocess.Popen | None = None
@@ -96,6 +100,9 @@ class Proxy:
                     'try = ["lobby"]',
                     "[advanced]",
                     "compression-level = -1",
+                    f"log-player-connections = {str(self.log_player_connections).lower()}",
+                    "[debug]",
+                    f"packet-decode-logging = {str(self.packet_decode_logging).lower()}",
                     "",
                 ]
             )
@@ -131,7 +138,13 @@ class Proxy:
                 self._listening.set()
 
     def events(self, pattern: str = "") -> list[str]:
-        startup = ("INFO Booting", "INFO Connections will use", "INFO Listening", "INFO Done")
+        startup = (
+            "INFO Starting",
+            "WARN The proxy is running in offline mode!",
+            "INFO Connections will use",
+            "INFO Listening",
+            "INFO Done",
+        )
         lines = [
             line.replace(f"127.0.0.1:{self.backend_port}", "<backend>").replace(f"127.0.0.1:{self.port}", "<proxy>")
             for line in self.lines

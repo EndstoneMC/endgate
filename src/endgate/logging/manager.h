@@ -13,7 +13,7 @@ namespace endgate {
  */
 class LogManager {
 public:
-    static spdlog::logger &getLogger(const std::string &name = {});
+    static spdlog::logger &getLogger(const std::string &name);
 };
 
 }  // namespace endgate
