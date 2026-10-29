@@ -21,8 +21,8 @@ int main()
         return 1;
     }
 
-    const std::chrono::duration<double> boot_time = std::chrono::steady_clock::now() - start_time;
-    logger.info("Done ({:.2f}s)!", boot_time.count());
+    const std::chrono::duration<double> startup_time = std::chrono::steady_clock::now() - start_time;
+    logger.info("Done ({:.2f}s)!", startup_time.count());
 
     server.getConsoleCommandSource().start();
     server.awaitProxyShutdown();

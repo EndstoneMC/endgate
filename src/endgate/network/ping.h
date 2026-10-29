@@ -116,7 +116,7 @@ public:
     explicit ServerListPingHandler(ProxyServer &server) : server_(server) {}
 
     /**
-     * Shows the client its own protocol when the proxy speaks it, and the newest one otherwise.
+     * Shows the client its own protocol when the proxy supports it, and the newest one otherwise.
      *
      * @see com.velocitypowered.proxy.connection.util.ServerListPingHandler#getInitialPing
      */

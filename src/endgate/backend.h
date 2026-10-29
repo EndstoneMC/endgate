@@ -60,7 +60,7 @@ private:
 
 /**
  * A backend the proxy can send players to. Unless the configuration pins its transport, the first
- * connection to it finds out which one it speaks, and every connection after uses that answer until a
+ * connection to it finds out which one it supports, and every connection after uses that answer until a
  * connection to it fails.
  *
  * @see com.velocitypowered.api.proxy.server.RegisteredServer

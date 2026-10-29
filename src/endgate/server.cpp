@@ -23,8 +23,7 @@ bool ProxyServer::start()
 
     auto configuration = ProxyConfig::read(config_path);
     if (!configuration) {
-        logger_.error("Unable to read/load/save your endgate.toml. The server will shut down. {}",
-                      configuration.error());
+        logger_.error("Unable to read/load/save your endgate.toml. The server will stop. {}", configuration.error());
         return false;
     }
     configuration_ = std::move(*configuration);

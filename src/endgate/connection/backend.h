@@ -27,7 +27,7 @@ public:
     ServerConnection(BackendServer &server, std::shared_ptr<Player> player);
 
     /**
-     * Finds out which transport the backend speaks and opens a leg to it over that transport.
+     * Finds out which transport the backend supports and opens a leg to it over that transport.
      *
      * @see com.velocitypowered.proxy.connection.backend.VelocityServerConnection#connect
      */

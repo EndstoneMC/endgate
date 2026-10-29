@@ -8,7 +8,7 @@
 namespace endgate {
 
 /**
- * A Bedrock protocol version endgate speaks.
+ * A Bedrock protocol version endgate supports.
  *
  * @see com.velocitypowered.api.network.ProtocolVersion
  */
