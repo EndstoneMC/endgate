@@ -12,6 +12,7 @@
 #include <asio/ip/udp.hpp>
 #include <gtest/gtest.h>
 
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/rtc/ice.h"
 #include "endgate/network/rtc/stun.h"
 
@@ -30,10 +31,10 @@ class ControllerListener : public IceController::Listener {
 public:
     explicit ControllerListener(asio::ip::udp::endpoint self) : self_(std::move(self)) {}
 
-    void sendIceDatagram(const asio::ip::udp::endpoint &remote, std::span<const std::byte> datagram) override
+    void sendIceDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram) override
     {
-        outgoing.push_back(
-            {remote, {.source = self_, .bytes = std::vector<std::byte>(datagram.begin(), datagram.end())}});
+        const auto bytes = datagram.nioBuffer();
+        outgoing.push_back({remote, {.source = self_, .bytes = std::vector<std::byte>(bytes.begin(), bytes.end())}});
     }
     void onSelectedPairChanged(const std::optional<asio::ip::udp::endpoint> &remote) override
     {
@@ -53,10 +54,10 @@ class LiteListener : public IceTransport::Listener {
 public:
     explicit LiteListener(asio::ip::udp::endpoint self) : self_(std::move(self)) {}
 
-    void sendIceDatagram(const asio::ip::udp::endpoint &remote, std::span<const std::byte> datagram) override
+    void sendIceDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram) override
     {
-        outgoing.push_back(
-            {remote, {.source = self_, .bytes = std::vector<std::byte>(datagram.begin(), datagram.end())}});
+        const auto bytes = datagram.nioBuffer();
+        outgoing.push_back({remote, {.source = self_, .bytes = std::vector<std::byte>(bytes.begin(), bytes.end())}});
     }
     void onCandidatePairAdded(const asio::ip::udp::endpoint &) override {}
     void onCandidatePairRemoved(const asio::ip::udp::endpoint &) override {}
@@ -85,14 +86,14 @@ protected:
                 auto [destination, datagram] = std::move(controller_listener_.outgoing.front());
                 controller_listener_.outgoing.pop_front();
                 if (destination == lite_address_) {
-                    lite_.handleDatagram(now_, datagram.source, datagram.bytes);
+                    lite_.handleDatagram(now_, datagram.source, Unpooled::wrappedBuffer(datagram.bytes));
                 }
             }
             while (!lite_listener_.outgoing.empty()) {
                 auto [destination, datagram] = std::move(lite_listener_.outgoing.front());
                 lite_listener_.outgoing.pop_front();
                 if (destination == controller_address_) {
-                    controller_.handleDatagram(now_, datagram.source, datagram.bytes);
+                    controller_.handleDatagram(now_, datagram.source, Unpooled::wrappedBuffer(datagram.bytes));
                 }
             }
         }
@@ -151,10 +152,10 @@ TEST_F(IceControllerTest, ConnectsAndNominatesTheLiteAgent)
 TEST_F(IceControllerTest, ForwardsApplicationDataOnlyOnceConnected)
 {
     const std::vector<std::byte> payload{std::byte{20}, std::byte{1}, std::byte{2}};
-    EXPECT_FALSE(controller_.send(payload));
+    EXPECT_FALSE(controller_.send(Unpooled::wrappedBuffer(payload)));
     ASSERT_TRUE(pump(IceController::State::Connected));
     controller_listener_.outgoing.clear();
-    EXPECT_TRUE(controller_.send(payload));
+    EXPECT_TRUE(controller_.send(Unpooled::wrappedBuffer(payload)));
     ASSERT_EQ(controller_listener_.outgoing.size(), 1U);
     EXPECT_EQ(controller_listener_.outgoing.front().first, lite_address_);
     EXPECT_EQ(controller_listener_.outgoing.front().second.bytes, payload);
@@ -169,12 +170,14 @@ TEST_F(IceControllerTest, AnswersTheChecksThePeerSends)
     peer_check.priority = 1234567U;
     peer_check.ice_controlled = 0x5555555555555555ULL;
     controller_listener_.outgoing.clear();
-    controller_.handleDatagram(now_, lite_address_, peer_check.encode(controller_creds_.pwd));
+    controller_.handleDatagram(now_, lite_address_, peer_check.encode(controller_creds_.pwd).slice());
     ASSERT_EQ(controller_listener_.outgoing.size(), 1U);
-    const auto response = StunMessage::decode(controller_listener_.outgoing.front().second.bytes);
+    const auto response =
+        StunMessage::decode(Unpooled::wrappedBuffer(controller_listener_.outgoing.front().second.bytes));
     ASSERT_TRUE(response);
     EXPECT_EQ(response->message_class, StunClass::SuccessResponse);
-    EXPECT_TRUE(response->verifyIntegrity(controller_listener_.outgoing.front().second.bytes, controller_creds_.pwd));
+    EXPECT_TRUE(response->verifyIntegrity(Unpooled::wrappedBuffer(controller_listener_.outgoing.front().second.bytes),
+                                          controller_creds_.pwd));
     EXPECT_EQ(response->xor_mapped_address, lite_address_);
 }
 
@@ -199,7 +202,8 @@ TEST_F(IceControllerTest, YieldsTheControllingRoleOnA487)
     now_ = now_ + 1ms;
     controller_.handleTimeout(now_);
     ASSERT_FALSE(controller_listener_.outgoing.empty());
-    const auto request = StunMessage::decode(controller_listener_.outgoing.front().second.bytes);
+    const auto request =
+        StunMessage::decode(Unpooled::wrappedBuffer(controller_listener_.outgoing.front().second.bytes));
     ASSERT_TRUE(request);
     ASSERT_TRUE(request->ice_controlling);
 
@@ -208,13 +212,13 @@ TEST_F(IceControllerTest, YieldsTheControllingRoleOnA487)
     conflict.transaction_id = request->transaction_id;
     conflict.error_code = StunErrorCode{.code = 487, .reason = "Role Conflict"};
     controller_listener_.outgoing.clear();
-    controller_.handleDatagram(now_, lite_address_, conflict.encode(lite_creds_.pwd));
+    controller_.handleDatagram(now_, lite_address_, conflict.encode(lite_creds_.pwd).slice());
     EXPECT_EQ(controller_.getRole(), IceController::Role::Controlled);
 
     now_ = now_ + 1ms;
     controller_.handleTimeout(now_);
     ASSERT_FALSE(controller_listener_.outgoing.empty());
-    const auto retry = StunMessage::decode(controller_listener_.outgoing.front().second.bytes);
+    const auto retry = StunMessage::decode(Unpooled::wrappedBuffer(controller_listener_.outgoing.front().second.bytes));
     ASSERT_TRUE(retry);
     EXPECT_FALSE(retry->ice_controlling);
     EXPECT_TRUE(retry->ice_controlled);

@@ -121,14 +121,14 @@ public:
     [[nodiscard]] const rtc::IceTransport &getIceTransport() const { return ice_; }
 
 private:
-    void sendIceDatagram(const asio::ip::udp::endpoint &remote, std::span<const std::byte> datagram) override;
+    void sendIceDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram) override;
     void onCandidatePairAdded(const asio::ip::udp::endpoint &remote) override;
     void onCandidatePairRemoved(const asio::ip::udp::endpoint &remote) override;
     void onSelectedPairChanged(const std::optional<asio::ip::udp::endpoint> &remote) override;
     void onIceStateChanged(rtc::IceTransport::State state) override;
 
-    void sendDtlsDatagram(std::span<const std::byte> datagram) override;
-    void onDtlsData(std::span<const std::byte> data) override;
+    void sendDtlsDatagram(ByteBufView datagram) override;
+    void onDtlsData(ByteBufView data) override;
     void onDtlsStateChanged(rtc::DtlsTransport::State state) override;
 
     void sendPacket(std::span<const std::byte> packet) override;
@@ -213,12 +213,12 @@ public:
 private:
     [[nodiscard]] static std::vector<asio::ip::udp::endpoint> endpointsOf(const rtc::Description &answer);
 
-    void sendIceDatagram(const asio::ip::udp::endpoint &remote, std::span<const std::byte> datagram) override;
+    void sendIceDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram) override;
     void onSelectedPairChanged(const std::optional<asio::ip::udp::endpoint> &remote) override;
     void onIceStateChanged(rtc::IceController::State state) override;
 
-    void sendDtlsDatagram(std::span<const std::byte> datagram) override;
-    void onDtlsData(std::span<const std::byte> data) override;
+    void sendDtlsDatagram(ByteBufView datagram) override;
+    void onDtlsData(ByteBufView data) override;
     void onDtlsStateChanged(rtc::DtlsTransport::State state) override;
 
     void sendPacket(std::span<const std::byte> packet) override;

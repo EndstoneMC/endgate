@@ -10,6 +10,7 @@
 
 #include <asio/ip/udp.hpp>
 
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/rtc/stun.h"
 
 namespace endgate::rtc {
@@ -56,7 +57,7 @@ public:
     class Listener {
     public:
         virtual ~Listener() = default;
-        virtual void sendIceDatagram(const asio::ip::udp::endpoint &remote, std::span<const std::byte> datagram) = 0;
+        virtual void sendIceDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram) = 0;
         virtual void onCandidatePairAdded(const asio::ip::udp::endpoint &remote) = 0;
         virtual void onCandidatePairRemoved(const asio::ip::udp::endpoint &remote) = 0;
         virtual void onSelectedPairChanged(const std::optional<asio::ip::udp::endpoint> &remote) = 0;
@@ -75,12 +76,12 @@ public:
      * @see RFC 8445 section 7.3
      */
     void handleDatagram(std::chrono::steady_clock::time_point now, const asio::ip::udp::endpoint &remote,
-                        std::span<const std::byte> datagram);
+                        ByteBufView datagram);
 
     /**
      * @see RFC 8445 section 12.1.1
      */
-    bool send(std::span<const std::byte> datagram);
+    bool send(ByteBufView datagram);
 
     [[nodiscard]] std::optional<std::chrono::steady_clock::time_point> nextTimeout() const;
     void handleTimeout(std::chrono::steady_clock::time_point now);
@@ -156,7 +157,7 @@ public:
     class Listener {
     public:
         virtual ~Listener() = default;
-        virtual void sendIceDatagram(const asio::ip::udp::endpoint &remote, std::span<const std::byte> datagram) = 0;
+        virtual void sendIceDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram) = 0;
         virtual void onSelectedPairChanged(const std::optional<asio::ip::udp::endpoint> &remote) = 0;
         virtual void onIceStateChanged(State state) = 0;
     };
@@ -182,12 +183,12 @@ public:
      * @see RFC 8445 section 7.2.5
      */
     void handleDatagram(std::chrono::steady_clock::time_point now, const asio::ip::udp::endpoint &remote,
-                        std::span<const std::byte> datagram);
+                        ByteBufView datagram);
 
     /**
      * @see RFC 8445 section 12.1.1
      */
-    bool send(std::span<const std::byte> datagram);
+    bool send(ByteBufView datagram);
 
     [[nodiscard]] std::optional<std::chrono::steady_clock::time_point> nextTimeout() const;
     void handleTimeout(std::chrono::steady_clock::time_point now);

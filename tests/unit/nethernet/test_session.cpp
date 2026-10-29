@@ -84,7 +84,7 @@ public:
         }
         while (dtls.getState() == rtc::DtlsTransport::State::Connected && !sctp_outbox.empty()) {
             for (const auto &packet : std::exchange(sctp_outbox, {})) {
-                dtls.send(packet);
+                dtls.send(Unpooled::wrappedBuffer(packet));
             }
         }
     }
@@ -101,11 +101,12 @@ public:
     std::vector<std::vector<std::byte>> packets;
 
 private:
-    void sendDtlsDatagram(std::span<const std::byte> datagram) override
+    void sendDtlsDatagram(ByteBufView datagram) override
     {
-        outgoing.emplace_back(datagram.begin(), datagram.end());
+        const auto bytes = datagram.nioBuffer();
+        outgoing.emplace_back(bytes.begin(), bytes.end());
     }
-    void onDtlsData(std::span<const std::byte> data) override { sctp.handlePacket(data, now); }
+    void onDtlsData(ByteBufView data) override { sctp.handlePacket(data.nioBuffer(), now); }
     void onDtlsStateChanged(rtc::DtlsTransport::State) override {}
 
     void sendPacket(std::span<const std::byte> packet) override
@@ -160,7 +161,7 @@ protected:
         check.priority = 1845501695;
         check.ice_controlling = 0x1122334455667788ULL;
         check.use_candidate = true;
-        session_.handleDatagram(now_, client_address_, check.encode(local_.pwd));
+        session_.handleDatagram(now_, client_address_, check.encode(local_.pwd).nioBuffer());
     }
 
     void pump()
@@ -172,7 +173,7 @@ protected:
                 recorder_.outgoing.pop_front();
                 moved = true;
                 if (remote == client_address_ && std::to_integer<std::uint8_t>(datagram.front()) >= 20) {
-                    client_.dtls.handleDatagram(now_, datagram);
+                    client_.dtls.handleDatagram(now_, Unpooled::wrappedBuffer(datagram));
                     client_.drive(now_);
                 }
             }

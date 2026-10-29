@@ -15,7 +15,7 @@ DtlsTransport::DtlsTransport(Listener &listener, std::shared_ptr<const Certifica
       remote_fingerprints_(std::move(remote_fingerprints)), config_(config),
       datagram_method_(BIO_meth_new(BIO_TYPE_BIO, "endgate datagram"), BIO_meth_free),
       context_(SSL_CTX_new(DTLS_method()), SSL_CTX_free), ssl_(nullptr, SSL_free),
-      read_buffer_(SSL3_RT_MAX_PLAIN_LENGTH)
+      read_buffer_(Unpooled::buffer(SSL3_RT_MAX_PLAIN_LENGTH))
 {
     if (!datagram_method_ || !context_ || !certificate_) {
         throw std::runtime_error("failed to create the DTLS context");
@@ -28,7 +28,7 @@ DtlsTransport::DtlsTransport(Listener &listener, std::shared_ptr<const Certifica
                           [](BIO *bio, const char *data, std::size_t length, std::size_t *written) {
                               auto *self = static_cast<DtlsTransport *>(BIO_get_data(bio));
                               const auto *bytes = reinterpret_cast<const std::byte *>(data);
-                              self->outgoing_.emplace_back(bytes, bytes + length);
+                              self->outgoing_.push_back(Unpooled::copiedBuffer({bytes, length}));
                               *written = length;
                               return 1;
                           });
@@ -106,14 +106,14 @@ void DtlsTransport::start(std::chrono::steady_clock::time_point now)
     rearm(now);
 }
 
-void DtlsTransport::handleDatagram(std::chrono::steady_clock::time_point now, std::span<const std::byte> datagram)
+void DtlsTransport::handleDatagram(std::chrono::steady_clock::time_point now, ByteBufView datagram)
 {
     start(now);
-    if ((state_ != State::Connecting && state_ != State::Connected) || datagram.empty()) {
+    if ((state_ != State::Connecting && state_ != State::Connected) || !datagram.isReadable()) {
         return;
     }
     ERR_clear_error();
-    BIO_write(incoming_, datagram.data(), static_cast<int>(datagram.size()));
+    BIO_write(incoming_, datagram.nioBuffer().data(), static_cast<int>(datagram.readableBytes()));
     if (state_ == State::Connecting) {
         advance(SSL_do_handshake(ssl_.get()));
     }
@@ -125,14 +125,14 @@ void DtlsTransport::handleDatagram(std::chrono::steady_clock::time_point now, st
     rearm(now);
 }
 
-bool DtlsTransport::send(std::span<const std::byte> data)
+bool DtlsTransport::send(ByteBufView data)
 {
     if (state_ != State::Connected) {
         return false;
     }
     ERR_clear_error();
     std::size_t written = 0;
-    const auto result = SSL_write_ex(ssl_.get(), data.data(), data.size(), &written);
+    const auto result = SSL_write_ex(ssl_.get(), data.nioBuffer().data(), data.readableBytes(), &written);
     if (result != 1) {
         const auto error = SSL_get_error(ssl_.get(), result);
         if (error != SSL_ERROR_WANT_READ && error != SSL_ERROR_WANT_WRITE) {
@@ -202,9 +202,12 @@ void DtlsTransport::readApplicationData()
 {
     while (state_ == State::Connected) {
         std::size_t read = 0;
-        const auto result = SSL_read_ex(ssl_.get(), read_buffer_.data(), read_buffer_.size(), &read);
+        read_buffer_.clear();
+        const auto result = SSL_read_ex(ssl_.get(), read_buffer_.nioBuffer(0, read_buffer_.capacity()).data(),
+                                        read_buffer_.capacity(), &read);
         if (result == 1) {
-            listener_.onDtlsData(std::span{read_buffer_}.first(read));
+            read_buffer_.writerIndex(read);
+            listener_.onDtlsData(read_buffer_.slice());
             continue;
         }
         const auto error = SSL_get_error(ssl_.get(), result);
@@ -223,7 +226,7 @@ void DtlsTransport::flush()
 {
     auto datagrams = std::exchange(outgoing_, {});
     for (const auto &datagram : datagrams) {
-        listener_.sendDtlsDatagram(datagram);
+        listener_.sendDtlsDatagram(datagram.slice());
     }
 }
 

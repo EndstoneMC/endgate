@@ -96,7 +96,7 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::i
         route->second->receive(datagram, sender);
         return;
     }
-    if (const auto ufrag = rtc::StunMessage::peekLocalUfrag(datagram)) {
+    if (const auto ufrag = rtc::StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(datagram))) {
         if (const auto session = ufrags_.find(std::string(*ufrag)); session != ufrags_.end()) {
             session->second->receive(datagram, sender);
         }

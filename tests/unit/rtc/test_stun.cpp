@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/rtc/stun.h"
 
 namespace endgate::rtc {
@@ -15,6 +16,12 @@ namespace {
 std::vector<std::byte> bytesOf(std::string_view raw)
 {
     const auto bytes = std::as_bytes(std::span{raw.data(), raw.size()});
+    return {bytes.begin(), bytes.end()};
+}
+
+std::vector<std::byte> vectorOf(const ByteBuf &buf)
+{
+    const auto bytes = buf.nioBuffer();
     return {bytes.begin(), bytes.end()};
 }
 
@@ -91,7 +98,7 @@ constexpr std::string_view SAMPLE_PASSWORD = "VOkJxbRl1RmTxUk/WvJxBt";
 
 TEST(StunMessageTest, DecodesTheRfc5769Request)
 {
-    const auto message = StunMessage::decode(SAMPLE_REQUEST);
+    const auto message = StunMessage::decode(Unpooled::wrappedBuffer(SAMPLE_REQUEST));
     ASSERT_TRUE(message);
     EXPECT_EQ(message->message_class, StunClass::Request);
     EXPECT_EQ(message->method, StunMethod::Binding);
@@ -103,32 +110,32 @@ TEST(StunMessageTest, DecodesTheRfc5769Request)
     EXPECT_FALSE(message->use_candidate);
     EXPECT_TRUE(message->fingerprint);
     EXPECT_TRUE(message->unknown_comprehension_required.empty());
-    EXPECT_TRUE(message->verifyIntegrity(SAMPLE_REQUEST, SAMPLE_PASSWORD));
-    EXPECT_FALSE(message->verifyIntegrity(SAMPLE_REQUEST, "wrong password"));
+    EXPECT_TRUE(message->verifyIntegrity(Unpooled::wrappedBuffer(SAMPLE_REQUEST), SAMPLE_PASSWORD));
+    EXPECT_FALSE(message->verifyIntegrity(Unpooled::wrappedBuffer(SAMPLE_REQUEST), "wrong password"));
 }
 
 TEST(StunMessageTest, DecodesTheRfc5769Ipv4Response)
 {
-    const auto message = StunMessage::decode(SAMPLE_IPV4_RESPONSE);
+    const auto message = StunMessage::decode(Unpooled::wrappedBuffer(SAMPLE_IPV4_RESPONSE));
     ASSERT_TRUE(message);
     EXPECT_EQ(message->message_class, StunClass::SuccessResponse);
     EXPECT_EQ(message->software, "test vector");
     EXPECT_EQ(message->xor_mapped_address, asio::ip::udp::endpoint(asio::ip::make_address("192.0.2.1"), 32853));
-    EXPECT_TRUE(message->verifyIntegrity(SAMPLE_IPV4_RESPONSE, SAMPLE_PASSWORD));
+    EXPECT_TRUE(message->verifyIntegrity(Unpooled::wrappedBuffer(SAMPLE_IPV4_RESPONSE), SAMPLE_PASSWORD));
 }
 
 TEST(StunMessageTest, DecodesTheRfc5769Ipv6Response)
 {
-    const auto message = StunMessage::decode(SAMPLE_IPV6_RESPONSE);
+    const auto message = StunMessage::decode(Unpooled::wrappedBuffer(SAMPLE_IPV6_RESPONSE));
     ASSERT_TRUE(message);
     EXPECT_EQ(message->xor_mapped_address,
               asio::ip::udp::endpoint(asio::ip::make_address("2001:db8:1234:5678:11:2233:4455:6677"), 32853));
-    EXPECT_TRUE(message->verifyIntegrity(SAMPLE_IPV6_RESPONSE, SAMPLE_PASSWORD));
+    EXPECT_TRUE(message->verifyIntegrity(Unpooled::wrappedBuffer(SAMPLE_IPV6_RESPONSE), SAMPLE_PASSWORD));
 }
 
 TEST(StunMessageTest, ReportsTheLongTermAttributesItDoesNotUnderstand)
 {
-    const auto message = StunMessage::decode(SAMPLE_LONG_TERM_REQUEST);
+    const auto message = StunMessage::decode(Unpooled::wrappedBuffer(SAMPLE_LONG_TERM_REQUEST));
     ASSERT_TRUE(message);
     EXPECT_FALSE(message->fingerprint);
     EXPECT_TRUE(message->integrity_offset);
@@ -137,8 +144,8 @@ TEST(StunMessageTest, ReportsTheLongTermAttributesItDoesNotUnderstand)
 
 TEST(StunMessageTest, PeeksTheLocalUfrag)
 {
-    EXPECT_EQ(StunMessage::peekLocalUfrag(SAMPLE_REQUEST), "evtj");
-    EXPECT_FALSE(StunMessage::peekLocalUfrag(SAMPLE_IPV4_RESPONSE));
+    EXPECT_EQ(StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(SAMPLE_REQUEST)), "evtj");
+    EXPECT_FALSE(StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(SAMPLE_IPV4_RESPONSE)));
 }
 
 TEST(StunMessageTest, EncodesWhatItDecodes)
@@ -152,7 +159,7 @@ TEST(StunMessageTest, EncodesWhatItDecodes)
     request.ice_controlling = 0x0102030405060708ULL;
     const auto datagram = request.encode("password");
 
-    const auto decoded = StunMessage::decode(datagram);
+    const auto decoded = StunMessage::decode(datagram.slice());
     ASSERT_TRUE(decoded);
     EXPECT_EQ(decoded->transaction_id, request.transaction_id);
     EXPECT_EQ(decoded->username, "local:remote");
@@ -160,8 +167,8 @@ TEST(StunMessageTest, EncodesWhatItDecodes)
     EXPECT_TRUE(decoded->use_candidate);
     EXPECT_EQ(decoded->ice_controlling, 0x0102030405060708ULL);
     EXPECT_TRUE(decoded->fingerprint);
-    EXPECT_TRUE(decoded->verifyIntegrity(datagram, "password"));
-    EXPECT_EQ(StunMessage::peekLocalUfrag(datagram), "local");
+    EXPECT_TRUE(decoded->verifyIntegrity(datagram.slice(), "password"));
+    EXPECT_EQ(StunMessage::peekLocalUfrag(datagram.slice()), "local");
 }
 
 TEST(StunMessageTest, EncodesAnErrorResponseWithItsUnknownAttributes)
@@ -172,14 +179,14 @@ TEST(StunMessageTest, EncodesAnErrorResponseWithItsUnknownAttributes)
     response.unknown_attributes = {0x0014, 0x0015, 0x0016};
     const auto datagram = response.encode("password");
 
-    const auto decoded = StunMessage::decode(datagram);
+    const auto decoded = StunMessage::decode(datagram.slice());
     ASSERT_TRUE(decoded);
     EXPECT_EQ(decoded->message_class, StunClass::ErrorResponse);
     ASSERT_TRUE(decoded->error_code);
     EXPECT_EQ(decoded->error_code->code, 420);
     EXPECT_EQ(decoded->error_code->reason, "Unknown Attribute");
     EXPECT_EQ(decoded->unknown_attributes, response.unknown_attributes);
-    EXPECT_TRUE(decoded->verifyIntegrity(datagram, "password"));
+    EXPECT_TRUE(decoded->verifyIntegrity(datagram.slice(), "password"));
 }
 
 TEST(StunMessageTest, EncodesBothAddressFamilies)
@@ -188,7 +195,7 @@ TEST(StunMessageTest, EncodesBothAddressFamilies)
         StunMessage response;
         response.message_class = StunClass::SuccessResponse;
         response.xor_mapped_address = asio::ip::udp::endpoint(asio::ip::make_address(address), 54321);
-        const auto decoded = StunMessage::decode(response.encode(std::nullopt));
+        const auto decoded = StunMessage::decode(response.encode(std::nullopt).slice());
         ASSERT_TRUE(decoded);
         EXPECT_EQ(decoded->xor_mapped_address, response.xor_mapped_address);
     }
@@ -198,14 +205,14 @@ TEST(StunMessageTest, IgnoresComprehensionOptionalAttributes)
 {
     StunMessage request;
     request.username = "local:remote";
-    auto datagram = request.encode(std::nullopt);
+    auto datagram = vectorOf(request.encode(std::nullopt));
     datagram.resize(datagram.size() - 8);
     const std::array<std::byte, 8> goog_network_info{std::byte{0xC0}, std::byte{0x57}, std::byte{0x00},
                                                      std::byte{0x04}, std::byte{0x00}, std::byte{0x01},
                                                      std::byte{0x00}, std::byte{0x0A}};
     datagram.insert(datagram.begin() + 20, goog_network_info.begin(), goog_network_info.end());
     datagram[3] = static_cast<std::byte>(datagram.size() - 20);
-    const auto message = StunMessage::decode(datagram);
+    const auto message = StunMessage::decode(Unpooled::wrappedBuffer(datagram));
     ASSERT_TRUE(message);
     EXPECT_TRUE(message->unknown_comprehension_required.empty());
     EXPECT_EQ(message->username, "local:remote");
@@ -215,73 +222,73 @@ TEST(StunMessageTest, RejectsAHeaderThatIsNotStun)
 {
     auto datagram = SAMPLE_REQUEST;
     datagram[0] = std::byte{0x40};
-    EXPECT_FALSE(StunMessage::decode(datagram));
+    EXPECT_FALSE(StunMessage::decode(Unpooled::wrappedBuffer(datagram)));
 
     datagram = SAMPLE_REQUEST;
     datagram[4] = std::byte{0x00};
-    EXPECT_FALSE(StunMessage::decode(datagram));
+    EXPECT_FALSE(StunMessage::decode(Unpooled::wrappedBuffer(datagram)));
 
-    EXPECT_FALSE(StunMessage::decode(std::span{SAMPLE_REQUEST}.first(19)));
-    EXPECT_FALSE(StunMessage::decode({}));
+    EXPECT_FALSE(StunMessage::decode(Unpooled::wrappedBuffer(std::span{SAMPLE_REQUEST}.first(19))));
+    EXPECT_FALSE(StunMessage::decode(ByteBufView{}));
 }
 
 TEST(StunMessageTest, RejectsALengthThatDisagreesWithTheDatagram)
 {
     auto datagram = SAMPLE_REQUEST;
     datagram.push_back(std::byte{0});
-    EXPECT_FALSE(StunMessage::decode(datagram));
+    EXPECT_FALSE(StunMessage::decode(Unpooled::wrappedBuffer(datagram)));
 
     datagram = SAMPLE_REQUEST;
     datagram[3] = std::byte{0x5A};
-    EXPECT_FALSE(StunMessage::decode(datagram));
+    EXPECT_FALSE(StunMessage::decode(Unpooled::wrappedBuffer(datagram)));
 
     datagram = SAMPLE_REQUEST;
     datagram.resize(datagram.size() - 4);
-    EXPECT_FALSE(StunMessage::decode(datagram));
+    EXPECT_FALSE(StunMessage::decode(Unpooled::wrappedBuffer(datagram)));
 }
 
 TEST(StunMessageTest, RejectsAnAttributeThatOverrunsTheMessage)
 {
     auto datagram = SAMPLE_REQUEST;
     datagram[22] = std::byte{0xFF};
-    EXPECT_FALSE(StunMessage::decode(datagram));
-    EXPECT_FALSE(StunMessage::peekLocalUfrag(datagram));
+    EXPECT_FALSE(StunMessage::decode(Unpooled::wrappedBuffer(datagram)));
+    EXPECT_FALSE(StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(datagram)));
 }
 
 TEST(StunMessageTest, RejectsAWrongFingerprint)
 {
     auto datagram = SAMPLE_REQUEST;
     datagram.back() ^= std::byte{0x01};
-    EXPECT_FALSE(StunMessage::decode(datagram));
+    EXPECT_FALSE(StunMessage::decode(Unpooled::wrappedBuffer(datagram)));
 }
 
 TEST(StunMessageTest, RejectsAnAttributeAfterTheFingerprint)
 {
     StunMessage request;
-    auto datagram = request.encode(std::nullopt);
+    auto datagram = vectorOf(request.encode(std::nullopt));
     const std::array<std::byte, 4> use_candidate{std::byte{0x00}, std::byte{0x25}, std::byte{0x00}, std::byte{0x00}};
     datagram.insert(datagram.end(), use_candidate.begin(), use_candidate.end());
     datagram[3] = static_cast<std::byte>(datagram.size() - 20);
-    EXPECT_FALSE(StunMessage::decode(datagram));
+    EXPECT_FALSE(StunMessage::decode(Unpooled::wrappedBuffer(datagram)));
 }
 
 TEST(StunMessageTest, RejectsFixedSizeAttributesOfTheWrongSize)
 {
     auto datagram = SAMPLE_REQUEST;
     datagram[43] = std::byte{0x03};
-    EXPECT_FALSE(StunMessage::decode(datagram));
+    EXPECT_FALSE(StunMessage::decode(Unpooled::wrappedBuffer(datagram)));
 }
 
 TEST(StunMessageTest, IgnoresAttributesAfterMessageIntegrity)
 {
     StunMessage request;
     request.username = "a:b";
-    auto datagram = request.encode("key");
+    auto datagram = vectorOf(request.encode("key"));
     const std::array<std::byte, 8> priority{std::byte{0x00}, std::byte{0x24}, std::byte{0x00}, std::byte{0x04},
                                             std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0x01}};
     datagram.resize(datagram.size() - 8);
     datagram.insert(datagram.end(), priority.begin(), priority.end());
-    const auto message = StunMessage::decode(datagram);
+    const auto message = StunMessage::decode(Unpooled::wrappedBuffer(datagram));
     ASSERT_TRUE(message);
     EXPECT_FALSE(message->fingerprint);
     EXPECT_FALSE(message->priority);
@@ -292,24 +299,24 @@ TEST(StunMessageTest, PeekRejectsAUsernameWithoutAColon)
 {
     StunMessage request;
     request.username = "nocolon";
-    EXPECT_FALSE(StunMessage::peekLocalUfrag(request.encode("key")));
+    EXPECT_FALSE(StunMessage::peekLocalUfrag(request.encode("key").slice()));
     request.username = ":remote";
-    EXPECT_FALSE(StunMessage::peekLocalUfrag(request.encode("key")));
+    EXPECT_FALSE(StunMessage::peekLocalUfrag(request.encode("key").slice()));
 }
 
 TEST(StunMessageTest, SurvivesEveryTruncationAndBitFlip)
 {
     for (std::size_t length = 0; length <= SAMPLE_REQUEST.size(); ++length) {
         const auto prefix = std::span{SAMPLE_REQUEST}.first(length);
-        (void)StunMessage::decode(prefix);
-        (void)StunMessage::peekLocalUfrag(prefix);
+        (void)StunMessage::decode(Unpooled::wrappedBuffer(prefix));
+        (void)StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(prefix));
     }
     for (std::size_t index = 0; index < SAMPLE_REQUEST.size(); ++index) {
         for (std::uint8_t bit = 0; bit < 8; ++bit) {
             auto datagram = SAMPLE_REQUEST;
             datagram[index] ^= static_cast<std::byte>(1U << bit);
-            (void)StunMessage::decode(datagram);
-            (void)StunMessage::peekLocalUfrag(datagram);
+            (void)StunMessage::decode(Unpooled::wrappedBuffer(datagram));
+            (void)StunMessage::peekLocalUfrag(Unpooled::wrappedBuffer(datagram));
         }
     }
 }

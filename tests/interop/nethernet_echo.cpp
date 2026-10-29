@@ -151,7 +151,8 @@ private:
                     if (const auto route = routes_.find(sender_); route != routes_.end()) {
                         owner = route->second;
                     }
-                    else if (const auto ufrag = endgate::rtc::StunMessage::peekLocalUfrag(datagram)) {
+                    else if (const auto ufrag = endgate::rtc::StunMessage::peekLocalUfrag(
+                                 endgate::Unpooled::wrappedBuffer(datagram))) {
                         if (const auto known = ufrags_.find(std::string(*ufrag)); known != ufrags_.end()) {
                             owner = known->second;
                         }

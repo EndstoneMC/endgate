@@ -4,12 +4,12 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
-#include <span>
 #include <vector>
 
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/rtc/certificate.h"
 
 namespace endgate::rtc {
@@ -45,8 +45,8 @@ public:
     class Listener {
     public:
         virtual ~Listener() = default;
-        virtual void sendDtlsDatagram(std::span<const std::byte> datagram) = 0;
-        virtual void onDtlsData(std::span<const std::byte> data) = 0;
+        virtual void sendDtlsDatagram(ByteBufView datagram) = 0;
+        virtual void onDtlsData(ByteBufView data) = 0;
         virtual void onDtlsStateChanged(State state) = 0;
     };
 
@@ -63,8 +63,8 @@ public:
     [[nodiscard]] State getState() const { return state_; }
 
     void start(std::chrono::steady_clock::time_point now);
-    void handleDatagram(std::chrono::steady_clock::time_point now, std::span<const std::byte> datagram);
-    bool send(std::span<const std::byte> data);
+    void handleDatagram(std::chrono::steady_clock::time_point now, ByteBufView datagram);
+    bool send(ByteBufView data);
 
     /**
      * @see RFC 5246 section 7.2.1
@@ -90,8 +90,8 @@ private:
     std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> context_;
     std::unique_ptr<SSL, decltype(&SSL_free)> ssl_;
     BIO *incoming_{nullptr};
-    std::vector<std::vector<std::byte>> outgoing_;
-    std::vector<std::byte> read_buffer_;
+    std::vector<ByteBuf> outgoing_;
+    ByteBuf read_buffer_;
     std::optional<std::chrono::steady_clock::time_point> handshake_deadline_;
     std::optional<std::chrono::steady_clock::time_point> retransmission_deadline_;
     State state_{State::New};

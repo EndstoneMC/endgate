@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/rtc/certificate.h"
 #include "endgate/network/rtc/dtls.h"
 
@@ -19,11 +20,16 @@ using State = DtlsTransport::State;
 
 class Peer : public DtlsTransport::Listener {
 public:
-    void sendDtlsDatagram(std::span<const std::byte> datagram) override
+    void sendDtlsDatagram(ByteBufView datagram) override
     {
-        outbox.emplace_back(datagram.begin(), datagram.end());
+        const auto bytes = datagram.nioBuffer();
+        outbox.emplace_back(bytes.begin(), bytes.end());
     }
-    void onDtlsData(std::span<const std::byte> data) override { received.emplace_back(data.begin(), data.end()); }
+    void onDtlsData(ByteBufView data) override
+    {
+        const auto bytes = data.nioBuffer();
+        received.emplace_back(bytes.begin(), bytes.end());
+    }
     void onDtlsStateChanged(State state) override { states.push_back(state); }
 
     std::vector<std::vector<std::byte>> outbox;
@@ -52,7 +58,7 @@ protected:
                         --from->to_drop;
                         continue;
                     }
-                    to->handleDatagram(std::chrono::steady_clock::now(), datagram);
+                    to->handleDatagram(std::chrono::steady_clock::now(), Unpooled::wrappedBuffer(datagram));
                 }
             }
         }
@@ -119,9 +125,9 @@ TEST_F(DtlsTransportTest, CarriesDataBothWaysWithItsBoundaries)
     handshake();
     const auto small = payloadOf(12, 1);
     const auto large = payloadOf(1100, 7);
-    EXPECT_TRUE(client_.send(small));
-    EXPECT_TRUE(client_.send(large));
-    EXPECT_TRUE(server_.send(large));
+    EXPECT_TRUE(client_.send(Unpooled::wrappedBuffer(small)));
+    EXPECT_TRUE(client_.send(Unpooled::wrappedBuffer(large)));
+    EXPECT_TRUE(server_.send(Unpooled::wrappedBuffer(large)));
     pump();
     EXPECT_EQ(server_peer_.received, (std::vector<std::vector<std::byte>>{small, large}));
     EXPECT_EQ(client_peer_.received, (std::vector<std::vector<std::byte>>{large}));
@@ -158,7 +164,7 @@ TEST_F(DtlsTransportTest, RetransmitsAfterLosingTheFirstFlights)
     handshake();
     EXPECT_GT(client_peer_.sent, 2U);
 
-    EXPECT_TRUE(client_.send(payloadOf(64, 3)));
+    EXPECT_TRUE(client_.send(Unpooled::wrappedBuffer(payloadOf(64, 3))));
     pump();
     EXPECT_EQ(server_peer_.received.size(), 1U);
 }
@@ -173,15 +179,15 @@ TEST_F(DtlsTransportTest, FailsOnAFingerprintMismatch)
     server_.start(std::chrono::steady_clock::now());
     for (int round = 0; round < 8; ++round) {
         for (const auto &datagram : std::exchange(peer.outbox, {})) {
-            server_.handleDatagram(std::chrono::steady_clock::now(), datagram);
+            server_.handleDatagram(std::chrono::steady_clock::now(), Unpooled::wrappedBuffer(datagram));
         }
         for (const auto &datagram : std::exchange(server_peer_.outbox, {})) {
-            client.handleDatagram(std::chrono::steady_clock::now(), datagram);
+            client.handleDatagram(std::chrono::steady_clock::now(), Unpooled::wrappedBuffer(datagram));
         }
     }
     EXPECT_EQ(server_.getState(), State::Failed);
     EXPECT_EQ(client.getState(), State::Failed);
-    EXPECT_FALSE(server_.send(payloadOf(4, 0)));
+    EXPECT_FALSE(server_.send(Unpooled::wrappedBuffer(payloadOf(4, 0))));
 }
 
 TEST_F(DtlsTransportTest, FailsWhenTheServerFingerprintIsWrong)
@@ -193,10 +199,10 @@ TEST_F(DtlsTransportTest, FailsWhenTheServerFingerprintIsWrong)
     server_.start(std::chrono::steady_clock::now());
     for (int round = 0; round < 8; ++round) {
         for (const auto &datagram : std::exchange(peer.outbox, {})) {
-            server_.handleDatagram(std::chrono::steady_clock::now(), datagram);
+            server_.handleDatagram(std::chrono::steady_clock::now(), Unpooled::wrappedBuffer(datagram));
         }
         for (const auto &datagram : std::exchange(server_peer_.outbox, {})) {
-            client.handleDatagram(std::chrono::steady_clock::now(), datagram);
+            client.handleDatagram(std::chrono::steady_clock::now(), Unpooled::wrappedBuffer(datagram));
         }
     }
     EXPECT_EQ(client.getState(), State::Failed);
@@ -229,13 +235,13 @@ TEST_F(DtlsTransportTest, IgnoresGarbage)
 {
     client_.start(std::chrono::steady_clock::now());
     const auto garbage = payloadOf(40, 0x16);
-    server_.handleDatagram(std::chrono::steady_clock::now(), garbage);
+    server_.handleDatagram(std::chrono::steady_clock::now(), Unpooled::wrappedBuffer(garbage));
     handshake();
-    client_.handleDatagram(std::chrono::steady_clock::now(), garbage);
-    server_.handleDatagram(std::chrono::steady_clock::now(), payloadOf(3, 23));
+    client_.handleDatagram(std::chrono::steady_clock::now(), Unpooled::wrappedBuffer(garbage));
+    server_.handleDatagram(std::chrono::steady_clock::now(), Unpooled::wrappedBuffer(payloadOf(3, 23)));
     EXPECT_EQ(client_.getState(), State::Connected);
     EXPECT_EQ(server_.getState(), State::Connected);
-    EXPECT_TRUE(server_.send(payloadOf(5, 5)));
+    EXPECT_TRUE(server_.send(Unpooled::wrappedBuffer(payloadOf(5, 5))));
     pump();
     EXPECT_EQ(client_peer_.received.size(), 1U);
 }

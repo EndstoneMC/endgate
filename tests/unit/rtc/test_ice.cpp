@@ -17,6 +17,7 @@
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 
+#include "endgate/buffer/bytebuf.h"
 #include "endgate/network/rtc/ice.h"
 #include "endgate/network/rtc/stun.h"
 
@@ -27,9 +28,10 @@ using namespace std::chrono_literals;
 
 class RecordingListener : public IceTransport::Listener {
 public:
-    void sendIceDatagram(const asio::ip::udp::endpoint &remote, std::span<const std::byte> datagram) override
+    void sendIceDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram) override
     {
-        sent.emplace_back(remote, std::vector<std::byte>(datagram.begin(), datagram.end()));
+        const auto bytes = datagram.nioBuffer();
+        sent.emplace_back(remote, std::vector<std::byte>(bytes.begin(), bytes.end()));
     }
     void onCandidatePairAdded(const asio::ip::udp::endpoint &remote) override { added.push_back(remote); }
     void onCandidatePairRemoved(const asio::ip::udp::endpoint &remote) override { removed.push_back(remote); }
@@ -61,15 +63,15 @@ protected:
 
     void deliver(const asio::ip::udp::endpoint &from, const StunMessage &request, std::string_view key)
     {
-        transport_.handleDatagram(now_, from, request.encode(key));
+        transport_.handleDatagram(now_, from, request.encode(key).slice());
     }
 
     [[nodiscard]] StunMessage lastResponse() const
     {
-        const auto decoded = StunMessage::decode(listener_.sent.back().second);
+        const auto decoded = StunMessage::decode(Unpooled::wrappedBuffer(listener_.sent.back().second));
         EXPECT_TRUE(decoded);
         EXPECT_TRUE(decoded->fingerprint);
-        EXPECT_TRUE(decoded->verifyIntegrity(listener_.sent.back().second, lite_.pwd));
+        EXPECT_TRUE(decoded->verifyIntegrity(Unpooled::wrappedBuffer(listener_.sent.back().second), lite_.pwd));
         return *decoded;
     }
 
@@ -139,12 +141,13 @@ TEST_F(IceTransportTest, DropsChecksThatFailAuthentication)
     no_username.username.reset();
     deliver(host_, no_username, lite_.pwd);
 
-    transport_.handleDatagram(now_, host_, check(false).encode(std::nullopt));
+    transport_.handleDatagram(now_, host_, check(false).encode(std::nullopt).slice());
 
-    auto without_fingerprint = check(false).encode(lite_.pwd);
+    const auto encoded = check(false).encode(lite_.pwd);
+    auto without_fingerprint = std::vector<std::byte>(encoded.nioBuffer().begin(), encoded.nioBuffer().end());
     without_fingerprint.resize(without_fingerprint.size() - 8);
     without_fingerprint[3] = static_cast<std::byte>(without_fingerprint.size() - 20);
-    transport_.handleDatagram(now_, host_, without_fingerprint);
+    transport_.handleDatagram(now_, host_, Unpooled::wrappedBuffer(without_fingerprint));
 
     EXPECT_TRUE(listener_.sent.empty());
     EXPECT_TRUE(listener_.added.empty());
@@ -154,7 +157,7 @@ TEST_F(IceTransportTest, DropsChecksThatFailAuthentication)
 TEST_F(IceTransportTest, DropsWhatIsNotABindingRequest)
 {
     const std::array<std::byte, 4> garbage{std::byte{0x00}, std::byte{0x01}, std::byte{0x02}, std::byte{0x03}};
-    transport_.handleDatagram(now_, host_, garbage);
+    transport_.handleDatagram(now_, host_, Unpooled::wrappedBuffer(garbage));
 
     auto response = check(false);
     response.message_class = StunClass::SuccessResponse;
@@ -172,7 +175,7 @@ TEST_F(IceTransportTest, AcceptsBindingIndicationsSilently)
 {
     StunMessage indication;
     indication.message_class = StunClass::Indication;
-    transport_.handleDatagram(now_, host_, indication.encode(std::nullopt));
+    transport_.handleDatagram(now_, host_, indication.encode(std::nullopt).slice());
     EXPECT_TRUE(listener_.sent.empty());
     EXPECT_TRUE(listener_.added.empty());
     EXPECT_EQ(transport_.getStatistics().datagrams_dropped, 0U);
@@ -180,7 +183,7 @@ TEST_F(IceTransportTest, AcceptsBindingIndicationsSilently)
 
 TEST_F(IceTransportTest, SelectsTheNominatedPair)
 {
-    EXPECT_FALSE(transport_.send(std::array<std::byte, 1>{}));
+    EXPECT_FALSE(transport_.send(Unpooled::wrappedBuffer(std::array<std::byte, 1>{})));
     deliver(host_, check(false), lite_.pwd);
     deliver(host_, check(true), lite_.pwd);
 
@@ -190,7 +193,7 @@ TEST_F(IceTransportTest, SelectsTheNominatedPair)
     EXPECT_EQ(listener_.states, std::vector{IceTransport::State::Connected});
 
     const std::array<std::byte, 3> payload{std::byte{22}, std::byte{254}, std::byte{253}};
-    EXPECT_TRUE(transport_.send(payload));
+    EXPECT_TRUE(transport_.send(Unpooled::wrappedBuffer(payload)));
     EXPECT_EQ(listener_.sent.back().first, host_);
     EXPECT_TRUE(std::ranges::equal(listener_.sent.back().second, payload));
 }
@@ -238,7 +241,8 @@ TEST_F(IceTransportTest, RejectsACheckClaimingBothRoles)
 
 TEST_F(IceTransportTest, AnswersAnUnknownRequiredAttributeWith420)
 {
-    auto datagram = check(false).encode(std::nullopt);
+    const auto encoded = check(false).encode(std::nullopt);
+    auto datagram = std::vector<std::byte>(encoded.nioBuffer().begin(), encoded.nioBuffer().end());
     datagram.resize(datagram.size() - 8);
     const std::array<std::byte, 8> unknown{std::byte{0x00}, std::byte{0x30}, std::byte{0x00}, std::byte{0x04},
                                            std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04}};
@@ -267,7 +271,7 @@ TEST_F(IceTransportTest, AnswersAnUnknownRequiredAttributeWith420)
                                                static_cast<std::byte>(crc)};
     datagram.insert(datagram.end(), fingerprint.begin(), fingerprint.end());
 
-    transport_.handleDatagram(now_, host_, datagram);
+    transport_.handleDatagram(now_, host_, Unpooled::wrappedBuffer(datagram));
     const auto response = lastResponse();
     ASSERT_TRUE(response.error_code);
     EXPECT_EQ(response.error_code->code, 420);
@@ -302,7 +306,7 @@ TEST_F(IceTransportTest, DropsAPairWhoseConsentExpires)
     EXPECT_EQ(listener_.removed, std::vector{host_});
     EXPECT_FALSE(transport_.getSelectedPair());
     EXPECT_EQ(transport_.getState(), IceTransport::State::Disconnected);
-    EXPECT_FALSE(transport_.send(std::array<std::byte, 1>{}));
+    EXPECT_FALSE(transport_.send(Unpooled::wrappedBuffer(std::array<std::byte, 1>{})));
 
     now_ += 15s;
     deliver(other_, check(true), lite_.pwd);

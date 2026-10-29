@@ -34,7 +34,7 @@ IceTransport::IceTransport(Listener &listener, IceCredentials local, std::string
 }
 
 void IceTransport::handleDatagram(std::chrono::steady_clock::time_point now, const asio::ip::udp::endpoint &remote,
-                                  std::span<const std::byte> datagram)
+                                  ByteBufView datagram)
 {
     const auto message = StunMessage::decode(datagram);
     if (state_ == State::Failed || !message || message->method != StunMethod::Binding) {
@@ -74,7 +74,7 @@ void IceTransport::handleDatagram(std::chrono::steady_clock::time_point now, con
         response.xor_mapped_address = asio::ip::udp::endpoint(
             asio::ip::make_address_v4(asio::ip::v4_mapped, remote.address().to_v6()), remote.port());
     }
-    listener_.sendIceDatagram(remote, response.encode(local_.pwd));
+    listener_.sendIceDatagram(remote, response.encode(local_.pwd).slice());
     ++statistics_.checks_answered;
 
     auto pair = std::ranges::find(pairs_, remote, &CandidatePair::remote);
@@ -108,7 +108,7 @@ void IceTransport::handleDatagram(std::chrono::steady_clock::time_point now, con
     }
 }
 
-bool IceTransport::send(std::span<const std::byte> datagram)
+bool IceTransport::send(ByteBufView datagram)
 {
     if (!selected_ || state_ != State::Connected) {
         return false;
@@ -173,7 +173,7 @@ void IceTransport::respondWithError(const asio::ip::udp::endpoint &remote, const
     response.transaction_id = request.transaction_id;
     response.error_code = std::move(error);
     response.unknown_attributes = std::move(unknown_attributes);
-    listener_.sendIceDatagram(remote, response.encode(local_.pwd));
+    listener_.sendIceDatagram(remote, response.encode(local_.pwd).slice());
 }
 
 void IceTransport::setState(State state)
@@ -267,7 +267,7 @@ IceController::CandidatePair *IceController::findByTransaction(const StunMessage
 }
 
 void IceController::handleDatagram(std::chrono::steady_clock::time_point now, const asio::ip::udp::endpoint &remote,
-                                   std::span<const std::byte> datagram)
+                                   ByteBufView datagram)
 {
     const auto message = StunMessage::decode(datagram);
     if (state_ == State::Failed || !message || message->method != StunMethod::Binding) {
@@ -382,7 +382,7 @@ void IceController::sendCheck(std::chrono::steady_clock::time_point now, Candida
     pair.next_transmit = now + backoff;
     ++pair.transmits;
     ++statistics_.checks_sent;
-    listener_.sendIceDatagram(pair.remote, request.encode(remote_pwd_));
+    listener_.sendIceDatagram(pair.remote, request.encode(remote_pwd_).slice());
 }
 
 void IceController::respond(const asio::ip::udp::endpoint &remote, const StunMessage &request)
@@ -395,7 +395,7 @@ void IceController::respond(const asio::ip::udp::endpoint &remote, const StunMes
         response.xor_mapped_address = asio::ip::udp::endpoint(
             asio::ip::make_address_v4(asio::ip::v4_mapped, remote.address().to_v6()), remote.port());
     }
-    listener_.sendIceDatagram(remote, response.encode(local_.pwd));
+    listener_.sendIceDatagram(remote, response.encode(local_.pwd).slice());
 }
 
 void IceController::respondWithError(const asio::ip::udp::endpoint &remote, const StunMessage &request,
@@ -406,10 +406,10 @@ void IceController::respondWithError(const asio::ip::udp::endpoint &remote, cons
     response.transaction_id = request.transaction_id;
     response.error_code = std::move(error);
     response.unknown_attributes = std::move(unknown_attributes);
-    listener_.sendIceDatagram(remote, response.encode(local_.pwd));
+    listener_.sendIceDatagram(remote, response.encode(local_.pwd).slice());
 }
 
-bool IceController::send(std::span<const std::byte> datagram)
+bool IceController::send(ByteBufView datagram)
 {
     if (!selected_ || state_ != State::Connected) {
         return false;

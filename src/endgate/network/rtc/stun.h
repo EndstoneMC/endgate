@@ -11,6 +11,8 @@
 
 #include <asio/ip/udp.hpp>
 
+#include "endgate/buffer/bytebuf.h"
+
 namespace endgate::rtc {
 
 /**
@@ -85,22 +87,22 @@ struct StunMessage {
     /**
      * @see RFC 8489 section 6.3
      */
-    [[nodiscard]] static std::optional<StunMessage> decode(std::span<const std::byte> datagram);
+    [[nodiscard]] static std::optional<StunMessage> decode(ByteBufView datagram);
 
     /**
      * @see RFC 8445 section 7.2.2
      */
-    [[nodiscard]] static std::optional<std::string_view> peekLocalUfrag(std::span<const std::byte> datagram);
+    [[nodiscard]] static std::optional<std::string_view> peekLocalUfrag(ByteBufView datagram);
 
     /**
      * @see RFC 8489 section 6.2
      */
-    [[nodiscard]] std::vector<std::byte> encode(std::optional<std::string_view> integrity_key) const;
+    [[nodiscard]] ByteBuf encode(std::optional<std::string_view> integrity_key) const;
 
     /**
      * @see RFC 8489 section 14.5
      */
-    [[nodiscard]] bool verifyIntegrity(std::span<const std::byte> datagram, std::string_view key) const;
+    [[nodiscard]] bool verifyIntegrity(ByteBufView datagram, std::string_view key) const;
 };
 
 }  // namespace endgate::rtc
