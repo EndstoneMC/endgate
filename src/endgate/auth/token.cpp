@@ -16,7 +16,7 @@ namespace {
 constexpr glz::opts LENIENT_READ{.error_on_unknown_keys = false, .error_on_missing_keys = true};
 
 struct Claims {
-    std::int64_t exp{};
+    std::optional<std::int64_t> exp;
     std::optional<std::variant<std::string, std::vector<std::string>>> aud;
     std::optional<std::string> iss;
     std::optional<std::string> xid;
@@ -39,7 +39,10 @@ std::expected<GameServerToken, DisconnectFailReason> GameServerToken::validate(c
     if (glz::read<LENIENT_READ>(claims, token.claims)) {
         return std::unexpected(DisconnectFailReason::NotAuthenticated);
     }
-    if (keys.now() >= std::chrono::system_clock::time_point{std::chrono::seconds{claims.exp}}) {
+    if (!claims.exp) {
+        return std::unexpected(DisconnectFailReason::NotAuthenticated);
+    }
+    if (keys.now() >= std::chrono::system_clock::time_point{std::chrono::seconds{*claims.exp}}) {
         return std::unexpected(DisconnectFailReason::ExpiredToken);
     }
     if (!keys.hasKeys()) {
