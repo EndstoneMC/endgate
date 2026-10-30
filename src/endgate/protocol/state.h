@@ -5,9 +5,11 @@
 #include <type_traits>
 #include <utility>
 
+#include <bedrock/protocol/boss.h>
 #include <bedrock/protocol/game.h>
 #include <bedrock/protocol/network.h>
 #include <bedrock/protocol/packet.hpp>
+#include <bedrock/protocol/player.h>
 
 #include "endgate/network/version.h"
 
@@ -91,7 +93,8 @@ struct PacketRegistries<StateRegistry::Login> {
 template <>
 struct PacketRegistries<StateRegistry::Play> {
     using Serverbound = PacketRegistry<>;
-    using Clientbound = PacketRegistry<bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::StartGame>;
+    using Clientbound = PacketRegistry<bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::StartGame,
+                                       bp::MinecraftPacketIds::PlayerList, bp::MinecraftPacketIds::BossEvent>;
 };
 
 template <StateRegistry State, Direction D, int Version>
@@ -175,6 +178,27 @@ struct CollectRegistered<List, SUPPORTED_VERSIONS.size()> {
 };
 
 using RegisteredPackets = CollectRegistered<TypeList<>>::Type;
+
+template <StateRegistry State, Direction D, typename List = TypeList<>, std::size_t I = 0>
+struct CollectDirection {
+    using Type = CollectDirection<
+        State, D,
+        typename MergeUnique<
+            List, typename ProtocolRegistryOf<State, D, SUPPORTED_VERSIONS.at(I).getProtocol()>::Packets>::Type,
+        I + 1>::Type;
+};
+
+template <StateRegistry State, Direction D, typename List>
+struct CollectDirection<State, D, List, SUPPORTED_VERSIONS.size()> {
+    using Type = List;
+};
+
+/**
+ * Every distinct type the packets one state registers in one direction have across the supported
+ * versions.
+ */
+template <StateRegistry State, Direction D>
+using RegisteredIn = CollectDirection<State, D>::Type;
 
 template <bp::MinecraftPacketIds Id, typename List = TypeList<>, std::size_t I = 0>
 struct CollectPacketTypes {

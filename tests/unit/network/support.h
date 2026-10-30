@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <future>
@@ -14,6 +15,7 @@
 #include <asio/io_context.hpp>
 #include <asio/ip/udp.hpp>
 
+#include "endgate/connection/connection.h"
 #include "endgate/network/endpoint.h"
 #include "endgate/network/eventloop.h"
 #include "endgate/network/registry.h"
@@ -117,6 +119,38 @@ struct Join {
     join.username = join.local.ufrag + ":" + join.remote.ufrag;
     return join;
 }
+
+/**
+ * A connection with no transport under it: every batch it sends is kept for the test to read.
+ */
+class TestConnection final : public MinecraftConnection {
+public:
+    using MinecraftConnection::MinecraftConnection;
+
+    void handleDatagram(std::span<const std::byte>, const asio::ip::udp::endpoint &) override {}
+
+    [[nodiscard]] const std::vector<ByteBuf> &batches() const { return batches_; }
+    [[nodiscard]] std::size_t sent() const { return sent_; }
+    [[nodiscard]] bool closed() const { return closed_; }
+
+protected:
+    void send(ByteBuf batch) override
+    {
+        batches_.push_back(std::move(batch));
+        ++sent_;
+    }
+
+    void disconnect(bool) override
+    {
+        closed_ = true;
+        channelInactive();
+    }
+
+private:
+    std::vector<ByteBuf> batches_;
+    std::atomic<std::size_t> sent_{0};
+    std::atomic<bool> closed_{false};
+};
 
 class Client {
 public:

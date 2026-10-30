@@ -1,6 +1,4 @@
-#include <atomic>
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <span>
 #include <string>
@@ -17,29 +15,6 @@
 
 namespace endgate {
 namespace {
-
-class TestConnection final : public MinecraftConnection {
-public:
-    using MinecraftConnection::MinecraftConnection;
-
-    void handleDatagram(std::span<const std::byte>, const asio::ip::udp::endpoint &) override {}
-
-    [[nodiscard]] std::size_t sent() const { return sent_; }
-    [[nodiscard]] bool closed() const { return closed_; }
-
-protected:
-    void send(ByteBuf) override { ++sent_; }
-
-    void disconnect(bool) override
-    {
-        closed_ = true;
-        channelInactive();
-    }
-
-private:
-    std::atomic<std::size_t> sent_{0};
-    std::atomic<bool> closed_{false};
-};
 
 std::string publicKeyOf(EVP_PKEY *key)
 {

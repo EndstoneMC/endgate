@@ -8,6 +8,7 @@
 
 #include "endgate/awaitable.h"
 #include "endgate/connection/connection.h"
+#include "endgate/connection/world.h"
 #include "endgate/network/eventloop.h"
 
 namespace endgate {
@@ -55,6 +56,11 @@ public:
     [[nodiscard]] Player &getPlayer() const { return *player_; }
 
     /**
+     * What the client holds because of this backend.
+     */
+    [[nodiscard]] WorldState &getWorldState() { return world_state_; }
+
+    /**
      * The leg to the backend, once it is open.
      *
      * @see com.velocitypowered.proxy.connection.backend.VelocityServerConnection#getConnection
@@ -71,6 +77,7 @@ private:
     std::deque<ByteBuf> pending_;
     std::size_t pending_bytes_{0};
     std::shared_ptr<ScheduledFuture> connect_timeout_;
+    WorldState world_state_;
     bool established_{false};
     bool connected_{false};
 };
@@ -108,11 +115,23 @@ private:
  *
  * @see com.velocitypowered.proxy.connection.backend.BackendPlaySessionHandler
  */
-class BackendPlaySessionHandler final : public MinecraftSessionHandler {
+class BackendPlaySessionHandler final : public HandleEach<BackendPlaySessionHandler, MinecraftSessionHandler,
+                                                          RegisteredIn<StateRegistry::Play, Direction::Clientbound>> {
 public:
     explicit BackendPlaySessionHandler(std::shared_ptr<ServerConnection> server_connection);
 
-    using MinecraftSessionHandler::handle;
+    using HandleEach::handle;
+
+    /**
+     * Follows what the backend gives the client, and forwards the packet as it arrived. Every packet the
+     * Play state registers clientbound comes through here, bar the ones with a handle of their own.
+     */
+    template <typename Packet>
+    bool handleEach(const Packet &packet)
+    {
+        server_connection_->getWorldState().track(packet);
+        return false;
+    }
 
     void activated() override;
     void connected() override {}

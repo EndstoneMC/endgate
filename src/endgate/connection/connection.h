@@ -110,6 +110,28 @@ public:
 };
 
 /**
+ * Overrides handle for every packet in the list, each one calling the handler's own handleEach
+ * template. Bedrock redeclares a packet whenever its wire form changes, so a handler that treats
+ * every version of a packet alike takes them all through one template instead of an override each.
+ */
+template <typename Self, typename Base, typename List>
+class HandleEach;
+
+template <typename Self, typename Base>
+class HandleEach<Self, Base, TypeList<>> : public Base {
+public:
+    using Base::handle;
+};
+
+template <typename Self, typename Base, typename Packet, typename... Rest>
+class HandleEach<Self, Base, TypeList<Packet, Rest...>> : public HandleEach<Self, Base, TypeList<Rest...>> {
+public:
+    using HandleEach<Self, Base, TypeList<Rest...>>::handle;
+
+    bool handle(const Packet &packet) override { return static_cast<Self *>(this)->handleEach(packet); }
+};
+
+/**
  * One leg of a proxied session, a player's or a backend's, whatever transport carries it. A leg is
  * pinned to one event loop for life: write, flush, close and shutdown may be called from any thread
  * and run inline on that loop, or are handed to it. A batch crosses this interface as NetherNet
