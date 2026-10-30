@@ -182,8 +182,8 @@ Awaitable<std::expected<Fetched, std::string>> download(const HttpClient &client
 
 MinecraftServiceKeyManager::MinecraftServiceKeyManager(HttpClient client, std::string user_agent,
                                                        std::string discovery_uri)
-    : logger_(LogManager::getLogger("MinecraftServiceKeyManager")), client_(std::move(client)),
-      user_agent_(std::move(user_agent)), discovery_uri_(std::move(discovery_uri))
+    : logger_(LogManager::getLogger(*this)), client_(std::move(client)), user_agent_(std::move(user_agent)),
+      discovery_uri_(std::move(discovery_uri))
 {
 }
 

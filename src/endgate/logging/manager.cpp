@@ -2,9 +2,15 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
+#include <string_view>
 #include <vector>
+
+#ifndef _WIN32
+#include <cxxabi.h>
+#endif
 
 #include <spdlog/cfg/env.h>
 #include <spdlog/spdlog.h>
@@ -36,6 +42,28 @@ spdlog::logger &LogManager::getLogger(const std::string &name)
     auto logger = std::make_shared<spdlog::logger>(name, sinks.begin(), sinks.end());
     spdlog::initialize_logger(logger);
     return *logger;
+}
+
+spdlog::logger &LogManager::getLogger(const std::type_info &type)
+{
+#ifdef _WIN32
+    std::string_view name = type.name();
+    for (const std::string_view prefix : {"class ", "struct "}) {
+        if (name.starts_with(prefix)) {
+            name.remove_prefix(prefix.size());
+        }
+    }
+#else
+    auto status = 0;
+    const std::unique_ptr<char, decltype([](char *p) { std::free(p); })> demangled(
+        abi::__cxa_demangle(type.name(), nullptr, nullptr, &status));
+    std::string_view name = status == 0 ? demangled.get() : type.name();
+#endif
+    name = name.substr(0, name.find('<'));
+    if (const auto scope = name.rfind("::"); scope != std::string_view::npos) {
+        name.remove_prefix(scope + 2);
+    }
+    return getLogger(std::string{name});
 }
 
 }  // namespace endgate

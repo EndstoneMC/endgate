@@ -23,7 +23,7 @@
 namespace endgate {
 
 ConnectionManager::ConnectionManager(ProxyServer &server)
-    : server_(server), logger_(LogManager::getLogger("ConnectionManager")), offline_(server),
+    : server_(server), logger_(LogManager::getLogger(*this)), offline_(server),
       group_(std::max(1U, std::thread::hardware_concurrency()), "IO Worker"),
       signals_(group_.begin()->getIoContext(), SIGINT, SIGTERM)
 {

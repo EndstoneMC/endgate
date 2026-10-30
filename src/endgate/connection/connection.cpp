@@ -12,7 +12,7 @@
 namespace endgate {
 
 MinecraftConnection::MinecraftConnection(Endpoint &endpoint, std::string remote_address, Direction direction)
-    : endpoint_(endpoint), event_loop_(endpoint.getEventLoop()), logger_(LogManager::getLogger("MinecraftConnection")),
+    : endpoint_(endpoint), event_loop_(endpoint.getEventLoop()), logger_(LogManager::getLogger(*this)),
       remote_address_(std::move(remote_address)), sink_(*this),
       pipeline_(sink_, MinecraftCipherDecoder{}, MinecraftCipherEncoder{}, MinecraftCompressDecoder{},
                 MinecraftCompressEncoder{endpoint.getServer().getConfiguration().getCompressionLevel()},

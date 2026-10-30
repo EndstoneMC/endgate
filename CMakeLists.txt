@@ -104,6 +104,7 @@ target_link_libraries(endgate PRIVATE endgate::proxy)
 
 add_subdirectory(tests/unit/auth)
 add_subdirectory(tests/unit/connection)
+add_subdirectory(tests/unit/logging)
 add_subdirectory(tests/unit/network)
 add_subdirectory(tests/unit/proxy)
 add_subdirectory(tests/unit/tablist)

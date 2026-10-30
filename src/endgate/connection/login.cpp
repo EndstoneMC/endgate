@@ -105,7 +105,7 @@ std::optional<ConnectionRequest> ConnectionRequest::fromString(std::string_view 
 InitialLoginSessionHandler::InitialLoginSessionHandler(ProxyServer &server,
                                                        std::shared_ptr<MinecraftConnection> connection,
                                                        std::optional<GameServerToken> offer_identity)
-    : server_(server), logger_(LogManager::getLogger("InitialLoginSessionHandler")), connection_(std::move(connection)),
+    : server_(server), logger_(LogManager::getLogger(*this)), connection_(std::move(connection)),
       offer_identity_(std::move(offer_identity))
 {
 }

@@ -38,7 +38,7 @@
 namespace endgate {
 
 ServerConnection::ServerConnection(BackendServer &server, std::shared_ptr<Player> player)
-    : server_(server), player_(std::move(player)), logger_(LogManager::getLogger("ServerConnection"))
+    : server_(server), player_(std::move(player)), logger_(LogManager::getLogger(*this))
 {
 }
 
@@ -193,7 +193,7 @@ void ServerConnection::connected()
 }
 
 BackendPlaySessionHandler::BackendPlaySessionHandler(std::shared_ptr<ServerConnection> server_connection)
-    : logger_(LogManager::getLogger("BackendPlaySessionHandler")), server_connection_(std::move(server_connection)),
+    : logger_(LogManager::getLogger(*this)), server_connection_(std::move(server_connection)),
       player_session_handler_(std::dynamic_pointer_cast<ClientPlaySessionHandler>(
           server_connection_->getPlayer().getConnection().getActiveSessionHandler()))
 {
@@ -331,7 +331,7 @@ void appendLongString(std::string &out, std::string_view text)
 }  // namespace
 
 LoginSessionHandler::LoginSessionHandler(std::shared_ptr<ServerConnection> server_connection)
-    : logger_(LogManager::getLogger("LoginSessionHandler")), server_connection_(std::move(server_connection))
+    : logger_(LogManager::getLogger(*this)), server_connection_(std::move(server_connection))
 {
 }
 

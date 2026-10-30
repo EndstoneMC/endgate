@@ -16,7 +16,7 @@
 namespace endgate {
 
 Player::Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection, GameProfile profile)
-    : server_(server), logger_(LogManager::getLogger("Player")), connection_(std::move(connection)),
+    : server_(server), logger_(LogManager::getLogger(*this)), connection_(std::move(connection)),
       profile_(std::move(profile)), tab_list_(*connection_)
 {
 }
@@ -69,7 +69,7 @@ void Player::teardown()
 }
 
 ClientPlaySessionHandler::ClientPlaySessionHandler(std::shared_ptr<Player> player)
-    : logger_(LogManager::getLogger("ClientPlaySessionHandler")), player_(std::move(player))
+    : logger_(LogManager::getLogger(*this)), player_(std::move(player))
 {
 }
 
