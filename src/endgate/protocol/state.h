@@ -7,6 +7,7 @@
 
 #include <bedrock/protocol/actor.h>
 #include <bedrock/protocol/boss.h>
+#include <bedrock/protocol/chunk.h>
 #include <bedrock/protocol/effect.h>
 #include <bedrock/protocol/game.h>
 #include <bedrock/protocol/inventory.h>
@@ -105,7 +106,8 @@ struct PacketRegistries<StateRegistry::Login> {
 
 template <>
 struct PacketRegistries<StateRegistry::Play> {
-    using Serverbound = PacketRegistry<>;
+    using Serverbound =
+        PacketRegistry<bp::MinecraftPacketIds::RequestChunkRadius, bp::MinecraftPacketIds::ClientCacheStatus>;
     using Clientbound = PacketRegistry<
         bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::StartGame, bp::MinecraftPacketIds::AddActor,
         bp::MinecraftPacketIds::AddItemActor, bp::MinecraftPacketIds::AddPainting, bp::MinecraftPacketIds::RemoveActor,

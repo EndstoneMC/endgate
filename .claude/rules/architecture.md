@@ -11,6 +11,7 @@
 - Server switching is seamless: fade the screen out and back in with camera packets, so the player feels they stay in the game. Never switch with the transfer packet or the dimension change; both show a loading screen that feels like going back to the menu.
 - The dimension change is banned only as a switching trick. Use it wherever the player really changes dimension.
 - While the screen is dark, resend everything the client holds per server: chunks, actors and the rest of the world state.
+- A `Player` owns its `ClientSettings`: what the client said about itself once, which the proxy says again to every later backend.
 - Each `ServerConnection` owns a `WorldState`: one tracker per kind of state, fed from the backend's packets to the client, which sends what takes that state back before the player moves on. A tracker constrains its `track` to the packet id it follows, so a new one needs no dispatch of its own.
 
 ## Approach

@@ -9,6 +9,7 @@
 #include <bedrock/protocol/stream.hpp>
 #include <gtest/gtest.h>
 
+#include "endgate/connection/settings.h"
 #include "endgate/connection/world.h"
 #include "support.h"
 
@@ -399,6 +400,39 @@ TEST_F(WorldStateTest, ClearingForgetsWhatItSent)
     });
 
     EXPECT_EQ(connection->batches().size(), 2U);
+}
+
+TEST_F(WorldStateTest, TheClientsSettingsAreSaidAgainToTheNextBackend)
+{
+    ClientSettings settings;
+    settings.track(bp::ClientCacheStatusPacket{.enabled = true});
+    settings.track(bp::RequestChunkRadiusPacket{.chunk_radius = 12, .max_chunk_radius = 16});
+    settings.track(bp::RequestChunkRadiusPacket{.chunk_radius = 8, .max_chunk_radius = 16});
+
+    const auto connection = client();
+    node_.call([&] {
+        settings.replay(*connection);
+        return 0;
+    });
+
+    ASSERT_EQ(idsOf(connection->batches()),
+              (std::vector<std::uint32_t>{bp::ClientCacheStatusPacket::Id, bp::RequestChunkRadiusPacket::Id}));
+    EXPECT_TRUE(decode<bp::ClientCacheStatusPacket>(connection->batches()[0]).enabled);
+    EXPECT_EQ(decode<bp::RequestChunkRadiusPacket>(connection->batches()[1]).chunk_radius, 8);
+}
+
+TEST_F(WorldStateTest, ASettingTheClientNeverSentIsNotMadeUp)
+{
+    ClientSettings settings;
+    settings.track(bp::ClientCacheStatusPacket{.enabled = false});
+
+    const auto connection = client();
+    node_.call([&] {
+        settings.replay(*connection);
+        return 0;
+    });
+
+    EXPECT_EQ(idsOf(connection->batches()), (std::vector<std::uint32_t>{bp::ClientCacheStatusPacket::Id}));
 }
 
 }  // namespace

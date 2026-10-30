@@ -6,6 +6,7 @@
 #include <spdlog/logger.h>
 
 #include "endgate/connection/connection.h"
+#include "endgate/connection/settings.h"
 #include "endgate/util/uuid.h"
 
 namespace endgate {
@@ -88,12 +89,20 @@ public:
      */
     [[nodiscard]] bool isActive() const { return active_; }
 
+    /**
+     * What the client has told a backend about itself.
+     *
+     * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer#getPlayerSettings
+     */
+    [[nodiscard]] ClientSettings &getClientSettings() { return settings_; }
+
 private:
     ProxyServer &server_;
     spdlog::logger &logger_;
     std::shared_ptr<MinecraftConnection> connection_;
     GameProfile profile_;
     std::shared_ptr<ServerConnection> connected_server_;
+    ClientSettings settings_;
     bool active_{true};
 };
 
@@ -102,9 +111,23 @@ private:
  *
  * @see com.velocitypowered.proxy.connection.client.ClientPlaySessionHandler
  */
-class ClientPlaySessionHandler final : public MinecraftSessionHandler {
+class ClientPlaySessionHandler final : public HandleEach<ClientPlaySessionHandler, MinecraftSessionHandler,
+                                                         RegisteredIn<StateRegistry::Play, Direction::Serverbound>> {
 public:
     explicit ClientPlaySessionHandler(std::shared_ptr<Player> player);
+
+    using HandleEach::handle;
+
+    /**
+     * Keeps what the client says about itself, and forwards the packet as it arrived. Every packet the
+     * Play state registers serverbound comes through here.
+     */
+    template <typename Packet>
+    bool handleEach(const Packet &packet)
+    {
+        player_->getClientSettings().track(packet);
+        return false;
+    }
 
     void activated() override;
     void connected() override {}
