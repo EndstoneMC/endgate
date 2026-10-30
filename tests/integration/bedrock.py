@@ -444,7 +444,7 @@ class Backend:
             await connection.wait_closed()
 
         async def start():
-            server = serve_http(handler, host="127.0.0.1", port=0, identity_signer=signer, ice_servers=[])
+            server = serve_http(handler, host="127.0.0.1", port=0, identity_signer=signer)
             await server.start()
             return server
 

@@ -11,10 +11,16 @@ import time
 from pathlib import Path
 
 import nethernet
+from aiortc.rtcicetransport import RTCIceGatherer
 from nethernet import serve_http
 from nethernet.identity import IdentitySigner, generate_operator_key
 
 REPOSITORY = Path(__file__).resolve().parents[2]
+# aiortc gathers a reflexive candidate from a public STUN server unless told otherwise, which costs
+# about five seconds and outlasts the proxy's connect deadline. nethernet-python's ice_servers=[] is
+# falsy, so it cannot say "none"; take the default away instead and keep gathering on the loopback.
+RTCIceGatherer.getDefaultIceServers = staticmethod(list)
+
 DEFAULT_BINARY = REPOSITORY / "build" / "RelWithDebInfo" / "endgate"
 DEFAULT_ECHO = REPOSITORY / "build" / "RelWithDebInfo" / "tests" / "interop" / "endgate_nethernet_echo"
 
@@ -250,7 +256,7 @@ class PythonServer:
             except Exception:
                 pass
 
-        self._server = serve_http(handler, host="127.0.0.1", port=0, identity_signer=signer, ice_servers=[])
+        self._server = serve_http(handler, host="127.0.0.1", port=0, identity_signer=signer)
         await self._server.start()
         self.port = self._server.bound_port
         self._ready.set()
