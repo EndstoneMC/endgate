@@ -11,7 +11,6 @@ import time
 from pathlib import Path
 
 import nethernet
-import raknet
 from nethernet import serve_http
 from nethernet.identity import IdentitySigner, generate_operator_key
 
@@ -62,6 +61,7 @@ class Proxy:
         tls: tuple[Path, Path] | None = None,
         log_player_connections: bool = True,
         packet_decode_logging: bool = False,
+        services=None,
     ) -> None:
         self.binary = binary
         self.workdir = workdir
@@ -73,6 +73,7 @@ class Proxy:
         self.tls = tls
         self.log_player_connections = log_player_connections
         self.packet_decode_logging = packet_decode_logging
+        self.services = services
         self.lines: list[str] = []
         self._listening = threading.Event()
         self.process: subprocess.Popen | None = None
@@ -101,7 +102,7 @@ class Proxy:
                     f'bind = "127.0.0.1:{self.port}"',
                     'motd = "Endgate Test"',
                     f"show-max-players = {self.max_players}",
-                    "online-mode = false",
+                    f"online-mode = {str(self.services is not None).lower()}",
                     f'tls-certificate = "{self.tls[0] if self.tls else ""}"',
                     f'tls-certificate-key = "{self.tls[1] if self.tls else ""}"',
                     "[servers]",
@@ -116,7 +117,11 @@ class Proxy:
                 ]
             )
         )
-        environment = dict(os.environ, SPDLOG_LEVEL="debug") if self.debug else None
+        environment = dict(os.environ)
+        if self.debug:
+            environment["SPDLOG_LEVEL"] = "debug"
+        if self.services is not None:
+            environment["ENDGATE_DISCOVERY_URI"] = self.services.discovery_uri
         self.lines = []
         self._listening.clear()
         self.process = subprocess.Popen(
@@ -150,6 +155,7 @@ class Proxy:
         startup = (
             "INFO Starting",
             "WARN The proxy is running in offline mode!",
+            "WARN Minecraft services are discovered at",
             "INFO Connections will use",
             "INFO Listening",
             "INFO Done",
@@ -183,23 +189,6 @@ class Proxy:
                 self.process.kill()
                 self.process.wait()
         return self.process.returncode
-
-
-class EchoBackend:
-    """A RakNet backend that sends every message straight back to the connection it came from."""
-
-    def __init__(self) -> None:
-        self.server = raknet.create_server(("127.0.0.1", free_port()), max_connections=32)
-        self.port = self.server.local_address[1]
-        threading.Thread(target=self.server.serve_forever, args=(self._echo,), daemon=True).start()
-
-    @staticmethod
-    def _echo(connection) -> None:
-        for message in connection:
-            connection.send(message)
-
-    def close(self) -> None:
-        self.server.close(0)
 
 
 class Echo:

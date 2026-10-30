@@ -5,8 +5,8 @@ import os
 from pathlib import Path
 
 import pytest
-import raknet
-from harness import DEFAULT_BINARY, DEFAULT_ECHO, Echo, EchoBackend, Proxy, PythonServer, free_port
+from bedrock import Backend, Player, Services, make_player
+from harness import DEFAULT_BINARY, Proxy
 
 _observations: dict[str, object] = {}
 
@@ -42,33 +42,47 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
 
 
 @pytest.fixture
-def backend():
-    server = raknet.create_server(("127.0.0.1", free_port()), max_connections=32)
-    yield server
-    server.close(0)
-
-
-@pytest.fixture
-def echo_backend():
-    server = EchoBackend()
+def services():
+    """A stand-in for Minecraft Services; a proxy given it runs in online mode."""
+    server = Services()
     yield server
     server.close()
 
 
-@pytest.fixture(params=["endgate", "aiortc"])
-def nethernet_backend(request: pytest.FixtureRequest):
-    """A NetherNet server that sends every batch back: endgate's own echo harness, or nethernet-python's."""
-    if request.param == "aiortc":
-        server = PythonServer()
-        yield server
-        server.stop()
-        return
-    binary = Path(os.environ.get("ENDGATE_NETHERNET_ECHO", DEFAULT_ECHO))
-    if not binary.exists():
-        pytest.exit(f"endgate_nethernet_echo not found at {binary}")
-    server = Echo(binary)
+@pytest.fixture
+def backend():
+    server = Backend("raknet")
     yield server
-    server.stop()
+    server.close()
+
+
+@pytest.fixture
+def encrypted_backend():
+    server = Backend("raknet", encrypt=True)
+    yield server
+    server.close()
+
+
+@pytest.fixture
+def nethernet_backend():
+    server = Backend("nethernet")
+    yield server
+    server.close()
+
+
+@pytest.fixture
+def connect(tmp_path: Path):
+    """Joins a proxy as a Bedrock player; every player is closed when the test ends."""
+    players: list[Player] = []
+
+    def join(proxy, transport: str = "raknet", **options) -> Player:
+        player = make_player(proxy, tmp_path, transport, **options)
+        players.append(player)
+        return player
+
+    yield join
+    for player in players:
+        player.close()
 
 
 @pytest.fixture
@@ -83,6 +97,7 @@ def make_proxy(binary: Path, tmp_path: Path):
         tls: tuple[Path, Path] | None = None,
         log_player_connections: bool = True,
         packet_decode_logging: bool = False,
+        services: Services | None = None,
     ) -> Proxy:
         workdir = tmp_path / f"proxy{len(started)}"
         proxy = Proxy(
@@ -95,6 +110,7 @@ def make_proxy(binary: Path, tmp_path: Path):
             tls,
             log_player_connections,
             packet_decode_logging,
+            services,
         ).start()
         started.append(proxy)
         return proxy
@@ -107,4 +123,4 @@ def make_proxy(binary: Path, tmp_path: Path):
 
 @pytest.fixture
 def proxy(make_proxy, backend) -> Proxy:
-    return make_proxy(backend.local_address[1])
+    return make_proxy(backend.port)
