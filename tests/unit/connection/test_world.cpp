@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <utility>
@@ -211,6 +212,157 @@ TEST_F(WorldStateTest, APlayersActorComesFromItsPlayerListEntry)
 
     ASSERT_EQ(connection->batches().size(), 1U);
     EXPECT_EQ(decode<bp::RemoveActorPacket>(connection->batches()[0]).entity_id, 70);
+}
+
+TEST_F(WorldStateTest, EveryObjectiveTheBackendShowedIsRemoved)
+{
+    ScoreboardTracker tracker;
+    tracker.track(bp::SetDisplayObjectivePacket{.display_slot_name = "sidebar", .objective_name = "kills"});
+    tracker.track(bp::SetDisplayObjectivePacket{.display_slot_name = "list", .objective_name = "deaths"});
+    tracker.track(bp::RemoveObjectivePacket{.objective_name = "deaths"});
+    bp::SetScorePacket scores;
+    scores.score_info.emplace_back(bp::ChangeFakePlayerScore{.objective_name = "hearts"});
+    scores.score_info.emplace_back(bp::RemoveScore{.objective_name = "never-shown"});
+    tracker.track(scores);
+
+    const auto connection = client();
+    node_.call([&] {
+        tracker.clear(*connection);
+        return 0;
+    });
+
+    ASSERT_EQ(connection->batches().size(), 2U);
+    std::vector<std::string> removed;
+    for (const auto &batch : connection->batches()) {
+        removed.push_back(decode<bp::RemoveObjectivePacket>(batch).objective_name);
+    }
+    EXPECT_EQ(removed, (std::vector<std::string>{"hearts", "kills"}));
+}
+
+TEST_F(WorldStateTest, EveryEffectStillOnAnActorIsRemoved)
+{
+    EffectTracker tracker;
+    bp::MobEffectPacket added;
+    added.runtime_id = bp::ActorRuntimeID{1};
+    added.event_id = bp::MobEffectPacket::Event::Add;
+    added.effect_id = 5;
+    tracker.track(added);
+    bp::MobEffectPacket updated = added;
+    updated.event_id = bp::MobEffectPacket::Event::Update;
+    updated.effect_amplifier = 2;
+    tracker.track(updated);
+    bp::MobEffectPacket other = added;
+    other.effect_id = 6;
+    tracker.track(other);
+    bp::MobEffectPacket gone = other;
+    gone.event_id = bp::MobEffectPacket::Event::Remove;
+    tracker.track(gone);
+
+    const auto connection = client();
+    node_.call([&] {
+        tracker.clear(*connection);
+        return 0;
+    });
+
+    ASSERT_EQ(connection->batches().size(), 1U);
+    const auto packet = decode<bp::MobEffectPacket>(connection->batches()[0]);
+    EXPECT_EQ(packet.event_id, bp::MobEffectPacket::Event::Remove);
+    EXPECT_EQ(packet.runtime_id, bp::ActorRuntimeID{1});
+    EXPECT_EQ(packet.effect_id, 5);
+}
+
+TEST_F(WorldStateTest, AFormIsClosedOnlyWhenOneWasAsked)
+{
+    FormTracker empty;
+    FormTracker asked;
+    asked.track(bp::ModalFormRequestPacket{.form_id = 7});
+
+    const auto connection = client();
+    node_.call([&] {
+        empty.clear(*connection);
+        asked.clear(*connection);
+        asked.clear(*connection);
+        return 0;
+    });
+
+    EXPECT_EQ(idsOf(connection->batches()), (std::vector<std::uint32_t>{bp::ClientboundCloseFormPacket::Id}));
+}
+
+TEST_F(WorldStateTest, TheOpenContainerIsClosedAsTheBackendNamedIt)
+{
+    ContainerTracker tracker;
+    tracker.track(
+        bp::ContainerOpenPacket{.container_id = bp::ContainerID::First, .type = bp::ContainerType::Container});
+
+    const auto connection = client();
+    node_.call([&] {
+        tracker.clear(*connection);
+        return 0;
+    });
+
+    ASSERT_EQ(connection->batches().size(), 1U);
+    const auto packet = decode<bp::ContainerClosePacket>(connection->batches()[0]);
+    EXPECT_EQ(packet.container_id, bp::ContainerID::First);
+    EXPECT_EQ(packet.container_type, bp::ContainerType::Container);
+    EXPECT_TRUE(packet.server_initiated_close);
+}
+
+TEST_F(WorldStateTest, AContainerTheBackendClosedIsNotClosedAgain)
+{
+    ContainerTracker tracker;
+    tracker.track(
+        bp::ContainerOpenPacket{.container_id = bp::ContainerID::First, .type = bp::ContainerType::Container});
+    tracker.track(bp::ContainerClosePacket{.container_id = bp::ContainerID::First});
+
+    const auto connection = client();
+    node_.call([&] {
+        tracker.clear(*connection);
+        return 0;
+    });
+
+    EXPECT_EQ(connection->batches().size(), 0U);
+}
+
+TEST_F(WorldStateTest, SoundsAreStoppedAllAtOnce)
+{
+    SoundTracker playing;
+    playing.track(bp::PlaySoundPacket{.name = "note.harp"});
+    playing.track(bp::PlaySoundPacket{.name = "note.bass"});
+    SoundTracker stopped;
+    stopped.track(bp::PlaySoundPacket{.name = "note.harp"});
+    stopped.track(bp::StopSoundPacket{.stop_all = true});
+
+    const auto connection = client();
+    node_.call([&] {
+        playing.clear(*connection);
+        stopped.clear(*connection);
+        return 0;
+    });
+
+    ASSERT_EQ(connection->batches().size(), 1U);
+    EXPECT_TRUE(decode<bp::StopSoundPacket>(connection->batches()[0]).stop_all);
+}
+
+TEST_F(WorldStateTest, ATitleIsClearedUnlessTheBackendAlreadyDidOrOnlySetTheTimes)
+{
+    TitleTracker shown;
+    shown.track(bp::SetTitlePacket{.type = bp::SetTitlePacket::TitleType::Title, .title_text = "hello"});
+    TitleTracker cleared;
+    cleared.track(bp::SetTitlePacket{.type = bp::SetTitlePacket::TitleType::Title});
+    cleared.track(bp::SetTitlePacket{.type = bp::SetTitlePacket::TitleType::Reset});
+    TitleTracker timed;
+    timed.track(bp::SetTitlePacket{.type = bp::SetTitlePacket::TitleType::Times, .fade_in_time = 5});
+
+    const auto connection = client();
+    node_.call([&] {
+        shown.clear(*connection);
+        cleared.clear(*connection);
+        timed.clear(*connection);
+        return 0;
+    });
+
+    ASSERT_EQ(connection->batches().size(), 1U);
+    EXPECT_EQ(decode<bp::SetTitlePacket>(connection->batches()[0]).type, bp::SetTitlePacket::TitleType::Clear);
 }
 
 TEST_F(WorldStateTest, EachPacketReachesEveryTrackerThatTakesIt)

@@ -7,10 +7,16 @@
 
 #include <bedrock/protocol/actor.h>
 #include <bedrock/protocol/boss.h>
+#include <bedrock/protocol/effect.h>
 #include <bedrock/protocol/game.h>
+#include <bedrock/protocol/inventory.h>
 #include <bedrock/protocol/network.h>
 #include <bedrock/protocol/packet.hpp>
 #include <bedrock/protocol/player.h>
+#include <bedrock/protocol/scoreboard.h>
+#include <bedrock/protocol/sound.h>
+#include <bedrock/protocol/text.h>
+#include <bedrock/protocol/ui.h>
 
 #include "endgate/network/version.h"
 
@@ -100,10 +106,14 @@ struct PacketRegistries<StateRegistry::Login> {
 template <>
 struct PacketRegistries<StateRegistry::Play> {
     using Serverbound = PacketRegistry<>;
-    using Clientbound = PacketRegistry<bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::StartGame,
-                                       bp::MinecraftPacketIds::AddActor, bp::MinecraftPacketIds::AddItemActor,
-                                       bp::MinecraftPacketIds::AddPainting, bp::MinecraftPacketIds::RemoveActor,
-                                       bp::MinecraftPacketIds::PlayerList, bp::MinecraftPacketIds::BossEvent>;
+    using Clientbound = PacketRegistry<
+        bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::StartGame, bp::MinecraftPacketIds::AddActor,
+        bp::MinecraftPacketIds::AddItemActor, bp::MinecraftPacketIds::AddPainting, bp::MinecraftPacketIds::RemoveActor,
+        bp::MinecraftPacketIds::PlayerList, bp::MinecraftPacketIds::BossEvent,
+        bp::MinecraftPacketIds::SetDisplayObjective, bp::MinecraftPacketIds::RemoveObjective,
+        bp::MinecraftPacketIds::SetScore, bp::MinecraftPacketIds::MobEffect, bp::MinecraftPacketIds::ShowModalForm,
+        bp::MinecraftPacketIds::ContainerOpen, bp::MinecraftPacketIds::ContainerClose,
+        bp::MinecraftPacketIds::PlaySound, bp::MinecraftPacketIds::StopSound, bp::MinecraftPacketIds::SetTitle>;
 };
 
 template <StateRegistry State, Direction D, int Version>
