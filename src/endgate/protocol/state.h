@@ -15,9 +15,6 @@
 #include <bedrock/protocol/packet.hpp>
 #include <bedrock/protocol/player.h>
 #include <bedrock/protocol/scoreboard.h>
-#include <bedrock/protocol/sound.h>
-#include <bedrock/protocol/text.h>
-#include <bedrock/protocol/ui.h>
 
 #include "endgate/network/version.h"
 
@@ -86,11 +83,11 @@ struct PacketRegistry {
     };
 };
 
-/**
- * The type a packet has at one version, whether or not Bedrock redeclares it.
- */
 template <int Version, bp::MinecraftPacketIds Id>
 using PacketOf = bp::packet_of_t<Version, static_cast<int>(Id)>;
+
+template <typename Packet, bp::MinecraftPacketIds... Ids>
+concept IsPacket = ((Packet::Id == static_cast<int>(Ids)) || ...);
 
 template <StateRegistry State>
 struct PacketRegistries;
@@ -108,14 +105,13 @@ template <>
 struct PacketRegistries<StateRegistry::Play> {
     using Serverbound =
         PacketRegistry<bp::MinecraftPacketIds::RequestChunkRadius, bp::MinecraftPacketIds::ClientCacheStatus>;
-    using Clientbound = PacketRegistry<
-        bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::StartGame, bp::MinecraftPacketIds::AddActor,
-        bp::MinecraftPacketIds::AddItemActor, bp::MinecraftPacketIds::AddPainting, bp::MinecraftPacketIds::RemoveActor,
-        bp::MinecraftPacketIds::PlayerList, bp::MinecraftPacketIds::BossEvent,
-        bp::MinecraftPacketIds::SetDisplayObjective, bp::MinecraftPacketIds::RemoveObjective,
-        bp::MinecraftPacketIds::SetScore, bp::MinecraftPacketIds::MobEffect, bp::MinecraftPacketIds::ShowModalForm,
-        bp::MinecraftPacketIds::ContainerOpen, bp::MinecraftPacketIds::ContainerClose,
-        bp::MinecraftPacketIds::PlaySound, bp::MinecraftPacketIds::StopSound, bp::MinecraftPacketIds::SetTitle>;
+    using Clientbound = PacketRegistry<bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::StartGame,
+                                       bp::MinecraftPacketIds::AddPlayer, bp::MinecraftPacketIds::AddActor,
+                                       bp::MinecraftPacketIds::AddItemActor, bp::MinecraftPacketIds::AddPainting,
+                                       bp::MinecraftPacketIds::RemoveActor, bp::MinecraftPacketIds::PlayerList,
+                                       bp::MinecraftPacketIds::BossEvent, bp::MinecraftPacketIds::SetDisplayObjective,
+                                       bp::MinecraftPacketIds::RemoveObjective, bp::MinecraftPacketIds::MobEffect,
+                                       bp::MinecraftPacketIds::ContainerOpen, bp::MinecraftPacketIds::ContainerClose>;
 };
 
 template <StateRegistry State, Direction D, int Version>
@@ -214,10 +210,6 @@ struct CollectDirection<State, D, List, SUPPORTED_VERSIONS.size()> {
     using Type = List;
 };
 
-/**
- * Every distinct type the packets one state registers in one direction have across the supported
- * versions.
- */
 template <StateRegistry State, Direction D>
 using RegisteredIn = CollectDirection<State, D>::Type;
 
@@ -234,10 +226,6 @@ struct CollectPacketTypes<Id, List, SUPPORTED_VERSIONS.size()> {
     using Type = List;
 };
 
-/**
- * The distinct types one packet has across the supported versions. A handler that takes the packet
- * needs a handle overload for each of them.
- */
 template <bp::MinecraftPacketIds Id>
 using PacketTypes = CollectPacketTypes<Id>::Type;
 

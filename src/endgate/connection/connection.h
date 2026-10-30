@@ -109,11 +109,6 @@ public:
     virtual void disconnected() = 0;
 };
 
-/**
- * Overrides handle for every packet in the list, each one calling the handler's own handleEach
- * template. Bedrock redeclares a packet whenever its wire form changes, so a handler that treats
- * every version of a packet alike takes them all through one template instead of an override each.
- */
 template <typename Self, typename Base, typename List>
 class HandleEach;
 
@@ -271,10 +266,6 @@ public:
      */
     void enableEncryption(std::span<const std::byte, MinecraftCipher::KEY_SIZE> key);
 
-    /**
-     * Rewrites the player's actor IDs in every packet from here on, in both directions, while the map
-     * isn't the identity. Call on the connection's event loop.
-     */
     void setEntityMap(const EntityMap &map);
 
     /**
@@ -296,9 +287,6 @@ public:
      */
     [[nodiscard]] const std::string &getRemoteAddress() const { return remote_address_; }
 
-    /**
-     * The IP address the connection comes from.
-     */
     [[nodiscard]] const asio::ip::address &getRemoteIp() const { return remote_ip_; }
 
 protected:

@@ -1,14 +1,17 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include <spdlog/logger.h>
 
 #include "endgate/awaitable.h"
 #include "endgate/connection/connection.h"
-#include "endgate/connection/world.h"
+#include "endgate/connection/player.h"
 #include "endgate/network/eventloop.h"
 
 namespace endgate {
@@ -56,16 +59,19 @@ public:
     [[nodiscard]] Player &getPlayer() const { return *player_; }
 
     /**
-     * What the client holds because of this backend.
-     */
-    [[nodiscard]] WorldState &getWorldState() { return world_state_; }
-
-    /**
      * The leg to the backend, once it is open.
      *
      * @see com.velocitypowered.proxy.connection.backend.VelocityServerConnection#getConnection
      */
     [[nodiscard]] MinecraftConnection *getConnection() const { return connection_.get(); }
+
+    /**
+     * Ensures that this server connection remains "active": the connection is established and not
+     * closed, the player is still connected to the server, and the player still remains online.
+     *
+     * @see com.velocitypowered.proxy.connection.backend.VelocityServerConnection#ensureConnected
+     */
+    [[nodiscard]] MinecraftConnection &ensureConnected() const;
 
 private:
     static Awaitable<void> open(std::shared_ptr<ServerConnection> self);
@@ -77,7 +83,6 @@ private:
     std::deque<ByteBuf> pending_;
     std::size_t pending_bytes_{0};
     std::shared_ptr<ScheduledFuture> connect_timeout_;
-    WorldState world_state_;
     bool established_{false};
     bool connected_{false};
 };
@@ -122,14 +127,117 @@ public:
 
     using HandleEach::handle;
 
+    template <typename Packet>
+    bool handleEach(const Packet &)
+    {
+        return false;
+    }
+
     /**
-     * Follows what the backend gives the client, and forwards the packet as it arrived. Every packet the
-     * Play state registers clientbound comes through here, bar the ones with a handle of their own.
+     * @see com.velocitypowered.proxy.connection.backend.BackendPlaySessionHandler#handle(LegacyPlayerListItemPacket)
      */
     template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::PlayerList>
     bool handleEach(const Packet &packet)
     {
-        server_connection_->getWorldState().track(packet);
+        server_connection_->getPlayer().getTabList().processLegacy(packet);
+        return false;
+    }
+
+    /**
+     * @see com.velocitypowered.proxy.connection.backend.BackendPlaySessionHandler#handle(BossBarPacket)
+     */
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::BossEvent>
+    bool handleEach(const Packet &packet)
+    {
+        if (packet.event_type == bp::BossEventUpdateType::Add) {
+            player_session_handler_->getServerBossBars().push_back(packet.boss_id);
+        }
+        else if (packet.event_type == bp::BossEventUpdateType::Remove) {
+            std::erase(player_session_handler_->getServerBossBars(), packet.boss_id);
+        }
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::AddActor, bp::MinecraftPacketIds::AddPainting>
+    bool handleEach(const Packet &packet)
+    {
+        player_session_handler_->getServerActors().insert(packet.entity_id);
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::AddPlayer>
+    bool handleEach(const Packet &packet)
+    {
+        player_session_handler_->getServerActors().insert(packet.abilities_data.target_player);
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::AddItemActor>
+    bool handleEach(const Packet &packet)
+    {
+        player_session_handler_->getServerActors().insert(packet.id);
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::RemoveActor>
+    bool handleEach(const Packet &packet)
+    {
+        player_session_handler_->getServerActors().erase(packet.entity_id);
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::SetDisplayObjective>
+    bool handleEach(const Packet &packet)
+    {
+        player_session_handler_->getServerObjectives().insert(packet.objective_name);
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::RemoveObjective>
+    bool handleEach(const Packet &packet)
+    {
+        player_session_handler_->getServerObjectives().erase(packet.objective_name);
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::MobEffect>
+    bool handleEach(const Packet &packet)
+    {
+        if (packet.runtime_id != player_session_handler_->getRuntimeId()) {
+            return false;
+        }
+        if (packet.event_id == Packet::Event::Remove) {
+            player_session_handler_->getServerEffects().erase(packet.effect_id);
+        }
+        else {
+            player_session_handler_->getServerEffects().insert(packet.effect_id);
+        }
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::ContainerOpen>
+    bool handleEach(const Packet &packet)
+    {
+        player_session_handler_->getServerContainer() =
+            std::pair{static_cast<std::int32_t>(packet.container_id), static_cast<std::int32_t>(packet.type)};
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::ContainerClose>
+    bool handleEach(const Packet &)
+    {
+        player_session_handler_->getServerContainer().reset();
         return false;
     }
 

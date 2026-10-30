@@ -13,10 +13,10 @@ namespace endgate {
 class MinecraftConnection;
 
 /**
- * What the client told its first backend about itself. A later backend hears none of it, since the
- * client says it once a session, so the proxy says it again on the client's behalf.
+ * Represents the client settings for the player.
  *
- * @see com.velocitypowered.proxy.connection.client.ClientPlaySessionHandler#handleBackendJoinGame
+ * @see com.velocitypowered.api.proxy.player.PlayerSettings
+ * @see com.velocitypowered.proxy.connection.client.ClientSettingsWrapper
  */
 class ClientSettings {
 public:
@@ -34,9 +34,6 @@ public:
         cache_enabled_ = packet.enabled;
     }
 
-    /**
-     * Tells a backend what the client already told the one before it. Call on the player's event loop.
-     */
     void replay(MinecraftConnection &backend) const;
 
 private:

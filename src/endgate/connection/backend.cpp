@@ -121,6 +121,14 @@ Awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> self)
     connection->connect();
 }
 
+MinecraftConnection &ServerConnection::ensureConnected() const
+{
+    if (!connection_) {
+        throw std::logic_error("Not connected to server!");
+    }
+    return *connection_;
+}
+
 void ServerConnection::connectionEstablished()
 {
     established_ = true;

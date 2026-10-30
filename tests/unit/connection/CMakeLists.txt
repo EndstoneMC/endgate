@@ -2,7 +2,7 @@ include(GoogleTest)
 
 add_executable(endgate_connection_tests
         test_login.cpp
-        test_world.cpp
+        test_play.cpp
 )
 
 target_include_directories(endgate_connection_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../network)

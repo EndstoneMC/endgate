@@ -15,9 +15,7 @@ namespace endgate {
 namespace bp = bedrock::protocol;
 
 /**
- * The player's actor IDs as the client took them from its first StartGame, and as the current backend
- * gave them. Rewriting swaps the two, so one map turns the backend's IDs into the client's and back, and
- * a backend actor that holds the client's IDs takes the backend's player IDs instead.
+ * Rewrites the player's actor IDs within packets.
  *
  * @see net.md_5.bungee.entitymap.EntityMap
  */
@@ -31,10 +29,6 @@ public:
     [[nodiscard]] bp::ActorRuntimeID rewrite(bp::ActorRuntimeID id) const;
     [[nodiscard]] bp::ActorUniqueID rewrite(bp::ActorUniqueID id) const;
 
-    /**
-     * The packet with every actor ID in it rewritten, or nothing when the packet carries none at this
-     * protocol. A packet that fails to decode throws DecoderException.
-     */
     [[nodiscard]] std::optional<ByteBuf> rewrite(int protocol, ByteBufView packet) const;
 
 private:
@@ -44,11 +38,6 @@ private:
     bp::ActorUniqueID server_unique_id_;
 };
 
-/**
- * Rewrites the actor IDs of every packet a backend connection reads and writes, once the backend gives
- * the player other IDs than the client's. Inbound it sits between framing and MinecraftDecoder, so session
- * handlers see the client's IDs; outbound between MinecraftEncoder and the length encoder.
- */
 class EntityRewriteHandler : public ChannelDuplexHandler {
 public:
     void setProtocolVersion(ProtocolVersion version) { version_ = version; }

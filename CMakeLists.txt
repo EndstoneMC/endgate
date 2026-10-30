@@ -53,11 +53,10 @@ add_subdirectory(tests/unit/sctp)
 add_subdirectory(tests/interop)
 
 add_library(endgate_proxy STATIC
-        src/endgate/config.cpp
-        src/endgate/console.cpp
-        src/endgate/server.cpp
         src/endgate/auth/keys.cpp
         src/endgate/auth/token.cpp
+        src/endgate/backend.cpp
+        src/endgate/config.cpp
         src/endgate/connection/backend.cpp
         src/endgate/connection/connection.cpp
         src/endgate/connection/handshake.cpp
@@ -65,20 +64,21 @@ add_library(endgate_proxy STATIC
         src/endgate/connection/player.cpp
         src/endgate/connection/raknet.cpp
         src/endgate/connection/settings.cpp
-        src/endgate/connection/world.cpp
+        src/endgate/console.cpp
         src/endgate/logging/appender.cpp
         src/endgate/logging/formatter.cpp
         src/endgate/logging/manager.cpp
-        src/endgate/protocol/cipher.cpp
-        src/endgate/protocol/compress.cpp
-        src/endgate/protocol/entity.cpp
-        src/endgate/util/uuid.cpp
         src/endgate/network/endpoint.cpp
         src/endgate/network/http.cpp
         src/endgate/network/manager.cpp
         src/endgate/network/offline.cpp
         src/endgate/network/ping.cpp
-        src/endgate/backend.cpp
+        src/endgate/protocol/cipher.cpp
+        src/endgate/protocol/compress.cpp
+        src/endgate/protocol/entity.cpp
+        src/endgate/server.cpp
+        src/endgate/tablist/tablist.cpp
+        src/endgate/util/uuid.cpp
 )
 add_library(endgate::proxy ALIAS endgate_proxy)
 
@@ -106,4 +106,5 @@ add_subdirectory(tests/unit/auth)
 add_subdirectory(tests/unit/connection)
 add_subdirectory(tests/unit/network)
 add_subdirectory(tests/unit/proxy)
+add_subdirectory(tests/unit/tablist)
 add_subdirectory(tests/unit/util)

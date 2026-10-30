@@ -2,6 +2,11 @@
 
 #include <utility>
 
+#include <bedrock/protocol/camera.h>
+#include <bedrock/protocol/sound.h>
+#include <bedrock/protocol/text.h>
+#include <bedrock/protocol/ui.h>
+
 #include "endgate/config.h"
 #include "endgate/connection/backend.h"
 #include "endgate/logging/manager.h"
@@ -12,7 +17,7 @@ namespace endgate {
 
 Player::Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection, GameProfile profile)
     : server_(server), logger_(LogManager::getLogger("Player")), connection_(std::move(connection)),
-      profile_(std::move(profile))
+      profile_(std::move(profile)), tab_list_(*connection_)
 {
 }
 
@@ -113,7 +118,75 @@ bool ClientPlaySessionHandler::handleBackendStartGame(bp::ActorRuntimeID runtime
         unique_id_ = unique_id;
         return true;
     }
-    destination.getConnection()->setEntityMap(EntityMap{runtime_id_, unique_id_, runtime_id, unique_id});
+
+    auto &backend = destination.ensureConnected();
+    player_->getTabList().clearAll();
+    auto &client = player_->getConnection();
+    visitProtocolVersion(client.getProtocolVersion().getProtocol(), [&]<int Version>() {
+        for (const auto actor : server_actors_) {
+            client.delayedWrite(PacketOf<Version, bp::MinecraftPacketIds::RemoveActor>{.entity_id = actor});
+        }
+        for (const auto boss : server_boss_bars_) {
+            PacketOf<Version, bp::MinecraftPacketIds::BossEvent> remove;
+            remove.boss_id = boss;
+            remove.event_type = bp::BossEventUpdateType::Remove;
+            client.delayedWrite(std::move(remove));
+        }
+        for (const auto &objective : server_objectives_) {
+            client.delayedWrite(
+                PacketOf<Version, bp::MinecraftPacketIds::RemoveObjective>{.objective_name = objective});
+        }
+        for (const auto effect : server_effects_) {
+            using MobEffect = PacketOf<Version, bp::MinecraftPacketIds::MobEffect>;
+            MobEffect remove;
+            remove.runtime_id = runtime_id_;
+            remove.event_id = MobEffect::Event::Remove;
+            remove.effect_id = effect;
+            client.delayedWrite(std::move(remove));
+        }
+        if (server_container_) {
+            using ContainerClose = PacketOf<Version, bp::MinecraftPacketIds::ContainerClose>;
+            ContainerClose close;
+            close.container_id = static_cast<decltype(close.container_id)>(server_container_->first);
+            close.container_type = static_cast<decltype(close.container_type)>(server_container_->second);
+            close.server_initiated_close = true;
+            client.delayedWrite(std::move(close));
+        }
+        client.delayedWrite(PacketOf<Version, bp::MinecraftPacketIds::ClientboundCloseScreen>{});
+        client.delayedWrite(PacketOf<Version, bp::MinecraftPacketIds::StopSound>{.stop_all = true});
+
+        using SetHud = PacketOf<Version, bp::MinecraftPacketIds::SetHudPacket>;
+        using HudElement = decltype(SetHud::hud_element)::value_type;
+        SetHud hud;
+        for (auto element = 0; element < static_cast<int>(HudElement::Count); ++element) {
+            hud.hud_element.push_back(static_cast<HudElement>(element));
+        }
+        hud.hud_visible = decltype(hud.hud_visible)::Reset;
+        client.delayedWrite(std::move(hud));
+        client.delayedWrite(PacketOf<Version, bp::MinecraftPacketIds::PlayerFogSetting>{});
+        PacketOf<Version, bp::MinecraftPacketIds::CameraInstruction> camera;
+        camera.camera_instruction.clear = true;
+        camera.camera_instruction.remove_target = true;
+        camera.camera_instruction.detach_from_entity = true;
+        client.delayedWrite(std::move(camera));
+
+        using SetTitle = PacketOf<Version, bp::MinecraftPacketIds::SetTitle>;
+        SetTitle clear;
+        clear.type = SetTitle::TitleType::Clear;
+        client.delayedWrite(std::move(clear));
+        SetTitle reset;
+        reset.type = SetTitle::TitleType::Reset;
+        client.delayedWrite(std::move(reset));
+        return true;
+    });
+    server_actors_.clear();
+    server_boss_bars_.clear();
+    server_objectives_.clear();
+    server_effects_.clear();
+    server_container_.reset();
+
+    backend.setEntityMap(EntityMap{runtime_id_, unique_id_, runtime_id, unique_id});
+    client.flush();
     return false;
 }
 

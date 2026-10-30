@@ -29,7 +29,6 @@ namespace {
 template <typename T>
 consteval bool carriesActorIds();
 
-// BDS defines every int64 actor data item as an actor's unique ID.
 template <typename T>
 consteval bool isActorDataInt64()
 {
