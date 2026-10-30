@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstdlib>
 #include <format>
 #include <utility>
 
@@ -45,9 +46,14 @@ bool ProxyServer::start()
     }
 
     if (configuration_.isOnlineMode()) {
+        auto discovery_uri = std::format("{}{}", MinecraftServiceKeyManager::DISCOVERY_URI, MAXIMUM_VERSION.getName());
+        if (const auto *const override_uri = std::getenv("ENDGATE_DISCOVERY_URI")) {
+            logger_.warn("Minecraft services are discovered at {} instead of the real service.", override_uri);
+            discovery_uri = override_uri;
+        }
         keys_ = std::make_shared<MinecraftServiceKeyManager>(
             createHttpClient(), std::format("{}/{}", version.getName(), version.getVersion()),
-            std::format("{}{}", MinecraftServiceKeyManager::DISCOVERY_URI, MAXIMUM_VERSION.getName()));
+            std::move(discovery_uri));
         keys_->start();
     }
 
