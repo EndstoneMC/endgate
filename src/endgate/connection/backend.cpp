@@ -42,22 +42,6 @@ ServerConnection::ServerConnection(BackendServer &server, std::shared_ptr<Player
 
 void ServerConnection::connect()
 {
-    const auto connect_timeout =
-        player_->getConnection().getEndpoint().getServer().getConfiguration().getConnectTimeout();
-    if (connect_timeout > 0) {
-        connect_timeout_ = player_->getConnection().eventLoop().schedule(
-            [self = shared_from_this()] {
-                if (self->established_ || !self->player_->isActive()) {
-                    return;
-                }
-                self->logger_.error("[connected player] {} ({}): unable to connect to server {}: connection timed out",
-                                    self->player_->getGameProfile().name,
-                                    self->player_->getConnection().getRemoteAddress(),
-                                    self->server_.getServerInfo().getName());
-                self->player_->disconnect();
-            },
-            std::chrono::milliseconds{connect_timeout});
-    }
     asio::co_spawn(player_->getConnection().eventLoop().getExecutor(), open(shared_from_this()), asio::detached);
 }
 
@@ -98,6 +82,20 @@ Awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> self)
                             address ? "no NetherNet or RakNet response" : "can't resolve the address");
         player.disconnect();
         co_return;
+    }
+    if (const auto connect_timeout = endpoint.getServer().getConfiguration().getConnectTimeout(); connect_timeout > 0) {
+        self->connect_timeout_ = player.getConnection().eventLoop().schedule(
+            [self] {
+                if (self->established_ || !self->player_->isActive()) {
+                    return;
+                }
+                self->logger_.error("[connected player] {} ({}): unable to connect to server {}: connection timed out",
+                                    self->player_->getGameProfile().name,
+                                    self->player_->getConnection().getRemoteAddress(),
+                                    self->server_.getServerInfo().getName());
+                self->player_->disconnect();
+            },
+            std::chrono::milliseconds{connect_timeout});
     }
     if (*transport == ServerInfo::Transport::NetherNet) {
         const auto connection = std::make_shared<NetherNetConnection<nethernet::DialerSession>>(
