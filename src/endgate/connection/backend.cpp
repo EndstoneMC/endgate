@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <random>
@@ -313,8 +314,17 @@ bool LoginSessionHandler::handle(const bp::NetworkSettingsPacket &packet)
         SelfSignedClaims{
             .cpk = cpk, .exp = now + token_lifetime / std::chrono::seconds{1}, .iat = now, .xname = profile.name},
         claims);
+    std::map<std::string, glz::raw_json> client_data_claims;
+    std::string name;
+    std::string forwarded_client_data;
+    if (glz::read_json(client_data_claims, profile.client_data) || glz::write_json(profile.name, name)) {
+        server_connection_->getPlayer().disconnect();
+        return true;
+    }
+    client_data_claims["ThirdPartyName"] = std::move(name);
+    std::ignore = glz::write_json(client_data_claims, forwarded_client_data);
     const auto token = signToken(key, header, claims);
-    const auto client_data = signToken(key, header, profile.client_data);
+    const auto client_data = signToken(key, header, forwarded_client_data);
     std::string authentication;
     if (!token || !client_data ||
         glz::write_json(LoginAuthentication{.authentication_type = 2, .token = *token}, authentication)) {
