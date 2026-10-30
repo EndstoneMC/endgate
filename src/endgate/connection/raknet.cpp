@@ -28,11 +28,11 @@ void setDontFragment(asio::ip::udp::socket &socket, bool dont_fragment)
     asio::error_code ec;
     if (socket.local_endpoint(ec).protocol() == asio::ip::udp::v4()) {
         const int value = dont_fragment ? IP_PMTUDISC_DO : IP_PMTUDISC_DONT;
-        static_cast<void>(::setsockopt(socket.native_handle(), IPPROTO_IP, IP_MTU_DISCOVER, &value, sizeof(value)));
+        std::ignore = ::setsockopt(socket.native_handle(), IPPROTO_IP, IP_MTU_DISCOVER, &value, sizeof(value));
         return;
     }
     const int value = dont_fragment ? IPV6_PMTUDISC_DO : IPV6_PMTUDISC_DONT;
-    static_cast<void>(::setsockopt(socket.native_handle(), IPPROTO_IPV6, IPV6_MTU_DISCOVER, &value, sizeof(value)));
+    std::ignore = ::setsockopt(socket.native_handle(), IPPROTO_IPV6, IPV6_MTU_DISCOVER, &value, sizeof(value));
 }
 
 }  // namespace
