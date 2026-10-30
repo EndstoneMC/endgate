@@ -1,55 +1,49 @@
-import asyncio
 import socket
 
 import pytest
-import raknet
-from harness import connect_player
-
-BATCH = bytes([0xFE])
+from bedrock import Backend, noise
 
 
-def batches(count: int) -> list[bytes]:
-    return [b"\x01early" + i.to_bytes(2, "big") for i in range(count)]
+@pytest.fixture
+def slow_backend():
+    """A RakNet backend that takes a while to finish each login, so the player is ahead of it."""
+    server = Backend("raknet", delay=500)
+    yield server
+    server.close()
 
 
-def test_a_raknet_player_s_first_batch_waits_for_the_backend(make_proxy, echo_backend):
-    proxy = make_proxy(echo_backend.port)
-    player = raknet.create_connection(proxy.address, timeout=5)
-    try:
-        sent = [BATCH + batch for batch in batches(20)]
-        for message in sent:
-            player.send(message)
-        assert [player.recv(timeout=10) for _ in sent] == sent
-    finally:
-        player.close()
+@pytest.fixture
+def slow_nethernet_backend():
+    server = Backend("nethernet", delay=500)
+    yield server
+    server.close()
 
 
-def test_a_nethernet_player_s_first_batch_waits_for_the_backend(make_proxy, echo_backend):
-    proxy = make_proxy(echo_backend.port)
-
-    async def body():
-        player = await connect_player(proxy.url)
-        sent = batches(20)
-        for batch in sent:
-            await player.send(batch)
-        received = [await asyncio.wait_for(player.recv(), 10) for _ in sent]
-        await player.close()
-        return sent, received
-
-    sent, received = asyncio.run(asyncio.wait_for(body(), 60))
-    assert received == sent
+def early(count: int) -> list[str]:
+    return [f"early {i}" for i in range(count)]
 
 
-def test_a_first_batch_waits_for_a_nethernet_backend(make_proxy, nethernet_backend):
-    proxy = make_proxy(nethernet_backend.port)
-    player = raknet.create_connection(proxy.address, timeout=5)
-    try:
-        sent = [BATCH + batch for batch in batches(20)]
-        for message in sent:
-            player.send(message)
-        assert [player.recv(timeout=20) for _ in sent] == sent
-    finally:
-        player.close()
+@pytest.mark.parametrize("transport", ["raknet", "nethernet"])
+def test_a_player_s_first_batches_wait_for_the_backend(make_proxy, slow_backend, connect, transport):
+    proxy = make_proxy(slow_backend.port)
+    player = connect(proxy, transport)
+    assert player.wait_login()
+    sent = early(20)
+    for message in sent:
+        player.text(message)
+    upstream = slow_backend.accept(20)
+    assert [upstream.wait_text(20) for _ in sent] == sent
+
+
+def test_a_first_batch_waits_for_a_nethernet_backend(make_proxy, slow_nethernet_backend, connect):
+    proxy = make_proxy(slow_nethernet_backend.port)
+    player = connect(proxy)
+    assert player.wait_login()
+    sent = early(20)
+    for message in sent:
+        player.text(message)
+    upstream = slow_nethernet_backend.accept(30)
+    assert [upstream.wait_text(30) for _ in sent] == sent
 
 
 @pytest.fixture
@@ -60,16 +54,13 @@ def silent_backend():
         yield sink.getsockname()[1]
 
 
-def test_too_much_before_the_backend_is_up_closes_the_player(make_proxy, silent_backend):
+def test_too_much_before_the_backend_is_up_closes_the_player(make_proxy, silent_backend, connect):
     proxy = make_proxy(silent_backend, backend=f"raknet://127.0.0.1:{silent_backend}")
-    player = raknet.create_connection(proxy.address, timeout=5)
-    try:
-        player.send(BATCH + bytes(32 * 1024))
-        player.send(BATCH + bytes(33 * 1024))
-        with pytest.raises(raknet.ConnectionClosed):
-            player.recv(timeout=5)
-    finally:
-        player.close()
+    player = connect(proxy)
+    assert player.wait_login()
+    player.text(noise(32 * 1024, 1))
+    player.text(noise(33 * 1024, 2))
+    assert player.wait_closed(5)
     assert proxy.events(
         r"WARN \[server connection\] .* -> lobby: more than 65536 bytes arrived before the server was up"
     )

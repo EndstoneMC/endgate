@@ -1,79 +1,87 @@
+import queue
 import time
 
-import raknet
-from harness import EchoBackend, free_port
+import pytest
+from bedrock import Backend
+from harness import free_port
 
-BATCH = bytes([0xFE])
 
-
-def round_trip(proxy) -> bytes | None:
-    """Connects a RakNet player, sends one batch and returns the echo, or None once the proxy closes it."""
-    player = raknet.create_connection(proxy.address, timeout=5)
-    try:
-        player.send(BATCH + b"\x01ping")
-        return player.recv(timeout=15)
-    except raknet.ConnectionClosed:
+@pytest.fixture
+def round_trip(connect):
+    def trip(proxy, backend: Backend | None) -> str | None:
+        """Joins, says ping and returns what the backend heard, or None once the proxy has closed the player."""
+        player = connect(proxy)
+        assert player.wait_login()
+        player.text("ping")
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline and not player.closed.is_set():
+            if backend is None:
+                player.wait_closed(0.1)
+                continue
+            try:
+                return backend.accept(0.1).wait_text(10)
+            except queue.Empty:
+                continue
         return None
-    finally:
-        player.close()
+
+    return trip
 
 
-def test_a_bare_address_on_a_raknet_server_is_detected_as_raknet(make_proxy, echo_backend):
-    proxy = make_proxy(echo_backend.port, debug=True)
-    assert round_trip(proxy) == BATCH + b"\x01ping"
+def test_a_bare_address_on_a_raknet_server_is_detected_as_raknet(make_proxy, backend, round_trip):
+    proxy = make_proxy(backend.port, debug=True)
+    assert round_trip(proxy, backend) == "ping"
     assert proxy.events("DEBUG Server lobby uses RakNet")
 
 
-def test_the_detected_transport_is_kept_for_the_next_player(make_proxy, echo_backend):
-    proxy = make_proxy(echo_backend.port, debug=True)
-    assert round_trip(proxy) == BATCH + b"\x01ping"
-    assert round_trip(proxy) == BATCH + b"\x01ping"
+def test_the_detected_transport_is_kept_for_the_next_player(make_proxy, backend, round_trip):
+    proxy = make_proxy(backend.port, debug=True)
+    assert round_trip(proxy, backend) == "ping"
+    assert round_trip(proxy, backend) == "ping"
     assert len(proxy.events("DEBUG Server lobby uses")) == 1
 
 
-def test_a_raknet_pin_skips_detection(make_proxy, echo_backend):
-    proxy = make_proxy(echo_backend.port, backend=f"raknet://127.0.0.1:{echo_backend.port}", debug=True)
-    assert round_trip(proxy) == BATCH + b"\x01ping"
+def test_a_raknet_pin_skips_detection(make_proxy, backend, round_trip):
+    proxy = make_proxy(backend.port, backend=f"raknet://127.0.0.1:{backend.port}", debug=True)
+    assert round_trip(proxy, backend) == "ping"
     assert not proxy.events("DEBUG Server .* uses")
 
 
-def test_a_bare_address_on_a_nethernet_server_is_detected_as_nethernet(make_proxy, nethernet_backend):
+def test_a_bare_address_on_a_nethernet_server_is_detected_as_nethernet(make_proxy, nethernet_backend, round_trip):
     proxy = make_proxy(nethernet_backend.port, debug=True)
-    assert round_trip(proxy) == BATCH + b"\x01ping"
+    assert round_trip(proxy, nethernet_backend) == "ping"
     assert proxy.events("DEBUG Server lobby uses NetherNet")
 
 
-def test_a_nethernet_pin_skips_detection(make_proxy, nethernet_backend):
+def test_a_nethernet_pin_skips_detection(make_proxy, nethernet_backend, round_trip):
     backend = f"nethernet://127.0.0.1:{nethernet_backend.port}"
     proxy = make_proxy(nethernet_backend.port, backend=backend, debug=True)
-    assert round_trip(proxy) == BATCH + b"\x01ping"
+    assert round_trip(proxy, nethernet_backend) == "ping"
     assert not proxy.events("DEBUG Server .* uses")
 
 
-def test_a_raknet_pin_on_a_nethernet_server_is_not_overridden(make_proxy, nethernet_backend):
+def test_a_raknet_pin_on_a_nethernet_server_is_not_overridden(make_proxy, nethernet_backend, round_trip):
     backend = f"raknet://127.0.0.1:{nethernet_backend.port}"
     proxy = make_proxy(nethernet_backend.port, backend=backend, debug=True)
-    assert round_trip(proxy) is None
+    assert round_trip(proxy, nethernet_backend) is None
     assert not proxy.events("DEBUG Server .* uses")
 
 
-def test_a_backend_that_answers_nothing_closes_the_player(make_proxy):
-    port = free_port()
-    proxy = make_proxy(port)
+def test_a_backend_that_answers_nothing_closes_the_player(make_proxy, round_trip):
+    proxy = make_proxy(free_port())
     started = time.monotonic()
-    assert round_trip(proxy) is None
+    assert round_trip(proxy, None) is None
     assert time.monotonic() - started < 5
-    assert proxy.events(r"ERROR \[initial connection\] .*: unable to connect to server lobby")
+    assert proxy.events(r"ERROR \[connected player\] .*: unable to connect to server lobby")
 
 
-def test_a_failed_connection_detects_again(make_proxy):
-    echo = EchoBackend()
-    proxy = make_proxy(echo.port, debug=True)
+def test_a_failed_connection_detects_again(make_proxy, round_trip):
+    server = Backend("raknet")
+    proxy = make_proxy(server.port, debug=True)
     try:
-        assert round_trip(proxy) == BATCH + b"\x01ping"
+        assert round_trip(proxy, server) == "ping"
     finally:
-        echo.close()
-    assert round_trip(proxy) is None
-    assert round_trip(proxy) is None
+        server.close()
+    assert round_trip(proxy, None) is None
+    assert round_trip(proxy, None) is None
     assert len(proxy.events("DEBUG Server lobby uses RakNet")) == 1
     assert len(proxy.events("DEBUG Server lobby supports neither NetherNet nor RakNet")) == 1
