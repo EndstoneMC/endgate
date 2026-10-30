@@ -430,6 +430,10 @@ bool LoginSessionHandler::handle(const bp::PlayStatusPacket &packet)
         server_connection_->getPlayer().disconnect();
         return true;
     }
+    if (!server_connection_->getPlayer().isActive()) {
+        server_connection_->disconnect();
+        return true;
+    }
     logged_in_ = true;
     backend->setState(StateRegistry::Play);
     backend->setSessionHandler(std::make_shared<BackendPlaySessionHandler>(server_connection_));

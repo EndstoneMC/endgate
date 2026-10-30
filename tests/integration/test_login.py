@@ -13,7 +13,9 @@ DISCONNECT_EXPIRED_TOKEN = 144
 def logged_in(player, backend, proxy):
     """The backend's session for the player, once both legs are up."""
     assert player.wait_login(), proxy.lines[-20:]
-    return backend.accept()
+    session = backend.accept()
+    assert proxy.wait_for(r"INFO \[server connection\] .* has connected", 10), proxy.lines[-20:]
+    return session
 
 
 def test_a_raknet_player_logs_in_offline_and_chats_with_the_backend(proxy, backend, connect):
