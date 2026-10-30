@@ -203,6 +203,22 @@ TEST_F(PlayTest, TheOpenContainerIsKeptUntilItCloses)
     EXPECT_FALSE(client_handler_->getServerContainer().has_value());
 }
 
+TEST_F(PlayTest, DebugShapesFollowDrawAndRemove)
+{
+    Latest<bp::MinecraftPacketIds::PrimitiveShapesPacket> drawn;
+    for (const std::uint64_t id : {1U, 2U, 3U}) {
+        auto &shape = drawn.shapes.emplace_back();
+        shape.network_id = id;
+        shape.shape_type.emplace();
+    }
+    fromBackend(drawn);
+    Latest<bp::MinecraftPacketIds::PrimitiveShapesPacket> removed;
+    removed.shapes.emplace_back().network_id = 2;
+    fromBackend(removed);
+
+    EXPECT_EQ(client_handler_->getServerShapes(), (std::set<std::uint64_t>{1, 3}));
+}
+
 TEST_F(PlayTest, TheFirstStartGameReachesTheClient)
 {
     EXPECT_TRUE(node_.call([&] {

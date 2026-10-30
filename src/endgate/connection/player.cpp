@@ -152,6 +152,13 @@ bool ClientPlaySessionHandler::handleBackendStartGame(bp::ActorRuntimeID runtime
             close.server_initiated_close = true;
             client.delayedWrite(std::move(close));
         }
+        if (!server_shapes_.empty()) {
+            PacketOf<Version, bp::MinecraftPacketIds::PrimitiveShapesPacket> shapes;
+            for (const auto shape : server_shapes_) {
+                shapes.shapes.push_back({.network_id = shape});
+            }
+            client.delayedWrite(std::move(shapes));
+        }
         client.delayedWrite(PacketOf<Version, bp::MinecraftPacketIds::ClientboundCloseScreen>{});
         client.delayedWrite(PacketOf<Version, bp::MinecraftPacketIds::StopSound>{.stop_all = true});
 
@@ -184,6 +191,7 @@ bool ClientPlaySessionHandler::handleBackendStartGame(bp::ActorRuntimeID runtime
     server_objectives_.clear();
     server_effects_.clear();
     server_container_.reset();
+    server_shapes_.clear();
 
     backend.setEntityMap(EntityMap{runtime_id_, unique_id_, runtime_id, unique_id});
     client.flush();

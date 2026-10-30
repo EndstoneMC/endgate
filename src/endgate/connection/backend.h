@@ -234,6 +234,21 @@ public:
     }
 
     template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::PrimitiveShapesPacket>
+    bool handleEach(const Packet &packet)
+    {
+        for (const auto &shape : packet.shapes) {
+            if (shape.shape_type) {
+                player_session_handler_->getServerShapes().insert(shape.network_id);
+            }
+            else {
+                player_session_handler_->getServerShapes().erase(shape.network_id);
+            }
+        }
+        return false;
+    }
+
+    template <typename Packet>
         requires IsPacket<Packet, bp::MinecraftPacketIds::ContainerClose>
     bool handleEach(const Packet &)
     {

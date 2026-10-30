@@ -178,6 +178,7 @@ public:
     [[nodiscard]] std::set<bp::ActorUniqueID> &getServerActors() { return server_actors_; }
     [[nodiscard]] std::set<std::string> &getServerObjectives() { return server_objectives_; }
     [[nodiscard]] std::set<std::int32_t> &getServerEffects() { return server_effects_; }
+    [[nodiscard]] std::set<std::uint64_t> &getServerShapes() { return server_shapes_; }
     [[nodiscard]] std::optional<std::pair<std::int32_t, std::int32_t>> &getServerContainer()
     {
         return server_container_;
@@ -194,6 +195,7 @@ private:
     std::set<bp::ActorUniqueID> server_actors_;
     std::set<std::string> server_objectives_;
     std::set<std::int32_t> server_effects_;
+    std::set<std::uint64_t> server_shapes_;
     std::optional<std::pair<std::int32_t, std::int32_t>> server_container_;
 };
 

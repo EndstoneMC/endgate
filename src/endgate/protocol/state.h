@@ -15,6 +15,7 @@
 #include <bedrock/protocol/packet.hpp>
 #include <bedrock/protocol/player.h>
 #include <bedrock/protocol/scoreboard.h>
+#include <bedrock/protocol/script.h>
 
 #include "endgate/network/version.h"
 
@@ -105,13 +106,13 @@ template <>
 struct PacketRegistries<StateRegistry::Play> {
     using Serverbound =
         PacketRegistry<bp::MinecraftPacketIds::RequestChunkRadius, bp::MinecraftPacketIds::ClientCacheStatus>;
-    using Clientbound = PacketRegistry<bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::StartGame,
-                                       bp::MinecraftPacketIds::AddPlayer, bp::MinecraftPacketIds::AddActor,
-                                       bp::MinecraftPacketIds::AddItemActor, bp::MinecraftPacketIds::AddPainting,
-                                       bp::MinecraftPacketIds::RemoveActor, bp::MinecraftPacketIds::PlayerList,
-                                       bp::MinecraftPacketIds::BossEvent, bp::MinecraftPacketIds::SetDisplayObjective,
-                                       bp::MinecraftPacketIds::RemoveObjective, bp::MinecraftPacketIds::MobEffect,
-                                       bp::MinecraftPacketIds::ContainerOpen, bp::MinecraftPacketIds::ContainerClose>;
+    using Clientbound = PacketRegistry<
+        bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::StartGame, bp::MinecraftPacketIds::AddPlayer,
+        bp::MinecraftPacketIds::AddActor, bp::MinecraftPacketIds::AddItemActor, bp::MinecraftPacketIds::AddPainting,
+        bp::MinecraftPacketIds::RemoveActor, bp::MinecraftPacketIds::PlayerList, bp::MinecraftPacketIds::BossEvent,
+        bp::MinecraftPacketIds::SetDisplayObjective, bp::MinecraftPacketIds::RemoveObjective,
+        bp::MinecraftPacketIds::MobEffect, bp::MinecraftPacketIds::ContainerOpen,
+        bp::MinecraftPacketIds::ContainerClose, bp::MinecraftPacketIds::PrimitiveShapesPacket>;
 };
 
 template <StateRegistry State, Direction D, int Version>
