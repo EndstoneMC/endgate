@@ -34,6 +34,8 @@ bool ProxyServer::start()
         return false;
     }
 
+    ip_attempt_limiter_ = Ratelimiters::createWithMilliseconds<asio::ip::address>(configuration_.getLoginRatelimit());
+
     for (const auto &[name, address] : configuration_.getServers()) {
         if (auto info = ServerInfo::parse(name, address)) {
             servers_.try_emplace(name, std::move(*info));
@@ -132,6 +134,11 @@ BackendServer *ProxyServer::getServer(std::string_view name)
 {
     const auto server = servers_.find(name);
     return server == servers_.end() ? nullptr : &server->second;
+}
+
+Ratelimiter<asio::ip::address> &ProxyServer::getIpAttemptLimiter() const
+{
+    return *ip_attempt_limiter_;
 }
 
 }  // namespace endgate

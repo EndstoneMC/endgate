@@ -281,7 +281,7 @@ void NetherNetConnection<Session>::onOpen()
     if constexpr (!DIALING) {
         if (const auto *selected = session_ ? &session_->getIceTransport().getSelectedPair() : nullptr;
             selected != nullptr && selected->has_value()) {
-            setRemoteAddress(toString(**selected));
+            setRemoteAddress(**selected);
         }
     }
     active_ = true;

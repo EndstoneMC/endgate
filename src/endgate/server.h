@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 
+#include <asio/ip/address.hpp>
 #include <spdlog/logger.h>
 
 #include "endgate/auth/keys.h"
@@ -16,6 +17,7 @@
 #include "endgate/network/http.h"
 #include "endgate/network/manager.h"
 #include "endgate/network/ping.h"
+#include "endgate/util/ratelimit.h"
 #include "endgate/version.h"
 
 namespace endgate {
@@ -56,6 +58,11 @@ public:
      */
     [[nodiscard]] BackendServer *getServer(std::string_view name);
 
+    /**
+     * @see com.velocitypowered.proxy.VelocityServer#getIpAttemptLimiter
+     */
+    [[nodiscard]] Ratelimiter<asio::ip::address> &getIpAttemptLimiter() const;
+
 private:
     spdlog::logger &logger_;
     ConnectionManager cm_;
@@ -64,6 +71,7 @@ private:
     ServerListPingHandler ping_handler_;
     std::map<std::string, BackendServer, std::less<>> servers_;
     std::shared_ptr<MinecraftServiceKeyManager> keys_;
+    std::unique_ptr<Ratelimiter<asio::ip::address>> ip_attempt_limiter_;
     std::atomic<bool> shutdown_in_progress_{false};
     std::atomic<bool> shutdown_{false};
 };

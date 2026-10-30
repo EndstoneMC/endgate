@@ -34,6 +34,10 @@ bool HandshakeSessionHandler::handle(const bp::RequestNetworkSettingsPacket &pac
     }
 
     connection_->setProtocolVersion(*version);
+    if (!server_.getIpAttemptLimiter().attempt(connection_->getRemoteIp())) {
+        connection_->closeWith(DisconnectFailReason::NoReason, "You are logging in too fast, try again later.");
+        return true;
+    }
     const auto threshold = server_.getConfiguration().getCompressionThreshold();
     const auto algorithm = threshold < 0 ? PacketCompressionAlgorithm::None : PacketCompressionAlgorithm::ZLib;
     const auto compression_threshold = static_cast<std::uint16_t>(std::max(threshold, 0));

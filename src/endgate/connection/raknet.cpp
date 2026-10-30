@@ -45,6 +45,7 @@ RakNetConnection::RakNetConnection(Endpoint &endpoint, const raknet::SystemAddre
       socket_(eventLoop().getExecutor()), address_(address), timer_(eventLoop().getExecutor()),
       connection_(*this, {.guid = guid}, address, request, system_index, now)
 {
+    setRemoteAddress(address);
 }
 
 RakNetConnection::RakNetConnection(Endpoint &endpoint, const raknet::SystemAddress &address, std::uint64_t guid,

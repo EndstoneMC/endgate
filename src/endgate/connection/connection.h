@@ -261,11 +261,20 @@ public:
      */
     [[nodiscard]] const std::string &getRemoteAddress() const { return remote_address_; }
 
+    /**
+     * The IP address the connection comes from.
+     */
+    [[nodiscard]] const asio::ip::address &getRemoteIp() const { return remote_ip_; }
+
 protected:
     virtual void send(ByteBuf batch) = 0;
     virtual void disconnect(bool wait_for_peer) = 0;
 
-    void setRemoteAddress(std::string remote_address) { remote_address_ = std::move(remote_address); }
+    void setRemoteAddress(const asio::ip::udp::endpoint &address)
+    {
+        remote_address_ = toString(address);
+        remote_ip_ = address.address();
+    }
 
     /**
      * @see com.velocitypowered.proxy.connection.MinecraftConnection#channelActive
@@ -328,6 +337,7 @@ private:
     EventLoop &event_loop_;
     spdlog::logger &logger_;
     std::string remote_address_;
+    asio::ip::address remote_ip_;
     Sink sink_;
     Pipeline pipeline_;
     std::shared_ptr<MinecraftSessionHandler> handler_;
