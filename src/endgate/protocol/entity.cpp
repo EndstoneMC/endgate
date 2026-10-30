@@ -40,6 +40,9 @@ consteval bool isActorDataInt64()
     }
 }
 
+static_assert(isActorDataInt64<bp::DataItemInt64Payload_<MAXIMUM_VERSION.getProtocol()>>(),
+              "actor data's int64 item is no longer named DataItemInt64Payload, so its actor IDs go unrewritten");
+
 template <typename T>
 struct CarriesActorIds {
     static consteval bool get()

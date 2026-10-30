@@ -19,11 +19,11 @@ find_package(Snappy REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(GTest REQUIRED)
 
-set(BEDROCK_PROTOCOL_VERSION "0.4.4")
+set(BEDROCK_PROTOCOL_VERSION "0.4.5")
 include(FetchContent)
 FetchContent_Declare(bedrock_protocol
         URL https://github.com/EndstoneMC/bedrock-protocol/releases/download/v${BEDROCK_PROTOCOL_VERSION}/bedrock-protocol-${BEDROCK_PROTOCOL_VERSION}-src.zip
-        URL_HASH SHA256=1036396da7edf8992f4ace4ccd858e61e36adb524a95dfaf149aa448749ef4f7
+        URL_HASH SHA256=8e009cd05bf1c3d972daa12e5cb1de717bef29dc8c4d08ae8d3b788554692b49
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
         EXCLUDE_FROM_ALL
         SYSTEM
