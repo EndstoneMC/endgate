@@ -2,7 +2,6 @@ import time
 
 import raknet
 import wire
-from raw import RawClient
 from wire import ID, Socket
 
 
@@ -126,17 +125,11 @@ def test_half_open_connection_is_reaped(proxy, observe):
     observe("logs", proxy.events())
 
 
-def test_show_max_players_is_not_a_cap(make_proxy, backend, observe):
-    proxy = make_proxy(backend.local_address[1], max_players=1)
-    first = RawClient(proxy.address)
-    second = RawClient(proxy.address)
-    try:
-        observe("first", first.connect())
-        observe("second", second.connect())
-        assert first.last_accepted is not None
-        assert second.last_accepted is not None
-        assert backend.accept(timeout=5) is not None
-        assert backend.accept(timeout=5) is not None
-    finally:
-        first.close()
-        second.close()
+def test_show_max_players_is_not_a_cap(make_proxy, backend, join_raw, observe):
+    proxy = make_proxy(backend.port, max_players=1)
+    first = join_raw(proxy)
+    second = join_raw(proxy)
+    observe("first", first.transcript)
+    observe("second", second.transcript)
+    assert first.last_accepted is not None
+    assert second.last_accepted is not None

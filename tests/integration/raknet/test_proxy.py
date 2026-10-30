@@ -3,70 +3,71 @@ import time
 
 import pytest
 import raknet
+from bedrock import noise
 
-USER = bytes([0xFE])
 
-
-def digest(messages: list[bytes]) -> str:
+def digest(messages: list[str]) -> str:
     h = hashlib.sha256()
-    for message in messages:
+    for message in map(str.encode, messages):
         h.update(len(message).to_bytes(4, "big") + message)
     return h.hexdigest()[:16]
 
 
-def drain(connection, count: int, timeout: float = 10.0) -> list[bytes]:
-    messages = []
+def drain(session, count: int, timeout: float = 10.0) -> list[str]:
+    """The chat lines a session receives, until `count` have come or the time is up."""
+    lines = []
     deadline = time.monotonic() + timeout
-    while len(messages) < count and time.monotonic() < deadline:
-        try:
-            messages.append(connection.recv(timeout=max(deadline - time.monotonic(), 0.01)))
-        except TimeoutError:
+    while len(lines) < count and time.monotonic() < deadline:
+        line = session.wait_text(max(deadline - time.monotonic(), 0.01))
+        if line is None:
             break
-    return messages
+        lines.append(line)
+    return lines
 
 
 @pytest.fixture
-def pair(proxy, backend):
-    player = raknet.create_connection(proxy.address, timeout=5)
-    upstream = backend.accept(timeout=5)
+def pair(proxy, backend, connect):
+    player = connect(proxy)
+    assert player.wait_login()
+    upstream = backend.accept(timeout=10)
     time.sleep(0.05)
-    yield player, upstream
-    player.close()
+    return player, upstream
 
 
 def test_mtu_and_latency_are_negotiated(pair, backend, observe):
     player, upstream = pair
-    observe("player_mtu", player._peer.raw.get_mtu_size(player._raw_address))
-    observe("backend_mtu", backend.raw.get_mtu_size(upstream._raw_address))
-    observe("player_sees_proxy", player.remote_address)
+    connection = player.link.connection
+    observe("player_mtu", connection._peer.raw.get_mtu_size(connection._raw_address))
+    observe("backend_mtu", backend.server.raw.get_mtu_size(upstream.link.connection._raw_address))
+    observe("player_sees_proxy", connection.remote_address)
 
 
 @pytest.mark.parametrize("size", [1, 100, 1000, 1400, 1500, 1600, 5000, 65535, 300_000])
 def test_messages_of_every_size_cross_both_ways(pair, observe, size):
     player, upstream = pair
-    payload = USER + bytes((i * 7) & 0xFF for i in range(size))
-    player.send(payload)
-    reply = USER + payload[1:][::-1]
-    upstream.send(reply)
+    message = noise(size, size)
+    player.text(message)
+    reply = message[::-1]
+    upstream.text(reply)
     to_backend = drain(upstream, 1)
     to_player = drain(player, 1)
     observe("to_backend", [len(m) for m in to_backend])
     observe("to_player", [len(m) for m in to_player])
-    assert to_backend == [payload]
+    assert to_backend == [message]
     assert to_player == [reply]
 
 
 def test_burst_keeps_its_order(pair, observe):
     player, upstream = pair
-    messages = [USER + i.to_bytes(4, "big") + bytes(i % 300) for i in range(2000)]
+    messages = [f"{i:04d}" + "x" * (i % 300) for i in range(2000)]
     for message in messages:
-        player.send(message)
+        player.text(message)
     got = drain(upstream, len(messages))
     observe("count", len(got))
     observe("in_order", got == messages)
-    back = [USER + m[1:][::-1] for m in messages[:500]]
+    back = [m[::-1] for m in messages[:500]]
     for message in back:
-        upstream.send(message)
+        upstream.text(message)
     returned = drain(player, len(back))
     observe("returned_in_order", returned == back)
 
@@ -87,9 +88,9 @@ RELIABILITIES = [
 def test_every_reliability_from_the_library(pair, observe, name):
     player, upstream = pair
     reliability = getattr(raknet.PacketReliability, name)
-    messages = [USER + bytes([RELIABILITIES.index(name), i]) for i in range(50)]
+    messages = [f"{RELIABILITIES.index(name)}:{i}" for i in range(50)]
     for message in messages:
-        player.send(message, reliability=reliability)
+        player.say(message, reliability=reliability)
     got = drain(upstream, len(messages), timeout=3)
     observe("count", len(got))
     observe("digest", digest(sorted(got)))
@@ -97,9 +98,9 @@ def test_every_reliability_from_the_library(pair, observe, name):
 
 def test_channels_are_flattened_onto_one_order(pair, observe):
     player, upstream = pair
-    messages = [USER + bytes([i % 32, i]) for i in range(256)]
-    for message in messages:
-        player.send(message, channel=message[1])
+    messages = [f"{i % 32}:{i}" for i in range(256)]
+    for i, message in enumerate(messages):
+        player.say(message, channel=i % 32)
     got = drain(upstream, len(messages))
     observe("count", len(got))
     observe("set_equal", sorted(got) == sorted(messages))
@@ -108,56 +109,37 @@ def test_channels_are_flattened_onto_one_order(pair, observe):
 def test_player_close_closes_backend(pair, proxy, observe):
     player, upstream = pair
     player.close()
-    try:
-        upstream.recv(timeout=5)
-        outcome = "message"
-    except raknet.ConnectionClosedOK:
-        outcome = "closed_ok"
-    except raknet.ConnectionClosedError:
-        outcome = "closed_error"
-    except TimeoutError:
-        outcome = "timeout"
-    observe("backend", outcome)
+    upstream.wait_closed(5)
+    observe("backend", upstream.outcome if upstream.closed.is_set() else "timeout")
 
 
 def test_backend_close_closes_player(pair, observe):
     player, upstream = pair
     upstream.close()
-    try:
-        player.recv(timeout=5)
-        outcome = "message"
-    except raknet.ConnectionClosedOK:
-        outcome = "closed_ok"
-    except raknet.ConnectionClosedError:
-        outcome = "closed_error"
-    except TimeoutError:
-        outcome = "timeout"
-    observe("player", outcome)
+    player.wait_closed(5)
+    observe("player", player.outcome if player.closed.is_set() else "timeout")
 
 
-def test_players_come_and_go(proxy, backend, observe):
+def test_players_come_and_go(proxy, backend, connect, observe):
     outcomes = []
     for round_ in range(5):
-        player = raknet.create_connection(proxy.address, timeout=5)
-        upstream = backend.accept(timeout=5)
-        time.sleep(0.05)
-        player.send(USER + bytes([round_]))
-        outcomes.append(drain(upstream, 1) == [USER + bytes([round_])])
+        player = connect(proxy)
+        assert player.wait_login()
+        upstream = backend.accept(timeout=10)
+        player.text(f"round {round_}")
+        outcomes.append(drain(upstream, 1) == [f"round {round_}"])
         player.close()
-        try:
-            upstream.recv(timeout=5)
-        except raknet.ConnectionClosed:
-            pass
+        upstream.wait_closed(5)
     observe("delivered", outcomes)
 
 
 def test_throughput(pair, observe):
     player, upstream = pair
-    chunk = USER + bytes(range(256)) * 4
+    chunk = noise(1024)
     count = 4000
     started = time.monotonic()
     for _ in range(count):
-        player.send(chunk)
+        player.text(chunk)
     got = drain(upstream, count, timeout=60)
     elapsed = time.monotonic() - started
     observe("count", len(got))

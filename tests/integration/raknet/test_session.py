@@ -1,8 +1,8 @@
 import time
 
 import pytest
-import raknet
 import wire
+from bedrock import noise
 from raw import RawClient
 from wire import ID, Frame
 from wire import Reliability as R
@@ -10,24 +10,8 @@ from wire import Reliability as R
 USER = bytes([0xFE])
 
 
-@pytest.fixture
-def player(proxy, backend):
-    client = RawClient(proxy.address)
-    client.transcript = client.connect()
-    client.backend = backend.accept(timeout=5)
-    time.sleep(0.05)
-    yield client
-    client.close()
-
-
-def received(connection, timeout: float = 0.5) -> list[bytes]:
-    messages = []
-    while True:
-        try:
-            messages.append(connection.recv(timeout=timeout))
-        except (TimeoutError, raknet.ConnectionClosed):
-            return messages
-        timeout = 0.05
+def outcome(session, timeout: float) -> str:
+    return session.outcome if session.wait_closed(timeout) else "timeout"
 
 
 def test_handshake(player, proxy, observe):
@@ -36,82 +20,87 @@ def test_handshake(player, proxy, observe):
 
 
 def test_message_round_trip(player, observe):
-    observe("to_backend", player.send(USER + b"hello").summary())
-    observe("backend_received", [m.hex() for m in received(player.backend)])
-    player.backend.send(USER + b"world")
+    observe("to_backend", player.say("hello").summary())
+    observe("backend_received", player.backend.texts())
+    player.backend.text("world")
     observe("to_player", player.collect().summary())
-    observe("player_received", [m.hex() for m in player.messages])
+    observe("player_received", player.heard())
 
 
 @pytest.mark.parametrize("reliability", list(R))
 def test_each_reliability_is_forwarded(player, observe, reliability):
-    observe("step", player.send(USER + bytes([reliability]), reliability).summary())
-    observe("backend_received", [m.hex() for m in received(player.backend)])
+    observe("step", player.say(f"reliability {int(reliability)}", reliability).summary())
+    observe("backend_received", player.backend.texts())
 
 
 def test_ordered_messages_wait_for_the_gap(player, observe):
     session = player.session
-    first = session.frame(USER + b"\x00", R.RELIABLE_ORDERED, 3)
-    second = session.frame(USER + b"\x01", R.RELIABLE_ORDERED, 3)
+    first = session.frame(player.encode("first"), R.RELIABLE_ORDERED, 3)
+    second = session.frame(player.encode("second"), R.RELIABLE_ORDERED, 3)
     observe("second_first", player.exchange(wire.data_datagram(session.datagram_sequence + 1, [second])).summary())
-    observe("held_back", [m.hex() for m in received(player.backend, 0.3)])
+    observe("held_back", player.backend.texts(0.3))
     observe("gap_filled", player.exchange(wire.data_datagram(session.datagram_sequence, [first])).summary())
     session.datagram_sequence += 2
-    observe("released", [m.hex() for m in received(player.backend)])
+    observe("released", player.backend.texts())
 
 
 def test_sequenced_messages_drop_older(player, observe):
     session = player.session
-    frames = [session.frame(USER + bytes([i]), R.UNRELIABLE_SEQUENCED, 5) for i in range(3)]
+    frames = [session.frame(player.encode(f"sequenced {i}"), R.UNRELIABLE_SEQUENCED, 5) for i in range(3)]
     for frame in (frames[2], frames[0], frames[1]):
         step = player.exchange(wire.data_datagram(session.datagram_sequence, [frame]))
         observe(f"sent_{frame.sequence_index}", step.summary())
         session.datagram_sequence += 1
-    observe("backend_received", [m.hex() for m in received(player.backend)])
+    observe("backend_received", player.backend.texts())
 
 
 def test_skipped_datagrams_are_naked(player, observe):
     session = player.session
     session.datagram_sequence += 3
-    observe("jump", player.send(USER + b"\x07").summary())
-    observe("backend_received", [m.hex() for m in received(player.backend)])
+    observe("jump", player.say("jump").summary())
+    observe("backend_received", player.backend.texts())
 
 
 def test_duplicate_datagram_is_acked_and_dropped(player, observe):
     session = player.session
-    datagram = wire.data_datagram(session.datagram_sequence, [session.frame(USER + b"\x08", R.RELIABLE_ORDERED)])
+    datagram = wire.data_datagram(
+        session.datagram_sequence, [session.frame(player.encode("duplicate"), R.RELIABLE_ORDERED)]
+    )
     session.datagram_sequence += 1
     observe("first", player.exchange(datagram).summary())
     observe("again", player.exchange(datagram).summary())
-    observe("backend_received", [m.hex() for m in received(player.backend)])
+    observe("backend_received", player.backend.texts())
 
 
 def test_split_message_is_reassembled_out_of_order(player, observe):
     session = player.session
-    payload = USER + bytes(range(256)) * 12
-    parts = session.split(payload, 500)
+    text = noise(4000)
+    parts = session.split(player.encode(text), 500)
+    assert len(parts) > 3
+    order = list(range(len(parts)))
     steps = []
-    for part in (parts[3], parts[0], parts[5], parts[1], parts[4], parts[2], parts[6]):
+    for part in (parts[i] for i in order[::2][::-1] + order[1::2]):
         steps.append(player.exchange(wire.data_datagram(session.datagram_sequence, [part])).summary())
         session.datagram_sequence += 1
     observe("steps", steps)
-    got = received(player.backend)
+    got = player.backend.texts()
     observe("backend_received", [len(m) for m in got])
-    assert got == [payload]
+    assert got == [text]
 
 
 def test_large_message_to_player_is_split(player, observe):
-    payload = USER + bytes(range(256)) * 40
-    player.backend.send(payload)
+    text = noise(10000)
+    player.backend.text(text)
     step = player.collect()
     observe("frames", step.frames)
-    observe("player_received", [len(m) for m in player.messages])
-    assert player.messages == [payload]
+    heard = player.heard()
+    observe("player_received", [len(m) for m in heard])
+    assert heard == [text]
 
 
 def test_unacknowledged_datagram_is_resent(player, observe):
     player.auto_ack = False
-    player.backend.send(USER + b"\x09")
+    player.backend.text("resend")
     first = player.collect(quiet=0.02)
     resent = player.collect(quiet=0.5, limit=0.5)
     observe("first", first.frames)
@@ -143,15 +132,13 @@ def test_second_connection_request_is_accepted_again(player, observe):
         (True, r"ERROR \d+\.\d+\.\d+\.\d+:\d+: invalid packet received: .+"),
     ],
 )
-def test_a_malformed_datagram_is_logged(make_proxy, backend, decode_logging, line):
-    proxy = make_proxy(backend.local_address[1], packet_decode_logging=decode_logging)
-    client = RawClient(proxy.address)
-    client.connect()
-    backend.accept(timeout=5)
+def test_a_malformed_datagram_is_logged(make_proxy, backend, join_raw, decode_logging, line):
+    proxy = make_proxy(backend.port, packet_decode_logging=decode_logging)
+    client = join_raw(proxy)
     session = client.session
-    client.exchange(wire.data_datagram(session.datagram_sequence, [Frame(R.RELIABLE, USER * 20, 50)])[:-10])
+    batch = client.encode("probe")
+    client.exchange(wire.data_datagram(session.datagram_sequence, [Frame(R.RELIABLE, batch * 20, 50)])[:-10])
     assert proxy.wait_for(line), proxy.lines[-20:]
-    client.close()
 
 
 @pytest.mark.parametrize(
@@ -176,40 +163,32 @@ def test_a_malformed_datagram_is_logged(make_proxy, backend, decode_logging, lin
 )
 def test_malformed_datagrams_are_dropped(player, proxy, observe, name, datagram):
     session = player.session
+    batch = player.encode("probe")
     if datagram is None:
         sequence = session.datagram_sequence
         if name == "frame_channel_32":
-            datagram = wire.data_datagram(sequence, [Frame(R.RELIABLE_ORDERED, USER, 50, None, 0, 32)])
+            datagram = wire.data_datagram(sequence, [Frame(R.RELIABLE_ORDERED, batch, 50, None, 0, 32)])
         elif name == "frame_zero_length":
             datagram = wire.data_datagram(sequence, [Frame(R.RELIABLE, b"", 50)])
         elif name == "frame_split_index_past_count":
-            datagram = wire.data_datagram(sequence, [Frame(R.RELIABLE, USER, 50, split_count=2, split_index=2)])
+            datagram = wire.data_datagram(sequence, [Frame(R.RELIABLE, batch, 50, split_count=2, split_index=2)])
         elif name == "frame_truncated_payload":
-            datagram = wire.data_datagram(sequence, [Frame(R.RELIABLE, USER * 20, 50)])[:-10]
+            datagram = wire.data_datagram(sequence, [Frame(R.RELIABLE, batch * 20, 50)])[:-10]
         elif name == "sequence_jump":
-            datagram = wire.data_datagram(sequence + 60000, [Frame(R.UNRELIABLE, USER)])
+            datagram = wire.data_datagram(sequence + 60000, [Frame(R.UNRELIABLE, batch)])
         elif name == "reliable_index_jump":
-            datagram = wire.data_datagram(sequence, [Frame(R.RELIABLE, USER + b"\x0a", 1_500_000)])
+            datagram = wire.data_datagram(sequence, [Frame(R.RELIABLE, batch, 1_500_000)])
         session.datagram_sequence += 1
     observe("step", player.exchange(datagram).summary())
-    observe("backend_received", [m.hex() for m in received(player.backend, 0.3)])
+    observe("backend_received", player.backend.texts(0.3))
     observe("logs", proxy.events("WARN|ERROR"))
-    observe("still_forwarding", player.send(USER + b"\x0b").summary())
-    observe("backend_after", [m.hex() for m in received(player.backend)])
+    observe("still_forwarding", player.say("still forwarding").summary())
+    observe("backend_after", player.backend.texts())
 
 
 def test_player_disconnect_closes_the_backend(player, proxy, observe):
     observe("step", player.send(bytes([ID.DISCONNECTION_NOTIFICATION])).summary())
-    try:
-        player.backend.recv(timeout=3)
-        outcome = "message"
-    except raknet.ConnectionClosedOK:
-        outcome = "closed_ok"
-    except raknet.ConnectionClosedError:
-        outcome = "closed_error"
-    except TimeoutError:
-        outcome = "timeout"
-    observe("backend", outcome)
+    observe("backend", outcome(player.backend, 3))
     observe("logs", [line.replace(str(player.address[1]), "<player>") for line in proxy.events()])
 
 
@@ -245,16 +224,7 @@ def test_silent_player_times_out(player, proxy, observe):
     player.auto_ack = False
     player.auto_pong = False
     started = time.monotonic()
-    try:
-        player.backend.recv(timeout=20)
-        outcome = "message"
-    except raknet.ConnectionClosedOK:
-        outcome = "closed_ok"
-    except raknet.ConnectionClosedError:
-        outcome = "closed_error"
-    except TimeoutError:
-        outcome = "timeout"
-    observe("backend", outcome)
+    observe("backend", outcome(player.backend, 20))
     observe("seconds", round(time.monotonic() - started))
     step = player.collect(quiet=0.05, limit=0.1)
     observe("logs", [line.replace(str(player.address[1]), "<player>") for line in proxy.events()])

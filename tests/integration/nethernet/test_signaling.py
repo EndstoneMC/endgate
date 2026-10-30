@@ -60,7 +60,7 @@ def test_tls_is_served_with_the_configured_certificate(make_proxy, backend, tmp_
         check=True,
         capture_output=True,
     )
-    proxy = make_proxy(backend.local_address[1], tls=(certificate, key))
+    proxy = make_proxy(backend.port, tls=(certificate, key))
     context = ssl.create_default_context(cafile=certificate)
     context.check_hostname = False
     _, secure = ping(f"https://127.0.0.1:{proxy.port}", context=context)
