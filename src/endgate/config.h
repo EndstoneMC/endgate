@@ -26,6 +26,7 @@ public:
     [[nodiscard]] const std::string &getMotd() const;
     [[nodiscard]] int getShowMaxPlayers() const;
     [[nodiscard]] bool isOnlineMode() const;
+    [[nodiscard]] bool isOnlineModeKickExistingPlayers() const;
     [[nodiscard]] const std::map<std::string, std::string> &getServers() const;
     [[nodiscard]] const std::vector<std::string> &getAttemptConnectionOrder() const;
     [[nodiscard]] int getCompressionThreshold() const;
@@ -47,6 +48,7 @@ private:
     std::string motd_;
     int show_max_players_{};
     bool online_mode_{};
+    bool kick_existing_players_{};
     std::map<std::string, std::string> servers_;
     std::vector<std::string> attempt_connection_order_;
     int compression_threshold_{};

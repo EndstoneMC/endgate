@@ -20,6 +20,10 @@ show-max-players = 500
 # Should we authenticate players with Xbox Live? By default, this is on.
 online-mode = true
 
+# If enabled (default is false) and the proxy is in online mode, Endgate will kick
+# any existing player who is online if a duplicate connection attempt is made.
+kick-existing-players = false
+
 [servers]
 # Configure your servers here. Each key represents the server's name, and the value
 # represents the IP address of the server to connect to.

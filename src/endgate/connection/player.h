@@ -39,6 +39,16 @@ public:
      */
     [[nodiscard]] const GameProfile &getGameProfile() const { return profile_; }
 
+    /**
+     * @see com.velocitypowered.api.proxy.Player#getUsername
+     */
+    [[nodiscard]] const std::string &getUsername() const { return profile_.name; }
+
+    /**
+     * @see com.velocitypowered.api.proxy.Player#getUniqueId
+     */
+    [[nodiscard]] const UUID &getUniqueId() const { return profile_.id; }
+
     [[nodiscard]] MinecraftConnection &getConnection() const { return *connection_; }
 
     /**
@@ -60,6 +70,13 @@ public:
      * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer#disconnect
      */
     void disconnect();
+
+    /**
+     * Kicks the player with the reason, from any thread.
+     *
+     * @see com.velocitypowered.api.proxy.Player#disconnect
+     */
+    void disconnect(DisconnectFailReason reason, const std::string &message = {});
 
     /**
      * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer#teardown

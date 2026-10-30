@@ -44,9 +44,20 @@ void Player::disconnect()
     connection_->close();
 }
 
+void Player::disconnect(DisconnectFailReason reason, const std::string &message)
+{
+    if (connection_->eventLoop().inEventLoop()) {
+        connection_->closeWith(reason, message);
+        return;
+    }
+    connection_->eventLoop().execute(
+        [connection = connection_, reason, message] { connection->closeWith(reason, message); });
+}
+
 void Player::teardown()
 {
     active_ = false;
+    server_.unregisterConnection(*this);
     if (const auto server = std::exchange(connected_server_, nullptr)) {
         server->disconnect();
     }

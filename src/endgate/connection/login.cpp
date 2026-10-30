@@ -243,8 +243,15 @@ AuthSessionHandler::AuthSessionHandler(ProxyServer &server, std::shared_ptr<Mine
 
 void AuthSessionHandler::activated()
 {
-    connection_->write(bp::PlayStatusPacket{.status = bp::PlayStatus::LoginSuccess});
+    constexpr auto already_connected = "You are already connected to this proxy!";
+
     const auto player = std::make_shared<Player>(server_, connection_, std::move(profile_));
+    if (!server_.canRegisterConnection(*player) || !server_.registerConnection(player)) {
+        connection_->closeWith(DisconnectFailReason::NoReason, already_connected);
+        return;
+    }
+
+    connection_->write(bp::PlayStatusPacket{.status = bp::PlayStatus::LoginSuccess});
     connection_->setSessionHandler(std::make_shared<ClientPlaySessionHandler>(player));
     auto *const target = player->getNextServerToTry();
     if (target == nullptr) {

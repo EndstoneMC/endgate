@@ -4,6 +4,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 
@@ -18,9 +19,12 @@
 #include "endgate/network/manager.h"
 #include "endgate/network/ping.h"
 #include "endgate/util/ratelimit.h"
+#include "endgate/util/uuid.h"
 #include "endgate/version.h"
 
 namespace endgate {
+
+class Player;
 
 /**
  * The proxy itself, and the entry point to everything it owns.
@@ -63,7 +67,32 @@ public:
      */
     [[nodiscard]] Ratelimiter<asio::ip::address> &getIpAttemptLimiter() const;
 
+    /**
+     * Checks if the connection can be registered with the proxy.
+     *
+     * @see com.velocitypowered.proxy.VelocityServer#canRegisterConnection
+     */
+    [[nodiscard]] bool canRegisterConnection(const Player &connection);
+
+    /**
+     * Attempts to register the connection with the proxy.
+     *
+     * @see com.velocitypowered.proxy.VelocityServer#registerConnection
+     */
+    [[nodiscard]] bool registerConnection(const std::shared_ptr<Player> &connection);
+
+    /**
+     * Unregisters the given player from the proxy.
+     *
+     * @see com.velocitypowered.proxy.VelocityServer#unregisterConnection
+     */
+    void unregisterConnection(const Player &connection);
+
 private:
+    struct CaseInsensitiveLess {
+        bool operator()(std::string_view left, std::string_view right) const;
+    };
+
     spdlog::logger &logger_;
     ConnectionManager cm_;
     Console console_;
@@ -72,6 +101,9 @@ private:
     std::map<std::string, BackendServer, std::less<>> servers_;
     std::shared_ptr<MinecraftServiceKeyManager> keys_;
     std::unique_ptr<Ratelimiter<asio::ip::address>> ip_attempt_limiter_;
+    std::mutex connections_mutex_;
+    std::map<UUID, std::shared_ptr<Player>> connections_by_uuid_;
+    std::map<std::string, std::shared_ptr<Player>, CaseInsensitiveLess> connections_by_name_;
     std::atomic<bool> shutdown_in_progress_{false};
     std::atomic<bool> shutdown_{false};
 };
