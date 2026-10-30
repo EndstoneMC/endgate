@@ -13,10 +13,11 @@ void PlayerListTracker::clear(MinecraftConnection &client)
         return;
     }
     visitProtocolVersion(client.getProtocolVersion().getProtocol(), [&]<int Version>() {
-        bp::PlayerListPacket_<Version> packet;
+        using Packet = PacketOf<Version, bp::MinecraftPacketIds::PlayerList>;
+        Packet packet;
         for (const auto &uuid : entries_) {
-            packet.entries.emplace_back(typename bp::PlayerListPacket_<Version>::RemoveEntry{
-                .action = bp::PlayerListPacketType::Remove, .uuid = uuid});
+            packet.entries.emplace_back(
+                typename Packet::RemoveEntry{.action = bp::PlayerListPacketType::Remove, .uuid = uuid});
         }
         client.delayedWrite(std::move(packet));
         return true;
@@ -24,11 +25,23 @@ void PlayerListTracker::clear(MinecraftConnection &client)
     entries_.clear();
 }
 
+void ActorTracker::clear(MinecraftConnection &client)
+{
+    for (const auto actor : actors_) {
+        visitProtocolVersion(client.getProtocolVersion().getProtocol(), [&]<int Version>() {
+            client.delayedWrite(PacketOf<Version, bp::MinecraftPacketIds::RemoveActor>{.entity_id = actor});
+            return true;
+        });
+    }
+    actors_.clear();
+    players_.clear();
+}
+
 void BossBarTracker::clear(MinecraftConnection &client)
 {
     for (const auto boss : bars_) {
         visitProtocolVersion(client.getProtocolVersion().getProtocol(), [&]<int Version>() {
-            bp::BossEventPacket_<Version> packet;
+            PacketOf<Version, bp::MinecraftPacketIds::BossEvent> packet;
             packet.boss_id = boss;
             packet.event_type = bp::BossEventUpdateType::Remove;
             client.delayedWrite(std::move(packet));

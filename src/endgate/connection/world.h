@@ -1,10 +1,12 @@
 #pragma once
 
+#include <map>
 #include <set>
 #include <tuple>
 #include <utility>
 #include <variant>
 
+#include <bedrock/protocol/actor.h>
 #include <bedrock/protocol/boss.h>
 #include <bedrock/protocol/player.h>
 #include <bedrock/protocol/uuid.hpp>
@@ -47,6 +49,60 @@ public:
 
 private:
     std::set<bp::UUID, UuidLess> entries_;
+};
+
+/**
+ * The actors a backend spawned for the client. AddPlayer carries no unique ID, so a player's comes
+ * from its player list entry; an entry for a player that never spawned only costs a RemoveActor the
+ * client ignores.
+ */
+class ActorTracker {
+public:
+    template <typename Packet>
+        requires(Packet::Id == static_cast<int>(bp::MinecraftPacketIds::AddActor) ||
+                 Packet::Id == static_cast<int>(bp::MinecraftPacketIds::AddPainting))
+    void track(const Packet &packet)
+    {
+        actors_.insert(packet.entity_id);
+    }
+
+    template <typename Packet>
+        requires(Packet::Id == static_cast<int>(bp::MinecraftPacketIds::AddItemActor))
+    void track(const Packet &packet)
+    {
+        actors_.insert(packet.id);
+    }
+
+    template <typename Packet>
+        requires(Packet::Id == static_cast<int>(bp::MinecraftPacketIds::RemoveActor))
+    void track(const Packet &packet)
+    {
+        actors_.erase(packet.entity_id);
+    }
+
+    template <typename Packet>
+        requires(Packet::Id == static_cast<int>(bp::MinecraftPacketIds::PlayerList))
+    void track(const Packet &packet)
+    {
+        for (const auto &entry : packet.entries) {
+            if (const auto *const added = std::get_if<typename Packet::AddEntry>(&entry)) {
+                players_.insert_or_assign(added->uuid, added->id);
+                actors_.insert(added->id);
+                continue;
+            }
+            const auto found = players_.find(std::get<typename Packet::RemoveEntry>(entry).uuid);
+            if (found != players_.end()) {
+                actors_.erase(found->second);
+                players_.erase(found);
+            }
+        }
+    }
+
+    void clear(MinecraftConnection &client);
+
+private:
+    std::set<bp::ActorUniqueID> actors_;
+    std::map<bp::UUID, bp::ActorUniqueID, UuidLess> players_;
 };
 
 /**
@@ -103,7 +159,7 @@ public:
     void clear(MinecraftConnection &client);
 
 private:
-    std::tuple<PlayerListTracker, BossBarTracker> trackers_;
+    std::tuple<ActorTracker, PlayerListTracker, BossBarTracker> trackers_;
 };
 
 }  // namespace endgate

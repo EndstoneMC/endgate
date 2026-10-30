@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <bedrock/protocol/actor.h>
 #include <bedrock/protocol/boss.h>
 #include <bedrock/protocol/game.h>
 #include <bedrock/protocol/network.h>
@@ -78,6 +79,12 @@ struct PacketRegistry {
     };
 };
 
+/**
+ * The type a packet has at one version, whether or not Bedrock redeclares it.
+ */
+template <int Version, bp::MinecraftPacketIds Id>
+using PacketOf = bp::packet_of_t<Version, static_cast<int>(Id)>;
+
 template <StateRegistry State>
 struct PacketRegistries;
 
@@ -94,6 +101,8 @@ template <>
 struct PacketRegistries<StateRegistry::Play> {
     using Serverbound = PacketRegistry<>;
     using Clientbound = PacketRegistry<bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::StartGame,
+                                       bp::MinecraftPacketIds::AddActor, bp::MinecraftPacketIds::AddItemActor,
+                                       bp::MinecraftPacketIds::AddPainting, bp::MinecraftPacketIds::RemoveActor,
                                        bp::MinecraftPacketIds::PlayerList, bp::MinecraftPacketIds::BossEvent>;
 };
 
