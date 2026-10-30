@@ -78,11 +78,12 @@ def test_the_player_is_logged_like_a_raknet_player(proxy, backend, connect):
     assert player.wait_closed(15)
     assert proxy.wait_for(r"\[connected player\] .* has disconnected", 5)
     address = r"\d+\.\d+\.\d+\.\d+:\d+"
+    name = re.escape(player.identity.name)
     expected = [
-        rf"INFO \[connected player\] Steve \((?P<player>{address})\) has connected",
-        r"INFO \[server connection\] Steve -> lobby has connected",
-        r"INFO \[server connection\] Steve -> lobby has disconnected",
-        r"INFO \[connected player\] Steve \((?P=player)\) has disconnected",
+        rf"INFO \[connected player\] {name} \((?P<player>{address})\) has connected",
+        rf"INFO \[server connection\] {name} -> lobby has connected",
+        rf"INFO \[server connection\] {name} -> lobby has disconnected",
+        rf"INFO \[connected player\] {name} \((?P=player)\) has disconnected",
     ]
     events = proxy.events("INFO")
     assert re.fullmatch("\n".join(expected), "\n".join(events)), events

@@ -11,6 +11,7 @@ import asyncio
 import base64
 import collections
 import http.server
+import itertools
 import json
 import os
 import queue
@@ -137,13 +138,17 @@ class Services:
         self._server.server_close()
 
 
+PLAYER_NUMBERS = itertools.count(1)
+
+
 class PlayerIdentity:
     """A player's own key and the login it signs with it, self-signed or vouched for by Services."""
 
-    def __init__(self, name: str = "Steve", xuid: str = "2535400000000001") -> None:
+    def __init__(self, name: str | None = None, xuid: str | None = None) -> None:
+        number = next(PLAYER_NUMBERS)
         self.key = ec.generate_private_key(ec.SECP384R1())
-        self.name = name
-        self.xuid = xuid
+        self.name = name or f"Steve{number}"
+        self.xuid = xuid or str(2535400000000000 + number)
         self.cpk = spki(self.key)
 
     def write_key(self, path: Path) -> Path:
@@ -439,7 +444,7 @@ class Backend:
             await connection.wait_closed()
 
         async def start():
-            server = serve_http(handler, host="127.0.0.1", port=0, identity_signer=signer)
+            server = serve_http(handler, host="127.0.0.1", port=0, identity_signer=signer, ice_servers=[])
             await server.start()
             return server
 

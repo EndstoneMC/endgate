@@ -250,7 +250,7 @@ class PythonServer:
             except Exception:
                 pass
 
-        self._server = serve_http(handler, host="127.0.0.1", port=0, identity_signer=signer)
+        self._server = serve_http(handler, host="127.0.0.1", port=0, identity_signer=signer, ice_servers=[])
         await self._server.start()
         self.port = self._server.bound_port
         self._ready.set()
