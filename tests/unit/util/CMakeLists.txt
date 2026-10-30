@@ -2,6 +2,7 @@ include(GoogleTest)
 
 add_executable(endgate_util_tests
         test_ratelimit.cpp
+        test_uuid.cpp
 )
 
 target_link_libraries(endgate_util_tests PRIVATE endgate::proxy GTest::gtest_main)

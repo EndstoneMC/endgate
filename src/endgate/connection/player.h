@@ -6,6 +6,7 @@
 #include <spdlog/logger.h>
 
 #include "endgate/connection/connection.h"
+#include "endgate/util/uuid.h"
 
 namespace endgate {
 
@@ -15,6 +16,7 @@ class ProxyServer;
  * @see com.velocitypowered.api.util.GameProfile
  */
 struct GameProfile {
+    UUID id;
     std::string xuid;
     std::string name;
     std::string client_data;

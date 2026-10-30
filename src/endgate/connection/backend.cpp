@@ -258,10 +258,12 @@ struct SelfSignedClaims {
     std::int64_t exp;
     std::int64_t iat;
     std::string xname;
+    std::string leguuid;
 
     struct glaze {
         using T = SelfSignedClaims;
-        static constexpr auto value = glz::object("cpk", &T::cpk, "exp", &T::exp, "iat", &T::iat, "xname", &T::xname);
+        static constexpr auto value =
+            glz::object("cpk", &T::cpk, "exp", &T::exp, "iat", &T::iat, "xname", &T::xname, "leguuid", &T::leguuid);
     };
 };
 
@@ -338,10 +340,12 @@ bool LoginSessionHandler::handle(const bp::NetworkSettingsPacket &packet)
     std::string claims;
     std::ignore = glz::write_json(TokenHeader{.alg = std::string(curveOf(key)->algorithm), .x5u = cpk}, header);
     const auto &profile = server_connection_->getPlayer().getGameProfile();
-    std::ignore = glz::write_json(
-        SelfSignedClaims{
-            .cpk = cpk, .exp = now + token_lifetime / std::chrono::seconds{1}, .iat = now, .xname = profile.name},
-        claims);
+    std::ignore = glz::write_json(SelfSignedClaims{.cpk = cpk,
+                                                   .exp = now + token_lifetime / std::chrono::seconds{1},
+                                                   .iat = now,
+                                                   .xname = profile.name,
+                                                   .leguuid = profile.id.toString()},
+                                  claims);
     std::map<std::string, glz::raw_json> client_data_claims;
     std::string name;
     std::string forwarded_client_data;

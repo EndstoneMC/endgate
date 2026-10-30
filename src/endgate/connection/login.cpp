@@ -172,8 +172,10 @@ bool InitialLoginSessionHandler::handle(const bp::LoginPacket &packet)
         connection_->closeWith(DisconnectFailReason::InvalidName);
         return true;
     }
-    profile_ =
-        GameProfile{.xuid = identity->getXuid(), .name = std::move(name), .client_data = request->client_data.claims};
+    const auto id = identity->getXuid().empty() ? UuidUtils::generateOfflinePlayerUuid(name)
+                                                : UuidUtils::generateXuidPlayerUuid(identity->getXuid());
+    profile_ = GameProfile{
+        .id = id, .xuid = identity->getXuid(), .name = std::move(name), .client_data = request->client_data.claims};
 
     if (keys == nullptr || connection_->isTransportEncrypted()) {
         finishLogin(std::move(*profile_));
