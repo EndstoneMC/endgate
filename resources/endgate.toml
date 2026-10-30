@@ -39,6 +39,16 @@ compression-threshold = 256
 # default level of 6.
 compression-level = -1
 
+# How fast (in milliseconds) are clients allowed to connect after the last connection? By
+# default, this is three seconds. Disable this by setting this to 0.
+login-ratelimit = 3000
+
+# Specify a custom timeout for connection timeouts here. The default is five seconds.
+connection-timeout = 5000
+
+# Specify a read timeout for connections here. The default is 30 seconds.
+read-timeout = 30000
+
 # Enables the logging of commands
 log-command-executions = false
 

@@ -30,6 +30,9 @@ public:
     [[nodiscard]] const std::vector<std::string> &getAttemptConnectionOrder() const;
     [[nodiscard]] int getCompressionThreshold() const;
     [[nodiscard]] int getCompressionLevel() const;
+    [[nodiscard]] int getLoginRatelimit() const;
+    [[nodiscard]] int getConnectTimeout() const;
+    [[nodiscard]] int getReadTimeout() const;
     [[nodiscard]] bool isLogCommandExecutions() const;
     [[nodiscard]] bool isLogPlayerConnections() const;
     [[nodiscard]] bool isPacketDecodeLogging() const;
@@ -48,6 +51,9 @@ private:
     std::vector<std::string> attempt_connection_order_;
     int compression_threshold_{};
     int compression_level_{};
+    int login_ratelimit_{};
+    int connection_timeout_{};
+    int read_timeout_{};
     bool log_command_executions_{};
     bool log_player_connections_{};
     bool packet_decode_logging_{};

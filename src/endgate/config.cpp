@@ -21,14 +21,19 @@ namespace {
 struct Advanced {
     int compression_threshold{};
     int compression_level{};
+    int login_ratelimit{};
+    int connection_timeout{};
+    int read_timeout{};
     bool log_command_executions{};
     bool log_player_connections{};
 
     struct glaze {
         using T = Advanced;
-        static constexpr auto value = glz::object(
-            "compression-threshold", &T::compression_threshold, "compression-level", &T::compression_level,
-            "log-command-executions", &T::log_command_executions, "log-player-connections", &T::log_player_connections);
+        static constexpr auto value =
+            glz::object("compression-threshold", &T::compression_threshold, "compression-level", &T::compression_level,
+                        "login-ratelimit", &T::login_ratelimit, "connection-timeout", &T::connection_timeout,
+                        "read-timeout", &T::read_timeout, "log-command-executions", &T::log_command_executions,
+                        "log-player-connections", &T::log_player_connections);
     };
 };
 
@@ -113,6 +118,9 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
     }
     config.compression_threshold_ = document.advanced.compression_threshold;
     config.compression_level_ = document.advanced.compression_level;
+    config.login_ratelimit_ = document.advanced.login_ratelimit;
+    config.connection_timeout_ = document.advanced.connection_timeout;
+    config.read_timeout_ = document.advanced.read_timeout;
     config.log_command_executions_ = document.advanced.log_command_executions;
     config.log_player_connections_ = document.advanced.log_player_connections;
     config.packet_decode_logging_ = document.debug.packet_decode_logging;
@@ -162,6 +170,11 @@ bool ProxyConfig::validate() const
     }
     else if (compression_level_ == 0) {
         logger().warn("ALL packets going through the proxy will be uncompressed. This will increase bandwidth usage.");
+    }
+
+    if (login_ratelimit_ < 0) {
+        logger().error("Invalid login ratelimit {}ms", login_ratelimit_);
+        valid = false;
     }
 
     if (tls_certificate_.empty() != tls_certificate_key_.empty()) {
@@ -222,6 +235,21 @@ int ProxyConfig::getCompressionThreshold() const
 int ProxyConfig::getCompressionLevel() const
 {
     return compression_level_;
+}
+
+int ProxyConfig::getLoginRatelimit() const
+{
+    return login_ratelimit_;
+}
+
+int ProxyConfig::getConnectTimeout() const
+{
+    return connection_timeout_;
+}
+
+int ProxyConfig::getReadTimeout() const
+{
+    return read_timeout_;
 }
 
 bool ProxyConfig::isLogCommandExecutions() const
