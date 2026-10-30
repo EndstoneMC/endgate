@@ -17,6 +17,7 @@
 #include "endgate/network/timeout.h"
 #include "endgate/protocol/cipher.h"
 #include "endgate/protocol/compress.h"
+#include "endgate/protocol/entity.h"
 #include "endgate/protocol/frame.h"
 #include "endgate/protocol/packet.h"
 #include "endgate/protocol/state.h"
@@ -244,6 +245,12 @@ public:
     void enableEncryption(std::span<const std::byte, MinecraftCipher::KEY_SIZE> key);
 
     /**
+     * Rewrites the player's actor IDs in every packet from here on, in both directions, while the map
+     * isn't the identity. Call on the connection's event loop.
+     */
+    void setEntityMap(const EntityMap &map);
+
+    /**
      * Sends a Disconnect with the reason, and the message when there is one, then closes. Call on the
      * connection's event loop.
      *
@@ -330,9 +337,10 @@ private:
         MinecraftConnection &connection_;
     };
 
-    using Pipeline = ChannelPipeline<Sink, MinecraftCipherDecoder, MinecraftCipherEncoder, MinecraftCompressDecoder,
-                                     MinecraftCompressEncoder, MinecraftVarintFrameDecoder, ReadTimeoutHandler,
-                                     MinecraftVarintLengthEncoder, MinecraftDecoder, MinecraftEncoder>;
+    using Pipeline =
+        ChannelPipeline<Sink, MinecraftCipherDecoder, MinecraftCipherEncoder, MinecraftCompressDecoder,
+                        MinecraftCompressEncoder, MinecraftVarintFrameDecoder, ReadTimeoutHandler,
+                        MinecraftVarintLengthEncoder, EntityRewriteHandler, MinecraftDecoder, MinecraftEncoder>;
 
     Endpoint &endpoint_;
     EventLoop &event_loop_;

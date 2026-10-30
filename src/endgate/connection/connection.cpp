@@ -19,7 +19,7 @@ MinecraftConnection::MinecraftConnection(Endpoint &endpoint, std::string remote_
                 MinecraftVarintFrameDecoder{},
                 ReadTimeoutHandler{event_loop_,
                                    std::chrono::milliseconds{endpoint.getServer().getConfiguration().getReadTimeout()}},
-                MinecraftVarintLengthEncoder{}, MinecraftDecoder{direction}, MinecraftEncoder{})
+                MinecraftVarintLengthEncoder{}, EntityRewriteHandler{}, MinecraftDecoder{direction}, MinecraftEncoder{})
 {
 }
 
@@ -74,6 +74,7 @@ void MinecraftConnection::setState(StateRegistry state)
 void MinecraftConnection::setProtocolVersion(ProtocolVersion version)
 {
     protocol_version_ = version;
+    pipeline_.get<EntityRewriteHandler>().setProtocolVersion(version);
     pipeline_.get<MinecraftDecoder>().setProtocolVersion(version);
     pipeline_.get<MinecraftEncoder>().setProtocolVersion(version);
 }
@@ -82,6 +83,11 @@ void MinecraftConnection::enableEncryption(std::span<const std::byte, MinecraftC
 {
     pipeline_.get<MinecraftCipherDecoder>().enableEncryption(key);
     pipeline_.get<MinecraftCipherEncoder>().enableEncryption(key);
+}
+
+void MinecraftConnection::setEntityMap(const EntityMap &map)
+{
+    pipeline_.get<EntityRewriteHandler>().setEntityMap(map);
 }
 
 void MinecraftConnection::closeWith(DisconnectFailReason reason, const std::string &message)

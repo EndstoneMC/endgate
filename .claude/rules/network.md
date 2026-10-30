@@ -43,11 +43,11 @@ Deviations from Netty:
 
 Netty's channel pipeline, 1:1: `ChannelPipeline`, `ChannelHandlerContext`, `ChannelInboundHandler` (`channelActive`, `channelInactive`, `channelRead`, `channelReadComplete`, `exceptionCaught`, `userEventTriggered`), `ChannelOutboundHandler` (`write`, `flush`, `close`), `fireChannelRead` and the other `fire` methods, `writeAndFlush`, and the codec bases `ByteToMessageDecoder`, `MessageToMessageDecoder` and `MessageToByteEncoder`.
 
-- Handlers are Velocity's, in Bedrock's order. Inbound: strip `0xFE` (RakNet only), `MinecraftCipherDecoder`, `MinecraftCompressDecoder`, `MinecraftVarintFrameDecoder`, `MinecraftDecoder`, then `MinecraftConnection`, which hands packets to the `MinecraftSessionHandler`. Outbound: `MinecraftEncoder`, `MinecraftVarintLengthEncoder`, then on `flush` a compression encoder and `MinecraftCipherEncoder`.
+- Handlers are Velocity's, in Bedrock's order. Inbound: strip `0xFE` (RakNet only), `MinecraftCipherDecoder`, `MinecraftCompressDecoder`, `MinecraftVarintFrameDecoder`, `ReadTimeoutHandler`, `EntityRewriteHandler`, `MinecraftDecoder`, then `MinecraftConnection`, which hands packets to the `MinecraftSessionHandler`. Outbound: `MinecraftEncoder`, `EntityRewriteHandler`, `MinecraftVarintLengthEncoder`, then on `flush` a compression encoder and `MinecraftCipherEncoder`.
 - Bedrock compresses the whole batch, so compression sits outside framing, the reverse of Java Edition.
 - Packets are registered as Velocity's `StateRegistry` registers them: each state lists what it decodes in each direction (`PacketRegistries<State>`), and each supported version resolves that list to bedrock-protocol's types (`ProtocolRegistry<Version>`). `MinecraftDecoder` takes Velocity's direction, `setState` and `setProtocolVersion`, and passes a packet its registry lacks on as a `ByteBufView` to `handleUnknown`, where Velocity passes `buf.retain()`.
 - A registered packet reaches the handler's `handle` overload for its type. One no overload takes reaches `handleGeneric` as the bytes it arrived in, which by default go to `handleUnknown`.
-- Decoded packets own their fields, as Velocity's do. Forwarding never decodes.
+- Decoded packets own their fields, as Velocity's do. Forwarding never decodes, except on a backend connection whose `EntityMap` isn't the identity: there `EntityRewriteHandler` decodes the packets that carry actor IDs to swap the player's runtime and unique IDs.
 - Flush at the end of each inbound batch, in `channelReadComplete`, so a forwarded batch leaves with the packets it arrived with.
 - Every forwarded batch is decompressed and compressed again, as Velocity does with every packet it forwards.
 - Stages push; nothing polls. Deadlines belong to the transport engines, not the pipeline.

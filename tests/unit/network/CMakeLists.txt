@@ -3,6 +3,7 @@ include(GoogleTest)
 add_executable(endgate_network_tests
         test_endpoint.cpp
         test_handlers.cpp
+        test_entity.cpp
         test_eventloop.cpp
         test_manager.cpp
         test_pipeline.cpp
