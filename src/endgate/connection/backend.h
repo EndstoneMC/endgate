@@ -8,6 +8,7 @@
 
 #include "endgate/awaitable.h"
 #include "endgate/connection/connection.h"
+#include "endgate/network/eventloop.h"
 
 namespace endgate {
 
@@ -32,6 +33,13 @@ public:
      * @see com.velocitypowered.proxy.connection.backend.VelocityServerConnection#connect
      */
     void connect();
+
+    /**
+     * Ends the connect timeout once the leg to the backend is up.
+     *
+     * @see io.netty.channel.ChannelOption#CONNECT_TIMEOUT_MILLIS
+     */
+    void connectionEstablished();
 
     /**
      * @see com.velocitypowered.proxy.connection.backend.VelocityServerConnection#disconnect
@@ -61,6 +69,8 @@ private:
     std::shared_ptr<MinecraftConnection> connection_;
     std::deque<ByteBuf> pending_;
     std::size_t pending_bytes_{0};
+    std::shared_ptr<ScheduledFuture> connect_timeout_;
+    bool established_{false};
     bool connected_{false};
 };
 

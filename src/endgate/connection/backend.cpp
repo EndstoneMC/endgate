@@ -42,6 +42,22 @@ ServerConnection::ServerConnection(BackendServer &server, std::shared_ptr<Player
 
 void ServerConnection::connect()
 {
+    const auto connect_timeout =
+        player_->getConnection().getEndpoint().getServer().getConfiguration().getConnectTimeout();
+    if (connect_timeout > 0) {
+        connect_timeout_ = player_->getConnection().eventLoop().schedule(
+            [self = shared_from_this()] {
+                if (self->established_ || !self->player_->isActive()) {
+                    return;
+                }
+                self->logger_.error("[connected player] {} ({}): unable to connect to server {}: connection timed out",
+                                    self->player_->getGameProfile().name,
+                                    self->player_->getConnection().getRemoteAddress(),
+                                    self->server_.getServerInfo().getName());
+                self->player_->disconnect();
+            },
+            std::chrono::milliseconds{connect_timeout});
+    }
     asio::co_spawn(player_->getConnection().eventLoop().getExecutor(), open(shared_from_this()), asio::detached);
 }
 
@@ -105,8 +121,19 @@ Awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> self)
     connection->connect();
 }
 
+void ServerConnection::connectionEstablished()
+{
+    established_ = true;
+    if (const auto timeout = std::exchange(connect_timeout_, nullptr)) {
+        timeout->cancel();
+    }
+}
+
 void ServerConnection::disconnect()
 {
+    if (const auto timeout = std::exchange(connect_timeout_, nullptr)) {
+        timeout->cancel();
+    }
     pending_.clear();
     pending_bytes_ = 0;
     if (connection_) {
@@ -280,6 +307,7 @@ LoginSessionHandler::LoginSessionHandler(std::shared_ptr<ServerConnection> serve
 
 void LoginSessionHandler::connected()
 {
+    server_connection_->connectionEstablished();
     auto *const backend = server_connection_->getConnection();
     const auto version = server_connection_->getPlayer().getConnection().getProtocolVersion();
     backend->setState(StateRegistry::Login);
