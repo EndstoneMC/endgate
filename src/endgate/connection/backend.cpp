@@ -229,10 +229,11 @@ struct SelfSignedClaims {
     std::string cpk;
     std::int64_t exp;
     std::int64_t iat;
+    std::string xname;
 
     struct glaze {
         using T = SelfSignedClaims;
-        static constexpr auto value = glz::object("cpk", &T::cpk, "exp", &T::exp, "iat", &T::iat);
+        static constexpr auto value = glz::object("cpk", &T::cpk, "exp", &T::exp, "iat", &T::iat, "xname", &T::xname);
     };
 };
 
@@ -307,10 +308,13 @@ bool LoginSessionHandler::handle(const bp::NetworkSettingsPacket &packet)
     std::string header;
     std::string claims;
     std::ignore = glz::write_json(TokenHeader{.alg = std::string(curveOf(key)->algorithm), .x5u = cpk}, header);
+    const auto &profile = server_connection_->getPlayer().getGameProfile();
     std::ignore = glz::write_json(
-        SelfSignedClaims{.cpk = cpk, .exp = now + token_lifetime / std::chrono::seconds{1}, .iat = now}, claims);
+        SelfSignedClaims{
+            .cpk = cpk, .exp = now + token_lifetime / std::chrono::seconds{1}, .iat = now, .xname = profile.name},
+        claims);
     const auto token = signToken(key, header, claims);
-    const auto client_data = signToken(key, header, server_connection_->getPlayer().getGameProfile().client_data);
+    const auto client_data = signToken(key, header, profile.client_data);
     std::string authentication;
     if (!token || !client_data ||
         glz::write_json(LoginAuthentication{.authentication_type = 2, .token = *token}, authentication)) {
