@@ -7,6 +7,7 @@ add_executable(endgate_network_tests
         test_manager.cpp
         test_pipeline.cpp
         test_registry.cpp
+        test_timeout.cpp
 )
 
 target_link_libraries(endgate_network_tests PRIVATE endgate::proxy GTest::gtest_main)

@@ -14,6 +14,7 @@
 #include "endgate/buffer/bytebuf.h"
 #include "endgate/network/eventloop.h"
 #include "endgate/network/pipeline.h"
+#include "endgate/network/timeout.h"
 #include "endgate/protocol/cipher.h"
 #include "endgate/protocol/compress.h"
 #include "endgate/protocol/frame.h"
@@ -330,7 +331,7 @@ private:
     };
 
     using Pipeline = ChannelPipeline<Sink, MinecraftCipherDecoder, MinecraftCipherEncoder, MinecraftCompressDecoder,
-                                     MinecraftCompressEncoder, MinecraftVarintFrameDecoder,
+                                     MinecraftCompressEncoder, MinecraftVarintFrameDecoder, ReadTimeoutHandler,
                                      MinecraftVarintLengthEncoder, MinecraftDecoder, MinecraftEncoder>;
 
     Endpoint &endpoint_;

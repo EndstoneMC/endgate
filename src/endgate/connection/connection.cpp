@@ -1,5 +1,6 @@
 #include "endgate/connection/connection.h"
 
+#include <chrono>
 #include <utility>
 #include <variant>
 
@@ -15,8 +16,10 @@ MinecraftConnection::MinecraftConnection(Endpoint &endpoint, std::string remote_
       remote_address_(std::move(remote_address)), sink_(*this),
       pipeline_(sink_, MinecraftCipherDecoder{}, MinecraftCipherEncoder{}, MinecraftCompressDecoder{},
                 MinecraftCompressEncoder{endpoint.getServer().getConfiguration().getCompressionLevel()},
-                MinecraftVarintFrameDecoder{}, MinecraftVarintLengthEncoder{}, MinecraftDecoder{direction},
-                MinecraftEncoder{})
+                MinecraftVarintFrameDecoder{},
+                ReadTimeoutHandler{event_loop_,
+                                   std::chrono::milliseconds{endpoint.getServer().getConfiguration().getReadTimeout()}},
+                MinecraftVarintLengthEncoder{}, MinecraftDecoder{direction}, MinecraftEncoder{})
 {
 }
 
@@ -159,6 +162,10 @@ void MinecraftConnection::Sink::channelInactive()
 
 void MinecraftConnection::Sink::exceptionCaught(const std::exception &cause)
 {
+    if (dynamic_cast<const ReadTimeoutException *>(&cause) != nullptr) {
+        connection_.logger_.error("{}: read timed out", connection_.remote_address_);
+        return;
+    }
     if (dynamic_cast<const DecoderException *>(&cause) == nullptr) {
         connection_.logger_.error("{}: exception encountered: {}", connection_.remote_address_, cause.what());
         connection_.disconnect(true);
