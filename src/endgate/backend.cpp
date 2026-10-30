@@ -102,6 +102,7 @@ Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(a
         co_return detected;
     }
 
+    std::optional<ServerPing> announcement;
     const auto probe =
         co_await nethernet::SignalingClient::probeNetherNet(io_context, info_.getHost(), info_.getPort(),
                                                             {.connect_timeout = signaling_timeout,
@@ -109,9 +110,11 @@ Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(a
                                                              .tls_handshake_timeout = signaling_timeout});
     if (probe.supported) {
         detected = ServerInfo::Transport::NetherNet;
+        announcement = probe.ping;
     }
-    else if (co_await ping(address, ping_timeout)) {
+    else if (const auto pong = co_await ping(address, ping_timeout); pong.answered) {
         detected = ServerInfo::Transport::RakNet;
+        announcement = pong.ping;
     }
     if (!detected) {
         logger_.debug("Server {} supports neither NetherNet nor RakNet", info_.getName());
@@ -120,6 +123,10 @@ Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(a
     logger_.debug("Server {} uses {}", info_.getName(), toString(*detected));
     const std::scoped_lock lock(mutex_);
     detected_ = detected;
+    if (announcement && announcement->getVersion().getProtocol() > 0) {
+        detected_protocol_ = announcement->getVersion().getProtocol();
+        logger_.debug("Server {} speaks protocol {}", info_.getName(), *detected_protocol_);
+    }
     co_return detected;
 }
 
@@ -127,16 +134,23 @@ void BackendServer::forgetTransport()
 {
     const std::scoped_lock lock(mutex_);
     detected_.reset();
+    detected_protocol_.reset();
 }
 
-Awaitable<bool> BackendServer::ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout)
+std::optional<int> BackendServer::getProtocol()
+{
+    const std::scoped_lock lock(mutex_);
+    return detected_protocol_;
+}
+
+Awaitable<BackendServer::Pong> BackendServer::ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout)
 {
     constexpr int attempts = 4;
 
     asio::ip::udp::socket socket(co_await asio::this_coro::executor);
     asio::error_code ec;
     if (socket.open(address.protocol(), ec) || socket.connect(address, ec)) {
-        co_return false;
+        co_return Pong{};
     }
 
     const auto started = std::chrono::steady_clock::now();
@@ -152,7 +166,7 @@ Awaitable<bool> BackendServer::ping(asio::ip::udp::endpoint address, std::chrono
     for (int attempt = 1; attempt <= attempts; ++attempt) {
         socket.send(asio::buffer(request.nioBuffer()), 0, ec);
         if (ec) {
-            co_return false;
+            co_return Pong{};
         }
         const auto deadline = started + timeout * attempt / attempts;
         for (auto now = std::chrono::steady_clock::now(); now < deadline; now = std::chrono::steady_clock::now()) {
@@ -162,14 +176,24 @@ Awaitable<bool> BackendServer::ping(asio::ip::udp::endpoint address, std::chrono
                 break;
             }
             if (error) {
-                co_return false;
+                co_return Pong{};
             }
-            if (raknet::UnconnectedPong::decode(Unpooled::wrappedBuffer(std::span{response}.first(size)))) {
-                co_return true;
+            const auto pong = raknet::UnconnectedPong::decode(Unpooled::wrappedBuffer(std::span{response}.first(size)));
+            if (!pong) {
+                continue;
             }
+            auto data = pong->data;
+            if (!data.isReadable(2)) {
+                co_return Pong{.answered = true};
+            }
+            const auto length = std::min<std::size_t>(data.readUnsignedShort(), data.readableBytes());
+            const auto bytes = data.readSlice(length).nioBuffer();
+            co_return Pong{.answered = true,
+                           .ping = ServerPing::parseMotd(
+                               std::string_view{reinterpret_cast<const char *>(bytes.data()), bytes.size()})};
         }
     }
-    co_return false;
+    co_return Pong{};
 }
 
 }  // namespace endgate

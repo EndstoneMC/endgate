@@ -1,6 +1,5 @@
 #include "endgate/network/offline.h"
 
-#include <format>
 #include <optional>
 #include <random>
 #include <string>
@@ -17,14 +16,7 @@ OfflineMessageHandler::OfflineMessageHandler(ProxyServer &server)
 
 void OfflineMessageHandler::setPingResponder(std::uint16_t port)
 {
-    constexpr int joinable_through_server_screen = 1;
-    constexpr int editor_world = 0;
-
-    const auto ping = server_.getServerListPingHandler().getInitialPing(std::nullopt);
-    const auto announcement = std::format(
-        "MCPE;{};{};{};{};{};{};{};{};{};{};{};{};", ping.getDescription(), ping.getVersion().getProtocol(),
-        ping.getVersion().getName(), ping.getPlayers().getOnline(), ping.getPlayers().getMax(), guid_,
-        ping.getLevelName(), toString(ping.getGameType()), joinable_through_server_screen, port, port, editor_world);
+    const auto announcement = server_.getServerListPingHandler().getInitialPing(std::nullopt).toMotd(guid_, port);
 
     const auto length = static_cast<std::uint16_t>(announcement.size());
     offline_ping_response_.clear();

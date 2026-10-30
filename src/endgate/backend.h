@@ -12,6 +12,7 @@
 #include <spdlog/logger.h>
 
 #include "endgate/awaitable.h"
+#include "endgate/network/ping.h"
 
 namespace endgate {
 
@@ -78,18 +79,36 @@ public:
     void forgetTransport();
 
     /**
-     * Sends RakNet unconnected pings until one is answered.
+     * The protocol the backend answered its last ping with, once one has been detected. A player is only
+     * sent to a backend that speaks its own protocol.
+     */
+    [[nodiscard]] std::optional<int> getProtocol();
+
+    /**
+     * Whether the backend answered a ping, and what its announcement said when it could be read. An
+     * answer is what names the transport; the announcement is only where the protocol comes from.
+     *
+     * @see NetherNet::SignalingClient::Probe
+     */
+    struct Pong {
+        bool answered{false};
+        std::optional<ServerPing> ping;
+    };
+
+    /**
+     * Sends RakNet unconnected pings until one is answered, and reads the announcement it carries.
      *
      * @see com.velocitypowered.proxy.server.VelocityRegisteredServer#ping
      * @see RakNet::RakPeer::Ping
      */
-    [[nodiscard]] static Awaitable<bool> ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout);
+    [[nodiscard]] static Awaitable<Pong> ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout);
 
 private:
     ServerInfo info_;
     spdlog::logger &logger_;
     std::mutex mutex_;
     std::optional<ServerInfo::Transport> detected_;
+    std::optional<int> detected_protocol_;
 };
 
 }  // namespace endgate

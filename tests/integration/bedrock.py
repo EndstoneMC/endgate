@@ -138,6 +138,12 @@ class Services:
         self._server.server_close()
 
 
+def announcement(protocol: int) -> bytes:
+    """A Bedrock server's unconnected pong payload: the semicolon fields behind their length."""
+    fields = f"MCPE;Dedicated Server;{protocol};1.26.60;0;10;1;Bedrock level;Survival;1;19132;19133;0;"
+    return len(fields).to_bytes(2, "big") + fields.encode()
+
+
 PLAYER_NUMBERS = itertools.count(1)
 
 
@@ -422,14 +428,24 @@ def make_player(
 class Backend:
     """A Bedrock server on RakNet or NetherNet that logs players in and hands each one's session to the test."""
 
-    def __init__(self, transport: str = "raknet", encrypt: bool = False, threshold: int = 256, delay: int = 0) -> None:
+    def __init__(
+        self,
+        transport: str = "raknet",
+        encrypt: bool = False,
+        threshold: int = 256,
+        delay: int = 0,
+        protocol: int = 2225,
+    ) -> None:
         self.transport = transport
+        self.protocol = protocol
         self.arguments = ["server", "--threshold", str(threshold), "--delay", str(delay)]
         self.arguments += ["--encrypt"] if encrypt else []
         self.sessions: queue.Queue[Session] = queue.Queue()
         self.all: list[Session] = []
         if transport == "raknet":
-            self.server = raknet.create_server(("127.0.0.1", free_port()), max_connections=32)
+            self.server = raknet.create_server(
+                ("127.0.0.1", free_port()), max_connections=32, offline_ping_response=announcement(protocol)
+            )
             self.port = self.server.local_address[1]
             threading.Thread(target=self.server.serve_forever, args=(self._serve,), daemon=True).start()
         else:

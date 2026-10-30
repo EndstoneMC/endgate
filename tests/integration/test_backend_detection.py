@@ -46,6 +46,23 @@ def test_a_raknet_pin_skips_detection(make_proxy, backend, round_trip):
     assert not proxy.events("DEBUG Server .* uses")
 
 
+def test_a_backends_protocol_is_read_from_its_announcement(make_proxy, backend, round_trip):
+    proxy = make_proxy(backend.port, debug=True)
+    assert round_trip(proxy, backend) == "ping"
+    assert proxy.events(r"DEBUG Server lobby speaks protocol 2225")
+
+
+def test_a_backend_that_announces_no_protocol_is_still_reached(make_proxy, round_trip):
+    quiet = Backend("raknet", protocol=0)
+    try:
+        proxy = make_proxy(quiet.port, debug=True)
+        assert round_trip(proxy, quiet) == "ping"
+        assert proxy.events(r"DEBUG Server lobby uses RakNet")
+        assert not proxy.events(r"DEBUG Server .* speaks protocol")
+    finally:
+        quiet.close()
+
+
 def test_a_bare_address_on_a_nethernet_server_is_detected_as_nethernet(make_proxy, nethernet_backend, round_trip):
     proxy = make_proxy(nethernet_backend.port, debug=True)
     assert round_trip(proxy, nethernet_backend) == "ping"

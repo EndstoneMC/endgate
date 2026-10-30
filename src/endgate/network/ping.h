@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -40,6 +41,17 @@ enum class GameType {
         return "Spectator";
     }
     return "";
+}
+
+[[nodiscard]] constexpr std::optional<GameType> fromString(std::string_view name)
+{
+    for (const auto type :
+         {GameType::Survival, GameType::Creative, GameType::Adventure, GameType::Default, GameType::Spectator}) {
+        if (toString(type) == name) {
+            return type;
+        }
+    }
+    return std::nullopt;
 }
 
 /**
@@ -97,6 +109,10 @@ public:
     [[nodiscard]] const std::string &getLevelName() const { return level_name_; }
 
     [[nodiscard]] GameType getGameType() const { return game_type_; }
+
+    [[nodiscard]] std::string toMotd(std::uint64_t guid, std::uint16_t port) const;
+
+    [[nodiscard]] static std::optional<ServerPing> parseMotd(std::string_view announcement);
 
 private:
     Version version_;

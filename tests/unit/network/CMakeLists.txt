@@ -6,6 +6,7 @@ add_executable(endgate_network_tests
         test_entity.cpp
         test_eventloop.cpp
         test_manager.cpp
+        test_ping.cpp
         test_pipeline.cpp
         test_registry.cpp
         test_timeout.cpp
