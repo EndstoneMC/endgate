@@ -201,6 +201,11 @@ public:
     void setSessionHandler(std::shared_ptr<MinecraftSessionHandler> handler);
 
     /**
+     * @see com.velocitypowered.proxy.connection.MinecraftConnection#getActiveSessionHandler
+     */
+    [[nodiscard]] const std::shared_ptr<MinecraftSessionHandler> &getActiveSessionHandler() const { return handler_; }
+
+    /**
      * Turns framing and decoding on, decoding what the state registers. Call on the connection's event
      * loop.
      *

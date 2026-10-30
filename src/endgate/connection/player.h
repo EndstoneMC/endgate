@@ -112,10 +112,23 @@ public:
     void readCompleted() override;
     void disconnected() override;
 
+    /**
+     * Keeps the player's actor IDs from the first backend's StartGame, which the client holds for the whole
+     * session, and maps every later backend's IDs onto them. Returns whether the client takes this
+     * StartGame, which only the first backend's is.
+     *
+     * @see com.velocitypowered.proxy.connection.client.ClientPlaySessionHandler#handleBackendJoinGame
+     */
+    [[nodiscard]] bool handleBackendStartGame(bp::ActorRuntimeID runtime_id, bp::ActorUniqueID unique_id,
+                                              ServerConnection &destination);
+
 private:
     spdlog::logger &logger_;
     std::shared_ptr<Player> player_;
     bool connected_{false};
+    bool spawned_{false};
+    bp::ActorRuntimeID runtime_id_;
+    bp::ActorUniqueID unique_id_;
 };
 
 }  // namespace endgate

@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <bedrock/protocol/game.h>
 #include <bedrock/protocol/network.h>
 #include <bedrock/protocol/packet.hpp>
 
@@ -90,7 +91,7 @@ struct PacketRegistries<StateRegistry::Login> {
 template <>
 struct PacketRegistries<StateRegistry::Play> {
     using Serverbound = PacketRegistry<>;
-    using Clientbound = PacketRegistry<bp::MinecraftPacketIds::Disconnect>;
+    using Clientbound = PacketRegistry<bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::StartGame>;
 };
 
 template <StateRegistry State, Direction D, int Version>
@@ -174,5 +175,25 @@ struct CollectRegistered<List, SUPPORTED_VERSIONS.size()> {
 };
 
 using RegisteredPackets = CollectRegistered<TypeList<>>::Type;
+
+template <bp::MinecraftPacketIds Id, typename List = TypeList<>, std::size_t I = 0>
+struct CollectPacketTypes {
+    using Type = CollectPacketTypes<Id,
+                                    typename AppendUnique<List, bp::packet_of_t<SUPPORTED_VERSIONS.at(I).getProtocol(),
+                                                                                static_cast<int>(Id)>>::Type,
+                                    I + 1>::Type;
+};
+
+template <bp::MinecraftPacketIds Id, typename List>
+struct CollectPacketTypes<Id, List, SUPPORTED_VERSIONS.size()> {
+    using Type = List;
+};
+
+/**
+ * The distinct types one packet has across the supported versions. A handler that takes the packet
+ * needs a handle overload for each of them.
+ */
+template <bp::MinecraftPacketIds Id>
+using PacketTypes = CollectPacketTypes<Id>::Type;
 
 }  // namespace endgate

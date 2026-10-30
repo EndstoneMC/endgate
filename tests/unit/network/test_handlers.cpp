@@ -10,11 +10,15 @@
 #include <utility>
 #include <vector>
 
+#include <bedrock/protocol/game.h>
+#include <bedrock/protocol/serializer.hpp>
+#include <bedrock/protocol/stream.hpp>
 #include <gtest/gtest.h>
 #include <openssl/evp.h>
 
 #include "endgate/buffer/bytebuf.h"
 #include "endgate/network/pipeline.h"
+#include "endgate/network/version.h"
 #include "endgate/protocol/cipher.h"
 #include "endgate/protocol/compress.h"
 #include "endgate/protocol/frame.h"
@@ -75,6 +79,18 @@ std::string requestNetworkSettings(std::uint32_t header, std::int32_t version)
     auto packet = Unpooled::buffer();
     packet.writeUnsignedVarInt(header);
     packet.writeInt(version);
+    const auto bytes = packet.nioBuffer();
+    return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
+}
+
+std::string startGame()
+{
+    std::string body;
+    bp::BinaryWriter writer{body};
+    bp::serialize(writer, bp::StartGamePacket{});
+    auto packet = Unpooled::buffer();
+    packet.writeUnsignedVarInt(static_cast<std::uint32_t>(bp::StartGamePacket::Id));
+    packet.writeBytes(std::as_bytes(std::span{body}));
     const auto bytes = packet.nioBuffer();
     return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
 }
@@ -275,6 +291,25 @@ TEST(MinecraftDecoder, DecodesOnlyWhatItsStateRegistersInItsDirection)
             EXPECT_EQ(wire.versions.size(), registered ? 1U : 0U);
             EXPECT_EQ(wire.unknown.size(), registered ? 0U : 1U);
         }
+    }
+}
+
+TEST(MinecraftDecoder, DecodesStartGameOnlyFromABackend)
+{
+    const auto packet = startGame();
+    for (const auto direction : {Direction::Serverbound, Direction::Clientbound}) {
+        Wire wire;
+        auto chain = chainOf(wire, direction);
+        switchOn(chain);
+        chain.get<MinecraftDecoder>().setProtocolVersion(MAXIMUM_VERSION);
+        chain.get<MinecraftDecoder>().setState(StateRegistry::Play);
+
+        chain.fireChannelRead(framed({packet}).slice());
+
+        const auto registered = direction == Direction::Clientbound;
+        EXPECT_EQ(wire.other_packets.size(), registered ? 1U : 0U);
+        EXPECT_EQ(wire.unknown.size(), registered ? 0U : 1U);
+        EXPECT_TRUE(wire.errors.empty()) << wire.errors.front();
     }
 }
 

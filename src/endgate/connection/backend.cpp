@@ -7,9 +7,11 @@
 #include <optional>
 #include <random>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 #include <asio/as_tuple.hpp>
@@ -183,8 +185,28 @@ void ServerConnection::connected()
 }
 
 BackendPlaySessionHandler::BackendPlaySessionHandler(std::shared_ptr<ServerConnection> server_connection)
-    : logger_(LogManager::getLogger("BackendPlaySessionHandler")), server_connection_(std::move(server_connection))
+    : logger_(LogManager::getLogger("BackendPlaySessionHandler")), server_connection_(std::move(server_connection)),
+      player_session_handler_(std::dynamic_pointer_cast<ClientPlaySessionHandler>(
+          server_connection_->getPlayer().getConnection().getActiveSessionHandler()))
 {
+    if (!player_session_handler_) {
+        throw std::logic_error("Initializing BackendPlaySessionHandler with no backing client play session handler!");
+    }
+}
+
+static_assert(std::is_same_v<PacketTypes<bp::MinecraftPacketIds::StartGame>,
+                             TypeList<bp::StartGamePacket_<MINIMUM_VERSION.getProtocol()>,
+                                      bp::StartGamePacket_<MAXIMUM_VERSION.getProtocol()>>>,
+              "a supported version's StartGame has a type BackendPlaySessionHandler doesn't handle");
+
+bool BackendPlaySessionHandler::handle(const bp::StartGamePacket_<MINIMUM_VERSION.getProtocol()> &packet)
+{
+    return !player_session_handler_->handleBackendStartGame(packet.runtime_id, packet.entity_id, *server_connection_);
+}
+
+bool BackendPlaySessionHandler::handle(const bp::StartGamePacket_<MAXIMUM_VERSION.getProtocol()> &packet)
+{
+    return !player_session_handler_->handleBackendStartGame(packet.runtime_id, packet.entity_id, *server_connection_);
 }
 
 void BackendPlaySessionHandler::activated()

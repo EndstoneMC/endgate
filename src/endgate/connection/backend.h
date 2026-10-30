@@ -14,6 +14,7 @@ namespace endgate {
 
 class Player;
 class BackendServer;
+class ClientPlaySessionHandler;
 
 /**
  * The proxy's connection to a backend on behalf of one player. Its methods run on the player's event
@@ -111,8 +112,12 @@ class BackendPlaySessionHandler final : public MinecraftSessionHandler {
 public:
     explicit BackendPlaySessionHandler(std::shared_ptr<ServerConnection> server_connection);
 
+    using MinecraftSessionHandler::handle;
+
     void activated() override;
     void connected() override {}
+    bool handle(const bp::StartGamePacket_<MINIMUM_VERSION.getProtocol()> &packet) override;
+    bool handle(const bp::StartGamePacket_<MAXIMUM_VERSION.getProtocol()> &packet) override;
     void handleUnknown(ByteBufView batch) override;
     void readCompleted() override;
     void disconnected() override;
@@ -120,6 +125,7 @@ public:
 private:
     spdlog::logger &logger_;
     std::shared_ptr<ServerConnection> server_connection_;
+    std::shared_ptr<ClientPlaySessionHandler> player_session_handler_;
     bool connected_{false};
 };
 

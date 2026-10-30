@@ -104,4 +104,17 @@ void ClientPlaySessionHandler::disconnected()
     player_->teardown();
 }
 
+bool ClientPlaySessionHandler::handleBackendStartGame(bp::ActorRuntimeID runtime_id, bp::ActorUniqueID unique_id,
+                                                      ServerConnection &destination)
+{
+    if (!spawned_) {
+        spawned_ = true;
+        runtime_id_ = runtime_id;
+        unique_id_ = unique_id;
+        return true;
+    }
+    destination.getConnection()->setEntityMap(EntityMap{runtime_id_, unique_id_, runtime_id, unique_id});
+    return false;
+}
+
 }  // namespace endgate
