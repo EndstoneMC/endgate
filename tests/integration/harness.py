@@ -62,6 +62,7 @@ class Proxy:
         log_player_connections: bool = True,
         packet_decode_logging: bool = False,
         services=None,
+        login_ratelimit: int = 0,
     ) -> None:
         self.binary = binary
         self.workdir = workdir
@@ -73,6 +74,7 @@ class Proxy:
         self.tls = tls
         self.log_player_connections = log_player_connections
         self.packet_decode_logging = packet_decode_logging
+        self.login_ratelimit = login_ratelimit
         self.services = services
         self.lines: list[str] = []
         self._listening = threading.Event()
@@ -110,6 +112,7 @@ class Proxy:
                     'try = ["lobby"]',
                     "[advanced]",
                     "compression-level = -1",
+                    f"login-ratelimit = {self.login_ratelimit}",
                     f"log-player-connections = {str(self.log_player_connections).lower()}",
                     "[debug]",
                     f"packet-decode-logging = {str(self.packet_decode_logging).lower()}",
