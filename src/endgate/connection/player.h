@@ -12,7 +12,7 @@
 
 #include "endgate/connection/connection.h"
 #include "endgate/connection/settings.h"
-#include "endgate/tablist/tablist.h"
+#include "endgate/playerlist/playerlist.h"
 #include "endgate/util/uuid.h"
 
 namespace endgate {
@@ -112,7 +112,7 @@ public:
     /**
      * @see com.velocitypowered.api.proxy.Player#getTabList
      */
-    [[nodiscard]] TabList &getTabList() { return tab_list_; }
+    [[nodiscard]] PlayerList &getPlayerList() { return player_list_; }
 
 private:
     ProxyServer &server_;
@@ -121,7 +121,7 @@ private:
     GameProfile profile_;
     std::shared_ptr<ServerConnection> connected_server_;
     ClientSettings settings_;
-    TabList tab_list_;
+    PlayerList player_list_;
     bool active_{true};
 };
 

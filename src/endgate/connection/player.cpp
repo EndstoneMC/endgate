@@ -17,7 +17,7 @@ namespace endgate {
 
 Player::Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection, GameProfile profile)
     : server_(server), logger_(LogManager::getLogger(*this)), connection_(std::move(connection)),
-      profile_(std::move(profile)), tab_list_(*connection_)
+      profile_(std::move(profile)), player_list_(*connection_)
 {
 }
 
@@ -120,7 +120,7 @@ bool ClientPlaySessionHandler::handleBackendStartGame(bp::ActorRuntimeID runtime
     }
 
     auto &backend = destination.ensureConnected();
-    player_->getTabList().clearAll();
+    player_->getPlayerList().clearAll();
     auto &client = player_->getConnection();
     visitProtocolVersion(client.getProtocolVersion().getProtocol(), [&]<int Version>() {
         for (const auto actor : server_actors_) {

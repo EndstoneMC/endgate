@@ -16,12 +16,12 @@ class MinecraftConnection;
  * @see com.velocitypowered.api.proxy.player.TabList
  * @see com.velocitypowered.proxy.tablist.VelocityTabListLegacy
  */
-class TabList {
+class PlayerList {
 public:
-    explicit TabList(MinecraftConnection &connection) : connection_(connection) {}
+    explicit PlayerList(MinecraftConnection &connection) : connection_(connection) {}
 
     /**
-     * Clears all entries from the tab list.
+     * Clears all entries from the player list.
      *
      * @see com.velocitypowered.api.proxy.player.TabList#clearAll
      */

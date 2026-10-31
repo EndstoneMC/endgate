@@ -140,7 +140,7 @@ public:
         requires IsPacket<Packet, bp::MinecraftPacketIds::PlayerList>
     bool handleEach(const Packet &packet)
     {
-        server_connection_->getPlayer().getTabList().processLegacy(packet);
+        server_connection_->getPlayer().getPlayerList().processLegacy(packet);
         return false;
     }
 

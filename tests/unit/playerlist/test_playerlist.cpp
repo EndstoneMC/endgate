@@ -10,7 +10,7 @@
 #include <bedrock/protocol/stream.hpp>
 #include <gtest/gtest.h>
 
-#include "endgate/tablist/tablist.h"
+#include "endgate/playerlist/playerlist.h"
 #include "support.h"
 
 namespace endgate {
@@ -45,7 +45,7 @@ Packet decode(const ByteBuf &batch)
     return bp::deserialize<Packet>(reader).value();
 }
 
-class TabListTest : public testing::Test {
+class PlayerListTest : public testing::Test {
 protected:
     [[nodiscard]] std::shared_ptr<TestConnection> client(ProtocolVersion version = MAXIMUM_VERSION)
     {
@@ -57,10 +57,10 @@ protected:
         return connection;
     }
 
-    void clearAll(TabList &tab_list, MinecraftConnection &connection)
+    void clearAll(PlayerList &player_list, MinecraftConnection &connection)
     {
         node_.call([&] {
-            tab_list.clearAll();
+            player_list.clearAll();
             connection.flush();
             return 0;
         });
@@ -71,14 +71,14 @@ protected:
     Node node_{server_, registry_};
 };
 
-TEST_F(TabListTest, ClearAllRemovesTheEntriesTheBackendLeft)
+TEST_F(PlayerListTest, ClearAllRemovesTheEntriesTheBackendLeft)
 {
     const auto connection = client();
-    TabList tab_list{*connection};
-    tab_list.processLegacy(playerList<MAXIMUM_VERSION.getProtocol()>({STEVE, ALEX}));
-    tab_list.processLegacy(playerList<MAXIMUM_VERSION.getProtocol()>({}, {ALEX}));
+    PlayerList player_list{*connection};
+    player_list.processLegacy(playerList<MAXIMUM_VERSION.getProtocol()>({STEVE, ALEX}));
+    player_list.processLegacy(playerList<MAXIMUM_VERSION.getProtocol()>({}, {ALEX}));
 
-    clearAll(tab_list, *connection);
+    clearAll(player_list, *connection);
 
     ASSERT_EQ(connection->batches().size(), 1U);
     const auto entries = decode<bp::PlayerListPacket>(connection->batches()[0]).entries;
@@ -89,45 +89,45 @@ TEST_F(TabListTest, ClearAllRemovesTheEntriesTheBackendLeft)
     EXPECT_EQ(removed.uuid.least_significant_bits, STEVE.least_significant_bits);
 }
 
-TEST_F(TabListTest, ClearAllForgetsWhatItRemoved)
+TEST_F(PlayerListTest, ClearAllForgetsWhatItRemoved)
 {
     const auto connection = client();
-    TabList tab_list{*connection};
-    tab_list.processLegacy(playerList<MAXIMUM_VERSION.getProtocol()>({STEVE}));
+    PlayerList player_list{*connection};
+    player_list.processLegacy(playerList<MAXIMUM_VERSION.getProtocol()>({STEVE}));
 
-    clearAll(tab_list, *connection);
-    clearAll(tab_list, *connection);
+    clearAll(player_list, *connection);
+    clearAll(player_list, *connection);
 
     ASSERT_EQ(connection->batches().size(), 2U);
     EXPECT_TRUE(decode<bp::PlayerListPacket>(connection->batches()[1]).entries.empty());
 }
 
-TEST_F(TabListTest, ClearAllSpeaksTheClientsVersion)
+TEST_F(PlayerListTest, ClearAllSpeaksTheClientsVersion)
 {
     constexpr auto protocol = MINIMUM_VERSION.getProtocol();
-    using PlayerList = PacketOf<protocol, bp::MinecraftPacketIds::PlayerList>;
+    using PlayerListPacket = PacketOf<protocol, bp::MinecraftPacketIds::PlayerList>;
     const auto connection = client(MINIMUM_VERSION);
-    TabList tab_list{*connection};
-    tab_list.processLegacy(playerList<protocol>({STEVE}));
+    PlayerList player_list{*connection};
+    player_list.processLegacy(playerList<protocol>({STEVE}));
 
-    clearAll(tab_list, *connection);
+    clearAll(player_list, *connection);
 
     ASSERT_EQ(connection->batches().size(), 1U);
-    EXPECT_EQ(decode<PlayerList>(connection->batches()[0]).entries.size(), 1U);
+    EXPECT_EQ(decode<PlayerListPacket>(connection->batches()[0]).entries.size(), 1U);
 }
 
-TEST_F(TabListTest, ClearAllSilentSendsNothing)
+TEST_F(PlayerListTest, ClearAllSilentSendsNothing)
 {
     const auto connection = client();
-    TabList tab_list{*connection};
-    tab_list.processLegacy(playerList<MAXIMUM_VERSION.getProtocol()>({STEVE}));
+    PlayerList player_list{*connection};
+    player_list.processLegacy(playerList<MAXIMUM_VERSION.getProtocol()>({STEVE}));
 
     node_.call([&] {
-        tab_list.clearAllSilent();
+        player_list.clearAllSilent();
         connection->flush();
         return 0;
     });
-    clearAll(tab_list, *connection);
+    clearAll(player_list, *connection);
 
     ASSERT_EQ(connection->batches().size(), 1U);
     EXPECT_TRUE(decode<bp::PlayerListPacket>(connection->batches()[0]).entries.empty());

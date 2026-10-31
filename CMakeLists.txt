@@ -77,7 +77,7 @@ add_library(endgate_proxy STATIC
         src/endgate/protocol/compress.cpp
         src/endgate/protocol/entity.cpp
         src/endgate/server.cpp
-        src/endgate/tablist/tablist.cpp
+        src/endgate/playerlist/playerlist.cpp
         src/endgate/util/uuid.cpp
 )
 add_library(endgate::proxy ALIAS endgate_proxy)
@@ -107,5 +107,5 @@ add_subdirectory(tests/unit/connection)
 add_subdirectory(tests/unit/logging)
 add_subdirectory(tests/unit/network)
 add_subdirectory(tests/unit/proxy)
-add_subdirectory(tests/unit/tablist)
+add_subdirectory(tests/unit/playerlist)
 add_subdirectory(tests/unit/util)

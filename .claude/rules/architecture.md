@@ -8,6 +8,7 @@
 - Don't take wangle's or folly's design unless it buys performance that Netty's design can't.
 - No api/core split. One class is both the interface and the implementation.
 - Keep Velocity's class and method names wherever we reasonably can, so every piece of endgate traces back to its Velocity counterpart and to Velocity's own dependencies.
+- Where Bedrock has its own name for a concept, use Bedrock's and keep Velocity's in the `@see`: `PlayerList`, not `TabList`.
 - Server switching is seamless: fade the screen out and back in with camera packets, so the player feels they stay in the game. Never switch with the transfer packet or the dimension change; both show a loading screen that feels like going back to the menu.
 - The dimension change is banned only as a switching trick. Use it wherever the player really changes dimension.
 - Switch along Velocity's lifecycle: the new backend logs in while the player stays on the old one, and `handleBackendStartGame` plays `handleBackendJoinGame`'s part. Velocity's own switch step, a JoinGame and Respawn into another dimension, shows a loading screen, so endgate replaces that one step with CubeCraft's switch. Everything else about a switch follows Velocity, which is built for SMP; CubeCraft is not.

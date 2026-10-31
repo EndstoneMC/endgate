@@ -120,7 +120,7 @@ TEST_F(PlayTest, TheActorsABackendSpawnedAreKeptPlayerSide)
               (std::set{bp::ActorUniqueID{5}, bp::ActorUniqueID{6}, bp::ActorUniqueID{8}}));
 }
 
-TEST_F(PlayTest, APlayerTakenOffTheTabListKeepsItsActor)
+TEST_F(PlayTest, APlayerTakenOffThePlayerListKeepsItsActor)
 {
     Latest<bp::MinecraftPacketIds::AddPlayer> npc;
     npc.abilities_data.target_player = bp::ActorUniqueID{6};
@@ -132,7 +132,7 @@ TEST_F(PlayTest, APlayerTakenOffTheTabListKeepsItsActor)
     EXPECT_EQ(client_handler_->getServerActors(), (std::set{bp::ActorUniqueID{6}}));
 }
 
-TEST_F(PlayTest, ATabListEntryIsNoActor)
+TEST_F(PlayTest, APlayerListEntryIsNoActor)
 {
     fromBackend(listed(bp::ActorUniqueID{10}));
 

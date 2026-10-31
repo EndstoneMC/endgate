@@ -1,4 +1,4 @@
-#include "endgate/tablist/tablist.h"
+#include "endgate/playerlist/playerlist.h"
 
 #include <utility>
 
@@ -6,7 +6,7 @@
 
 namespace endgate {
 
-void TabList::clearAll()
+void PlayerList::clearAll()
 {
     visitProtocolVersion(connection_.getProtocolVersion().getProtocol(), [&]<int Version>() {
         using Packet = PacketOf<Version, bp::MinecraftPacketIds::PlayerList>;
@@ -21,7 +21,7 @@ void TabList::clearAll()
     clearAllSilent();
 }
 
-void TabList::clearAllSilent()
+void PlayerList::clearAllSilent()
 {
     entries_.clear();
 }
