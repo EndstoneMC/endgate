@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <asio/ip/address.hpp>
 #include <spdlog/logger.h>
@@ -61,6 +62,20 @@ public:
      * @see com.velocitypowered.api.proxy.ProxyServer#getServer
      */
     [[nodiscard]] BackendServer *getServer(std::string_view name);
+
+    /**
+     * Retrieves the player currently connected to this proxy by their Minecraft username.
+     *
+     * @see com.velocitypowered.api.proxy.ProxyServer#getPlayer(String)
+     */
+    [[nodiscard]] std::shared_ptr<Player> getPlayer(std::string_view username);
+
+    /**
+     * Retrieves all players currently connected to this proxy.
+     *
+     * @see com.velocitypowered.api.proxy.ProxyServer#getAllPlayers
+     */
+    [[nodiscard]] std::vector<std::shared_ptr<Player>> getAllPlayers();
 
     /**
      * @see com.velocitypowered.proxy.VelocityServer#getIpAttemptLimiter

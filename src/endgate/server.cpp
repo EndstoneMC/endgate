@@ -141,6 +141,24 @@ BackendServer *ProxyServer::getServer(std::string_view name)
     return server == servers_.end() ? nullptr : &server->second;
 }
 
+std::shared_ptr<Player> ProxyServer::getPlayer(std::string_view username)
+{
+    const std::scoped_lock lock(connections_mutex_);
+    const auto player = connections_by_name_.find(std::string{username});
+    return player == connections_by_name_.end() ? nullptr : player->second;
+}
+
+std::vector<std::shared_ptr<Player>> ProxyServer::getAllPlayers()
+{
+    const std::scoped_lock lock(connections_mutex_);
+    std::vector<std::shared_ptr<Player>> players;
+    players.reserve(connections_by_uuid_.size());
+    for (const auto &[uuid, player] : connections_by_uuid_) {
+        players.push_back(player);
+    }
+    return players;
+}
+
 Ratelimiter<asio::ip::address> &ProxyServer::getIpAttemptLimiter() const
 {
     return *ip_attempt_limiter_;

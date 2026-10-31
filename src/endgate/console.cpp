@@ -2,8 +2,12 @@
 
 #include <cerrno>
 #include <cstdio>
+#include <format>
 #include <iostream>
+#include <sstream>
+#include <string>
 
+#include "endgate/connection/player.h"
 #include "endgate/logging/appender.h"
 #include "endgate/logging/manager.h"
 #include "endgate/server.h"
@@ -116,6 +120,38 @@ void Console::runCommand(const std::string &command)
             logger_.info("CONSOLE -> executed command /{}", command);
         }
         shutdown();
+        return;
+    }
+    std::istringstream arguments{command};
+    std::string alias;
+    arguments >> alias;
+    if (alias == "send") {
+        if (server_.getConfiguration().isLogCommandExecutions()) {
+            logger_.info("CONSOLE -> executed command /{}", command);
+        }
+        std::string player_name;
+        std::string server_name;
+        if (!(arguments >> player_name >> server_name)) {
+            sendMessage("/send <player> <server>");
+            return;
+        }
+        auto *const target = server_.getServer(server_name);
+        if (target == nullptr) {
+            sendMessage(std::format("The specified server {} does not exist.", server_name));
+            return;
+        }
+        if (player_name == "all") {
+            for (const auto &player : server_.getAllPlayers()) {
+                player->createConnectionRequest(*target).fireAndForget();
+            }
+            return;
+        }
+        const auto player = server_.getPlayer(player_name);
+        if (!player) {
+            sendMessage(std::format("The specified player {} does not exist.", player_name));
+            return;
+        }
+        player->createConnectionRequest(*target).fireAndForget();
         return;
     }
     sendMessage("This command does not exist.");
