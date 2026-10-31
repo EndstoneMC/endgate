@@ -252,6 +252,7 @@ void AuthSessionHandler::activated()
     }
 
     connection_->write(bp::PlayStatusPacket{.status = bp::PlayStatus::LoginSuccess});
+    connection_->setState(StateRegistry::Play);
     connection_->setSessionHandler(std::make_shared<ClientPlaySessionHandler>(player));
     auto *const target = player->getNextServerToTry();
     if (target == nullptr) {

@@ -87,6 +87,7 @@ TEST_F(LoginTest, OfflineModeLogsInASelfSignedClientWithoutServiceKeys)
 
     EXPECT_EQ(connection->sent(), 2U);
     EXPECT_TRUE(connection->closed());
+    EXPECT_EQ(connection->getState(), StateRegistry::Play);
 }
 
 TEST_F(LoginTest, OfflineModeRejectsClientDataSignedByAnotherKey)
