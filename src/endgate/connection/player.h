@@ -266,6 +266,19 @@ public:
     [[nodiscard]] bool isActive() const { return active_; }
 
     /**
+     * The resource packs the player joined with, each named as Bedrock names a pack: its UUID, an
+     * underscore and its version.
+     *
+     * @see com.velocitypowered.api.proxy.Player#getAppliedResourcePacks
+     */
+    [[nodiscard]] const std::optional<std::vector<std::string>> &getAppliedResourcePacks() const
+    {
+        return applied_resource_packs_;
+    }
+
+    void setAppliedResourcePacks(std::vector<std::string> packs) { applied_resource_packs_ = std::move(packs); }
+
+    /**
      * @see com.velocitypowered.api.proxy.Player#getPlayerSettings
      */
     [[nodiscard]] const ClientSettings &getPlayerSettings() const { return settings_; }
@@ -295,6 +308,7 @@ private:
     GameProfile profile_;
     std::shared_ptr<ServerConnection> connected_server_;
     std::shared_ptr<ServerConnection> connection_in_flight_;
+    std::optional<std::vector<std::string>> applied_resource_packs_;
     ClientSettings settings_;
     PlayerList player_list_;
     bool active_{true};
@@ -377,8 +391,11 @@ public:
      *
      * @see com.velocitypowered.proxy.connection.client.ClientPlaySessionHandler#handleBackendJoinGame
      */
-    [[nodiscard]] bool handleBackendStartGame(bp::ActorRuntimeID runtime_id, bp::ActorUniqueID unique_id,
-                                              ServerConnection &destination);
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::StartGame>
+    [[nodiscard]] bool handleBackendStartGame(const Packet &start_game, ServerConnection &destination);
+
+    void handleBackendPlayerSpawn(ServerConnection &destination);
 
     /**
      * @see com.velocitypowered.proxy.connection.client.ClientPlaySessionHandler#getServerBossBars
@@ -386,6 +403,9 @@ public:
     [[nodiscard]] std::vector<bp::ActorUniqueID> &getServerBossBars() { return server_boss_bars_; }
 
     [[nodiscard]] bp::ActorRuntimeID getRuntimeId() const { return runtime_id_; }
+    [[nodiscard]] bool hasSwitched() const { return switched_; }
+    [[nodiscard]] std::int32_t &getDimension() { return dimension_; }
+    [[nodiscard]] std::set<std::pair<std::int32_t, std::int32_t>> &getServerChunks() { return server_chunks_; }
     [[nodiscard]] std::set<bp::ActorUniqueID> &getServerActors() { return server_actors_; }
     [[nodiscard]] std::set<std::string> &getServerObjectives() { return server_objectives_; }
     [[nodiscard]] std::set<std::int32_t> &getServerEffects() { return server_effects_; }
@@ -399,8 +419,12 @@ private:
     spdlog::logger &logger_;
     std::shared_ptr<Player> player_;
     bool spawned_{false};
+    bool switched_{false};
+    bool awaiting_spawn_{false};
     bp::ActorRuntimeID runtime_id_;
     bp::ActorUniqueID unique_id_;
+    std::int32_t dimension_{0};
+    std::set<std::pair<std::int32_t, std::int32_t>> server_chunks_;
     std::vector<bp::ActorUniqueID> server_boss_bars_;
     std::set<bp::ActorUniqueID> server_actors_;
     std::set<std::string> server_objectives_;

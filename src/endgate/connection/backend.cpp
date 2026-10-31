@@ -19,6 +19,7 @@
 #include <asio/ip/udp.hpp>
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
+#include <bedrock/protocol/camera.h>
 #include <glaze/json.hpp>
 #include <openssl/x509.h>
 
@@ -241,6 +242,10 @@ bool TransitionSessionHandler::beforeHandle()
 
 void TransitionSessionHandler::activated()
 {
+    constexpr float fade_in_seconds = 0.5F;
+    constexpr float hold_seconds = 5.0F;
+    constexpr float fade_out_seconds = 0.5F;
+
     auto &player = server_connection_->getPlayer().getConnection();
     if (player.getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
         logger_.info("[server connection] {} -> {} has connected",
@@ -248,6 +253,18 @@ void TransitionSessionHandler::activated()
                      server_connection_->getServer().getServerInfo().getName());
     }
     server_connection_->connected();
+    if (!server_connection_->getPlayer().getConnectedServer()) {
+        return;
+    }
+    visitProtocolVersion(player.getProtocolVersion().getProtocol(), [&]<int Version>() {
+        PacketOf<Version, bp::MinecraftPacketIds::CameraInstruction> camera;
+        auto &fade = camera.camera_instruction.fade.emplace();
+        fade.time = typename decltype(fade.time)::value_type{
+            .fade_in_time = fade_in_seconds, .hold_time = hold_seconds, .fade_out_time = fade_out_seconds};
+        fade.color.emplace();
+        player.write(std::move(camera));
+        return true;
+    });
 }
 
 void TransitionSessionHandler::handleUnknown(ByteBufView batch)

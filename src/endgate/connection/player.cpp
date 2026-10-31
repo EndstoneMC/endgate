@@ -1,14 +1,19 @@
 #include "endgate/connection/player.h"
 
+#include <cstdint>
 #include <exception>
 #include <format>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
+#include <bedrock/protocol/block.h>
 #include <bedrock/protocol/camera.h>
+#include <bedrock/protocol/level.h>
+#include <bedrock/protocol/movement.h>
 #include <bedrock/protocol/sound.h>
 #include <bedrock/protocol/text.h>
 #include <bedrock/protocol/ui.h>
@@ -261,13 +266,24 @@ void ClientPlaySessionHandler::disconnected()
     player_->teardown();
 }
 
-bool ClientPlaySessionHandler::handleBackendStartGame(bp::ActorRuntimeID runtime_id, bp::ActorUniqueID unique_id,
-                                                      ServerConnection &destination)
+template <typename Packet>
+    requires IsPacket<Packet, bp::MinecraftPacketIds::StartGame>
+bool ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, ServerConnection &destination)
 {
+    constexpr std::int32_t nether = 1;
+    constexpr std::int32_t the_end = 2;
+    constexpr std::int32_t start_raining = 3001;
+    constexpr std::int32_t start_thunderstorm = 3002;
+    constexpr std::int32_t stop_raining = 3003;
+    constexpr std::int32_t stop_thunderstorm = 3004;
+    constexpr float full_intensity = 65535.0F;
+
+    const auto dimension = static_cast<std::int32_t>(start_game.settings.spawn_settings.dimension);
     if (!spawned_) {
         spawned_ = true;
-        runtime_id_ = runtime_id;
-        unique_id_ = unique_id;
+        runtime_id_ = start_game.runtime_id;
+        unique_id_ = start_game.entity_id;
+        dimension_ = dimension;
         return true;
     }
 
@@ -336,6 +352,78 @@ bool ClientPlaySessionHandler::handleBackendStartGame(bp::ActorRuntimeID runtime
         SetTitle reset;
         reset.type = SetTitle::TitleType::Reset;
         client.delayedWrite(std::move(reset));
+
+        if (dimension != dimension_) {
+            PacketOf<Version, bp::MinecraftPacketIds::ChangeDimension> change;
+            change.dimension_id = static_cast<decltype(change.dimension_id)>(dimension);
+            change.pos = start_game.pos;
+            client.delayedWrite(std::move(change));
+        }
+        else {
+            auto sections = 24;
+            if (dimension_ == nether) {
+                sections = 8;
+            }
+            else if (dimension_ == the_end) {
+                sections = 16;
+            }
+            std::string biomes;
+            for (auto section = 0; section < sections; ++section) {
+                biomes.push_back('\x01');
+                biomes.push_back('\x02');
+            }
+            biomes.push_back('\x00');
+            for (const auto &[x, z] : server_chunks_) {
+                PacketOf<Version, bp::MinecraftPacketIds::FullChunkData> chunk;
+                chunk.pos = {.x = x, .z = z};
+                chunk.dimension_id = static_cast<decltype(chunk.dimension_id)>(dimension_);
+                chunk.serialized_chunk = biomes;
+                client.delayedWrite(std::move(chunk));
+            }
+            PacketOf<Version, bp::MinecraftPacketIds::MovePlayer> move;
+            move.player_id = runtime_id_;
+            move.pos = start_game.pos;
+            move.rot = start_game.rot;
+            move.y_head_rot = start_game.rot.y;
+            move.reset_position = decltype(move.reset_position)::Teleport;
+            client.delayedWrite(std::move(move));
+        }
+
+        const auto &settings = start_game.settings;
+        using SetDefaultGameType = PacketOf<Version, bp::MinecraftPacketIds::SetDefaultGameType>;
+        SetDefaultGameType default_game_type;
+        default_game_type.default_game_type =
+            static_cast<decltype(default_game_type.default_game_type)>(settings.game_type);
+        client.delayedWrite(std::move(default_game_type));
+        PacketOf<Version, bp::MinecraftPacketIds::SetPlayerGameType> game_type;
+        game_type.player_game_type = static_cast<decltype(game_type.player_game_type)>(start_game.entity_game_type);
+        client.delayedWrite(std::move(game_type));
+        PacketOf<Version, bp::MinecraftPacketIds::SetDifficulty> difficulty;
+        difficulty.difficulty = static_cast<decltype(difficulty.difficulty)>(settings.game_difficulty);
+        client.delayedWrite(std::move(difficulty));
+        PacketOf<Version, bp::MinecraftPacketIds::GameRulesChanged> rules;
+        rules.rule_data = settings.rule_data;
+        client.delayedWrite(std::move(rules));
+        client.delayedWrite(PacketOf<Version, bp::MinecraftPacketIds::SetCommandsEnabled>{
+            .commands_enabled = settings.commands_enabled});
+        client.delayedWrite(PacketOf<Version, bp::MinecraftPacketIds::SetTime>{.time = settings.time});
+
+        PacketOf<Version, bp::MinecraftPacketIds::SetSpawnPosition> spawn;
+        spawn.spawn_pos_type = decltype(spawn.spawn_pos_type)::WorldSpawn;
+        spawn.pos = {.x = settings.default_spawn.x, .y = settings.default_spawn.y, .z = settings.default_spawn.z};
+        spawn.dimension_type = static_cast<decltype(spawn.dimension_type)>(dimension);
+        spawn.spawn_block_pos = spawn.pos;
+        client.delayedWrite(std::move(spawn));
+
+        using LevelEvent = PacketOf<Version, bp::MinecraftPacketIds::LevelEvent>;
+        LevelEvent rain;
+        rain.event_id = settings.rain_level > 0 ? start_raining : stop_raining;
+        rain.data = static_cast<std::int32_t>(settings.rain_level * full_intensity);
+        client.delayedWrite(std::move(rain));
+        LevelEvent thunder;
+        thunder.event_id = settings.lightning_level > 0 ? start_thunderstorm : stop_thunderstorm;
+        thunder.data = static_cast<std::int32_t>(settings.lightning_level * full_intensity);
+        client.delayedWrite(std::move(thunder));
         return true;
     });
     server_actors_.clear();
@@ -344,10 +432,47 @@ bool ClientPlaySessionHandler::handleBackendStartGame(bp::ActorRuntimeID runtime
     server_effects_.clear();
     server_container_.reset();
     server_shapes_.clear();
+    server_chunks_.clear();
+    dimension_ = dimension;
+    switched_ = true;
+    awaiting_spawn_ = true;
 
-    backend.setEntityMap(EntityMap{runtime_id_, unique_id_, runtime_id, unique_id});
+    backend.setEntityMap(EntityMap{runtime_id_, unique_id_, start_game.runtime_id, start_game.entity_id});
     client.flush();
     return false;
+}
+
+static_assert(std::is_same_v<PacketTypes<bp::MinecraftPacketIds::StartGame>,
+                             TypeList<bp::StartGamePacket_<MINIMUM_VERSION.getProtocol()>,
+                                      bp::StartGamePacket_<MAXIMUM_VERSION.getProtocol()>>>,
+              "a supported version's StartGame has a type handleBackendStartGame isn't instantiated for");
+
+template bool ClientPlaySessionHandler::handleBackendStartGame(
+    const bp::StartGamePacket_<MINIMUM_VERSION.getProtocol()> &start_game, ServerConnection &destination);
+template bool ClientPlaySessionHandler::handleBackendStartGame(
+    const bp::StartGamePacket_<MAXIMUM_VERSION.getProtocol()> &start_game, ServerConnection &destination);
+
+void ClientPlaySessionHandler::handleBackendPlayerSpawn(ServerConnection &destination)
+{
+    constexpr float fade_out_seconds = 0.5F;
+
+    if (!std::exchange(awaiting_spawn_, false)) {
+        return;
+    }
+    auto &backend = destination.ensureConnected();
+    visitProtocolVersion(backend.getProtocolVersion().getProtocol(), [&]<int Version>() {
+        backend.write(PacketOf<Version, bp::MinecraftPacketIds::SetLocalPlayerAsInit>{.player_id = runtime_id_});
+        return true;
+    });
+    auto &client = player_->getConnection();
+    visitProtocolVersion(client.getProtocolVersion().getProtocol(), [&]<int Version>() {
+        PacketOf<Version, bp::MinecraftPacketIds::CameraInstruction> camera;
+        auto &fade = camera.camera_instruction.fade.emplace();
+        fade.time = typename decltype(fade.time)::value_type{.fade_out_time = fade_out_seconds};
+        fade.color.emplace();
+        client.delayedWrite(std::move(camera));
+        return true;
+    });
 }
 
 }  // namespace endgate

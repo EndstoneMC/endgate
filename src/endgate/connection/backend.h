@@ -1,8 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <format>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -298,6 +301,59 @@ public:
         return false;
     }
 
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::FullChunkData>
+    bool handleEach(const Packet &packet)
+    {
+        player_session_handler_->getServerChunks().emplace(packet.pos.x, packet.pos.z);
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::NetworkChunkPublisherUpdate>
+    bool handleEach(const Packet &packet)
+    {
+        constexpr std::int64_t margin = 32;
+        constexpr std::int64_t chunk_centre = 8;
+
+        const auto reach = static_cast<std::int64_t>(packet.radius) + margin;
+        auto &chunks = player_session_handler_->getServerChunks();
+        for (auto it = chunks.begin(); it != chunks.end();) {
+            const auto dx = (static_cast<std::int64_t>(it->first) << 4) + chunk_centre - packet.position.x;
+            const auto dz = (static_cast<std::int64_t>(it->second) << 4) + chunk_centre - packet.position.z;
+            it = dx * dx + dz * dz > reach * reach ? chunks.erase(it) : std::next(it);
+        }
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::ChangeDimension>
+    bool handleEach(const Packet &packet)
+    {
+        player_session_handler_->getServerChunks().clear();
+        player_session_handler_->getDimension() = static_cast<std::int32_t>(packet.dimension_id);
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::ItemRegistryPacket,
+                          bp::MinecraftPacketIds::BiomeDefinitionList, bp::MinecraftPacketIds::AvailableActorIDList,
+                          bp::MinecraftPacketIds::DimensionDataPacket>
+    bool handleEach(const Packet &)
+    {
+        return player_session_handler_->hasSwitched();
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::PlayStatus>
+    bool handleEach(const Packet &packet)
+    {
+        if (packet.status == decltype(packet.status)::PlayerSpawn) {
+            player_session_handler_->handleBackendPlayerSpawn(*server_connection_);
+        }
+        return false;
+    }
+
     bool beforeHandle() override;
     void connected() override {}
     void handleUnknown(ByteBufView batch) override;
@@ -352,8 +408,7 @@ public:
             play_handler = std::make_shared<ClientPlaySessionHandler>(player.shared_from_this());
             player.getConnection().setSessionHandler(play_handler);
         }
-        const auto client_takes_it =
-            play_handler->handleBackendStartGame(packet.runtime_id, packet.entity_id, *server_connection_);
+        const auto client_takes_it = play_handler->handleBackendStartGame(packet, *server_connection_);
 
         backend.setSessionHandler(std::make_shared<BackendPlaySessionHandler>(server_connection_));
         player.setConnectedServer(server_connection_);
@@ -362,6 +417,61 @@ public:
         }
         result_future_->complete(ConnectionRequestBuilder::Result::successful(server_connection_->getServer()));
         return !client_takes_it;
+    }
+
+    /**
+     * Lets the client run the pack exchange on the first connection. On a switch it answers for the
+     * client when the backend offers the packs the player joined with, since Bedrock applies packs only
+     * at login, and refuses the switch otherwise.
+     *
+     * @see com.velocitypowered.proxy.connection.backend.ConfigSessionHandler#handle(ResourcePackRequestPacket)
+     */
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::ResourcePacksInfo>
+    bool handleEach(const Packet &packet)
+    {
+        std::vector<std::string> packs;
+        for (const auto &pack : packet.resource_packs) {
+            const auto &[msb, lsb] = pack.pack_id_version.id;
+            packs.push_back(std::format("{:08x}-{:04x}-{:04x}-{:04x}-{:012x}_{}{}", msb >> 32, (msb >> 16) & 0xffff,
+                                        msb & 0xffff, lsb >> 48, lsb & 0xffffffffffff,
+                                        pack.pack_id_version.version.version, pack.subpack_name));
+        }
+        std::ranges::sort(packs);
+        auto &player = server_connection_->getPlayer();
+        if (!player.getConnectedServer()) {
+            player.setAppliedResourcePacks(std::move(packs));
+            return false;
+        }
+        if (packs != player.getAppliedResourcePacks()) {
+            server_connection_->disconnect();
+            result_future_->complete(ConnectionRequestBuilder::Result::forDisconnect(
+                "it needs other resource packs than the ones you joined with", server_connection_->getServer()));
+            return true;
+        }
+        auto &backend = server_connection_->ensureConnected();
+        visitProtocolVersion(backend.getProtocolVersion().getProtocol(), [&]<int Version>() {
+            using Response = PacketOf<Version, bp::MinecraftPacketIds::ResourcePackClientResponse>;
+            backend.write(Response{.response = typename Response::DownloadingFinished{}});
+            return true;
+        });
+        return true;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::ResourcePackStack>
+    bool handleEach(const Packet &)
+    {
+        if (!server_connection_->getPlayer().getConnectedServer()) {
+            return false;
+        }
+        auto &backend = server_connection_->ensureConnected();
+        visitProtocolVersion(backend.getProtocolVersion().getProtocol(), [&]<int Version>() {
+            using Response = PacketOf<Version, bp::MinecraftPacketIds::ResourcePackClientResponse>;
+            backend.write(Response{.response = typename Response::ResourcePackStackFinished{}});
+            return true;
+        });
+        return true;
     }
 
     /**

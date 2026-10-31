@@ -54,6 +54,14 @@ Latest<bp::MinecraftPacketIds::PlayerList> listed(bp::ActorUniqueID id)
     return packet;
 }
 
+Latest<bp::MinecraftPacketIds::StartGame> startGame(std::uint64_t runtime_id, std::int64_t unique_id)
+{
+    Latest<bp::MinecraftPacketIds::StartGame> packet;
+    packet.runtime_id = bp::ActorRuntimeID{runtime_id};
+    packet.entity_id = bp::ActorUniqueID{unique_id};
+    return packet;
+}
+
 Latest<bp::MinecraftPacketIds::PlayerList> delisted()
 {
     Latest<bp::MinecraftPacketIds::PlayerList> packet;
@@ -167,10 +175,7 @@ TEST_F(PlayTest, ObjectivesFollowDisplayAndRemove)
 TEST_F(PlayTest, OnlyThePlayersOwnEffectsAreKept)
 {
     using MobEffect = Latest<bp::MinecraftPacketIds::MobEffect>;
-    node_.call([&] {
-        return client_handler_->handleBackendStartGame(bp::ActorRuntimeID{1}, bp::ActorUniqueID{10},
-                                                       *server_connection_);
-    });
+    node_.call([&] { return client_handler_->handleBackendStartGame(startGame(1, 10), *server_connection_); });
 
     MobEffect effect;
     effect.event_id = MobEffect::Event::Add;
@@ -219,25 +224,50 @@ TEST_F(PlayTest, DebugShapesFollowDrawAndRemove)
     EXPECT_EQ(client_handler_->getServerShapes(), (std::set<std::uint64_t>{1, 3}));
 }
 
+TEST_F(PlayTest, ChunksAreKeptWhileTheyAreInView)
+{
+    using LevelChunk = Latest<bp::MinecraftPacketIds::FullChunkData>;
+    fromBackend(LevelChunk{.pos = {.x = 0, .z = 0}});
+    fromBackend(LevelChunk{.pos = {.x = -3, .z = 2}});
+    fromBackend(LevelChunk{.pos = {.x = 40, .z = 0}});
+    Latest<bp::MinecraftPacketIds::NetworkChunkPublisherUpdate> publisher;
+    publisher.position = {.x = 8, .y = 64, .z = 8};
+    publisher.radius = 128;
+    fromBackend(publisher);
+
+    EXPECT_EQ(client_handler_->getServerChunks(), (std::set<std::pair<std::int32_t, std::int32_t>>{{-3, 2}, {0, 0}}));
+}
+
+TEST_F(PlayTest, ADimensionChangeLeavesNoChunks)
+{
+    fromBackend(Latest<bp::MinecraftPacketIds::FullChunkData>{.pos = {.x = 1, .z = 1}});
+    Latest<bp::MinecraftPacketIds::ChangeDimension> change;
+    change.dimension_id = static_cast<decltype(change.dimension_id)>(1);
+    fromBackend(change);
+
+    EXPECT_TRUE(client_handler_->getServerChunks().empty());
+    EXPECT_EQ(client_handler_->getDimension(), 1);
+}
+
+TEST_F(PlayTest, TheFirstBackendsRegistriesReachTheClient)
+{
+    EXPECT_FALSE(
+        node_.call([&] { return backend_handler_->handle(Latest<bp::MinecraftPacketIds::ItemRegistryPacket>{}); }));
+}
+
 TEST_F(PlayTest, TheFirstStartGameReachesTheClient)
 {
-    EXPECT_TRUE(node_.call([&] {
-        return client_handler_->handleBackendStartGame(bp::ActorRuntimeID{1}, bp::ActorUniqueID{10},
-                                                       *server_connection_);
-    }));
+    EXPECT_TRUE(
+        node_.call([&] { return client_handler_->handleBackendStartGame(startGame(1, 10), *server_connection_); }));
 }
 
 TEST_F(PlayTest, ALaterStartGameNeedsTheBackendLeg)
 {
-    node_.call([&] {
-        return client_handler_->handleBackendStartGame(bp::ActorRuntimeID{1}, bp::ActorUniqueID{10},
-                                                       *server_connection_);
-    });
+    node_.call([&] { return client_handler_->handleBackendStartGame(startGame(1, 10), *server_connection_); });
 
     EXPECT_TRUE(node_.call([&] {
         try {
-            std::ignore = client_handler_->handleBackendStartGame(bp::ActorRuntimeID{2}, bp::ActorUniqueID{20},
-                                                                  *server_connection_);
+            std::ignore = client_handler_->handleBackendStartGame(startGame(2, 20), *server_connection_);
         }
         catch (const std::logic_error &) {
             return true;

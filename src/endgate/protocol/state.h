@@ -6,12 +6,16 @@
 #include <utility>
 
 #include <bedrock/protocol/actor.h>
+#include <bedrock/protocol/biome.h>
 #include <bedrock/protocol/boss.h>
 #include <bedrock/protocol/chunk.h>
+#include <bedrock/protocol/dimension.h>
 #include <bedrock/protocol/effect.h>
 #include <bedrock/protocol/game.h>
 #include <bedrock/protocol/inventory.h>
+#include <bedrock/protocol/item.h>
 #include <bedrock/protocol/network.h>
+#include <bedrock/protocol/pack.h>
 #include <bedrock/protocol/packet.hpp>
 #include <bedrock/protocol/player.h>
 #include <bedrock/protocol/scoreboard.h>
@@ -106,13 +110,20 @@ template <>
 struct PacketRegistries<StateRegistry::Play> {
     using Serverbound =
         PacketRegistry<bp::MinecraftPacketIds::RequestChunkRadius, bp::MinecraftPacketIds::ClientCacheStatus>;
-    using Clientbound = PacketRegistry<
-        bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::StartGame, bp::MinecraftPacketIds::AddPlayer,
-        bp::MinecraftPacketIds::AddActor, bp::MinecraftPacketIds::AddItemActor, bp::MinecraftPacketIds::AddPainting,
-        bp::MinecraftPacketIds::RemoveActor, bp::MinecraftPacketIds::PlayerList, bp::MinecraftPacketIds::BossEvent,
-        bp::MinecraftPacketIds::SetDisplayObjective, bp::MinecraftPacketIds::RemoveObjective,
-        bp::MinecraftPacketIds::MobEffect, bp::MinecraftPacketIds::ContainerOpen,
-        bp::MinecraftPacketIds::ContainerClose, bp::MinecraftPacketIds::PrimitiveShapesPacket>;
+    using Clientbound =
+        PacketRegistry<bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::PlayStatus,
+                       bp::MinecraftPacketIds::ResourcePacksInfo, bp::MinecraftPacketIds::ResourcePackStack,
+                       bp::MinecraftPacketIds::StartGame, bp::MinecraftPacketIds::AddPlayer,
+                       bp::MinecraftPacketIds::AddActor, bp::MinecraftPacketIds::AddItemActor,
+                       bp::MinecraftPacketIds::AddPainting, bp::MinecraftPacketIds::RemoveActor,
+                       bp::MinecraftPacketIds::PlayerList, bp::MinecraftPacketIds::BossEvent,
+                       bp::MinecraftPacketIds::SetDisplayObjective, bp::MinecraftPacketIds::RemoveObjective,
+                       bp::MinecraftPacketIds::MobEffect, bp::MinecraftPacketIds::ContainerOpen,
+                       bp::MinecraftPacketIds::ContainerClose, bp::MinecraftPacketIds::PrimitiveShapesPacket,
+                       bp::MinecraftPacketIds::FullChunkData, bp::MinecraftPacketIds::NetworkChunkPublisherUpdate,
+                       bp::MinecraftPacketIds::ChangeDimension, bp::MinecraftPacketIds::ItemRegistryPacket,
+                       bp::MinecraftPacketIds::BiomeDefinitionList, bp::MinecraftPacketIds::AvailableActorIDList,
+                       bp::MinecraftPacketIds::DimensionDataPacket>;
 };
 
 template <StateRegistry State, Direction D, int Version>
