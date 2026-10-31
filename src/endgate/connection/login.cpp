@@ -237,7 +237,8 @@ void InitialLoginSessionHandler::finishLogin(GameProfile profile)
 
 AuthSessionHandler::AuthSessionHandler(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection,
                                        GameProfile profile)
-    : server_(server), connection_(std::move(connection)), profile_(std::move(profile))
+    : server_(server), logger_(LogManager::getLogger(*this)), connection_(std::move(connection)),
+      profile_(std::move(profile))
 {
 }
 
@@ -252,15 +253,19 @@ void AuthSessionHandler::activated()
     }
 
     connection_->write(bp::PlayStatusPacket{.status = bp::PlayStatus::LoginSuccess});
+    if (server_.getConfiguration().isLogPlayerConnections()) {
+        logger_.info("[connected player] {} ({}) has connected", player->getUsername(),
+                     connection_->getRemoteAddress());
+    }
     connection_->setState(StateRegistry::Play);
-    connection_->setSessionHandler(std::make_shared<ClientPlaySessionHandler>(player));
+    connection_->setSessionHandler(std::make_shared<InitialConnectSessionHandler>(player));
     auto *const target = player->getNextServerToTry();
     if (target == nullptr) {
         connection_->closeWith(DisconnectFailReason::NoReason, "There are no available servers to connect you to. "
                                                                "Try again later or contact an admin.");
         return;
     }
-    player->createConnectionRequest(*target);
+    player->createConnectionRequest(*target).fireAndForget();
 }
 
 void AuthSessionHandler::handleUnknown(ByteBufView) {}

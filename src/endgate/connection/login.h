@@ -82,6 +82,7 @@ public:
 
 private:
     ProxyServer &server_;
+    spdlog::logger &logger_;
     std::shared_ptr<MinecraftConnection> connection_;
     GameProfile profile_;
 };

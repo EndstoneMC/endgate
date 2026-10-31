@@ -1,7 +1,13 @@
 #include "endgate/connection/player.h"
 
+#include <exception>
+#include <format>
+#include <optional>
+#include <string>
 #include <utility>
 
+#include <asio/co_spawn.hpp>
+#include <asio/detached.hpp>
 #include <bedrock/protocol/camera.h>
 #include <bedrock/protocol/sound.h>
 #include <bedrock/protocol/text.h>
@@ -14,6 +20,77 @@
 #include "endgate/server.h"
 
 namespace endgate {
+
+void ConnectionRequestBuilder::fireAndForget() const
+{
+    asio::co_spawn(player_->getConnection().eventLoop().getExecutor(), connectWithIndication(*this), asio::detached);
+}
+
+std::optional<ConnectionRequestBuilder::Status> ConnectionRequestBuilder::checkServer(BackendServer &server) const
+{
+    if (player_->connection_in_flight_) {
+        return Status::ConnectionInProgress;
+    }
+    if (player_->connected_server_ && &player_->connected_server_->getServer() == &server) {
+        return Status::AlreadyConnected;
+    }
+    return std::nullopt;
+}
+
+Awaitable<ConnectionRequestBuilder::Result> ConnectionRequestBuilder::internalConnect(ConnectionRequestBuilder self)
+{
+    if (const auto status = self.checkServer(*self.to_connect_)) {
+        co_return Result{*status, *self.to_connect_};
+    }
+    auto &player = *self.player_;
+    const auto connection = std::make_shared<ServerConnection>(*self.to_connect_, self.player_);
+    player.connection_in_flight_ = connection;
+
+    std::optional<Result> result;
+    std::exception_ptr failure;
+    try {
+        result.emplace(co_await connection->connect());
+    }
+    catch (...) {
+        failure = std::current_exception();
+    }
+    if (player.connection_in_flight_ == connection) {
+        player.resetInFlightConnection();
+    }
+    if (failure) {
+        std::rethrow_exception(failure);
+    }
+    co_return std::move(*result);
+}
+
+Awaitable<bool> ConnectionRequestBuilder::connectWithIndication(ConnectionRequestBuilder self)
+{
+    auto &player = *self.player_;
+    std::optional<Result> result;
+    try {
+        result.emplace(co_await internalConnect(self));
+    }
+    catch (const std::exception &cause) {
+        player.handleConnectionException(*self.to_connect_, cause);
+        co_return false;
+    }
+    switch (result->getStatus()) {
+    case Status::AlreadyConnected:
+        player.sendMessage(ConnectionMessages::ALREADY_CONNECTED);
+        break;
+    case Status::ConnectionInProgress:
+        player.sendMessage(ConnectionMessages::IN_PROGRESS);
+        break;
+    case Status::ServerDisconnected:
+        player.handleConnectionException(*self.to_connect_, result->getReason().value_or(std::string{
+                                                                ConnectionMessages::INTERNAL_SERVER_CONNECTION_ERROR}));
+        break;
+    case Status::Success:
+    case Status::ConnectionCancelled:
+        break;
+    }
+    co_return result->isSuccessful();
+}
 
 Player::Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection, GameProfile profile)
     : server_(server), logger_(LogManager::getLogger(*this)), connection_(std::move(connection)),
@@ -38,10 +115,73 @@ BackendServer *Player::getNextServerToTry() const
     return nullptr;
 }
 
-void Player::createConnectionRequest(BackendServer &server)
+void Player::setConnectedServer(std::shared_ptr<ServerConnection> server_connection)
 {
-    connected_server_ = std::make_shared<ServerConnection>(server, shared_from_this());
-    connected_server_->connect();
+    connected_server_ = std::move(server_connection);
+    if (connected_server_ == connection_in_flight_) {
+        connection_in_flight_ = nullptr;
+    }
+}
+
+ConnectionRequestBuilder Player::createConnectionRequest(BackendServer &server)
+{
+    return {shared_from_this(), server};
+}
+
+void Player::handleConnectionException(BackendServer &server, const std::exception &cause)
+{
+    if (!isActive()) {
+        return;
+    }
+    const auto &name = server.getServerInfo().getName();
+    if (connected_server_ && &connected_server_->getServer() == &server) {
+        handleKickEvent(server, std::format("Your connection to {} encountered a problem.", name));
+        return;
+    }
+    logger_.error("[connected player] {} ({}): unable to connect to server {}: {}", profile_.name,
+                  connection_->getRemoteAddress(), name, cause.what());
+    handleKickEvent(server, std::format("Unable to connect you to {}. Please try again later.", name));
+}
+
+void Player::handleConnectionException(BackendServer &server, std::string_view reason)
+{
+    if (!isActive()) {
+        return;
+    }
+    const auto &name = server.getServerInfo().getName();
+    if (connected_server_ && &connected_server_->getServer() == &server) {
+        logger_.info("[connected player] {} ({}): kicked from server {}: {}", profile_.name,
+                     connection_->getRemoteAddress(), name, reason);
+        handleKickEvent(server, std::format("You were kicked from {}: {}", name, reason));
+        return;
+    }
+    logger_.error("[connected player] {} ({}): disconnected while connecting to {}: {}", profile_.name,
+                  connection_->getRemoteAddress(), name, reason);
+    handleKickEvent(server, std::format("Unable to connect to {}: {}", name, reason));
+}
+
+void Player::handleKickEvent(BackendServer &server, const std::string &friendly_reason)
+{
+    if (!connected_server_ || &connected_server_->getServer() == &server) {
+        disconnect(DisconnectFailReason::NoReason, friendly_reason);
+        return;
+    }
+    if (connection_in_flight_ && &connection_in_flight_->getServer() == &server) {
+        resetInFlightConnection();
+    }
+    sendMessage(friendly_reason);
+}
+
+void Player::sendMessage(std::string_view message)
+{
+    visitProtocolVersion(connection_->getProtocolVersion().getProtocol(), [&]<int Version>() {
+        using Text = PacketOf<Version, bp::MinecraftPacketIds::Text>;
+        using MessageOnly = Text::MessageOnly;
+        Text packet;
+        packet.body = MessageOnly{.type = decltype(MessageOnly::type)::Raw, .message = std::string{message}};
+        connection_->write(std::move(packet));
+        return true;
+    });
 }
 
 void Player::disconnect()
@@ -62,24 +202,40 @@ void Player::disconnect(DisconnectFailReason reason, const std::string &message)
 void Player::teardown()
 {
     active_ = false;
+    if (server_.getConfiguration().isLogPlayerConnections()) {
+        logger_.info("[connected player] {} ({}) has disconnected", profile_.name, connection_->getRemoteAddress());
+    }
     server_.unregisterConnection(*this);
+    if (const auto in_flight = std::exchange(connection_in_flight_, nullptr)) {
+        in_flight->disconnect();
+    }
     if (const auto server = std::exchange(connected_server_, nullptr)) {
         server->disconnect();
     }
 }
 
+void InitialConnectSessionHandler::handleUnknown(ByteBufView batch)
+{
+    if (const auto &server = player_->getConnectionInFlight()) {
+        server->write(batch.copy());
+    }
+}
+
+void InitialConnectSessionHandler::readCompleted()
+{
+    if (const auto &server = player_->getConnectionInFlight()) {
+        server->flush();
+    }
+}
+
+void InitialConnectSessionHandler::disconnected()
+{
+    player_->teardown();
+}
+
 ClientPlaySessionHandler::ClientPlaySessionHandler(std::shared_ptr<Player> player)
     : logger_(LogManager::getLogger(*this)), player_(std::move(player))
 {
-}
-
-void ClientPlaySessionHandler::activated()
-{
-    connected_ = true;
-    if (player_->getConnection().getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
-        logger_.info("[connected player] {} ({}) has connected", player_->getGameProfile().name,
-                     player_->getConnection().getRemoteAddress());
-    }
 }
 
 void ClientPlaySessionHandler::handleUnknown(ByteBufView batch)
@@ -102,10 +258,6 @@ void ClientPlaySessionHandler::readCompleted()
 
 void ClientPlaySessionHandler::disconnected()
 {
-    if (connected_ && player_->getConnection().getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
-        logger_.info("[connected player] {} ({}) has disconnected", player_->getGameProfile().name,
-                     player_->getConnection().getRemoteAddress());
-    }
     player_->teardown();
 }
 

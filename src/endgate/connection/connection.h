@@ -73,6 +73,13 @@ public:
 class MinecraftSessionHandler : public PacketHandlers<RegisteredPackets> {
 public:
     /**
+     * Called before each packet or unknown batch; true drops it.
+     *
+     * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler#beforeHandle
+     */
+    virtual bool beforeHandle() { return false; }
+
+    /**
      * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler#connected
      */
     virtual void connected() = 0;
@@ -338,7 +345,7 @@ private:
         void channelRead(const DecodedPacket<Packet> &decoded)
         {
             const auto handler = connection_.handler_;
-            if (handler && !handler->handle(decoded.packet)) {
+            if (handler && !handler->beforeHandle() && !handler->handle(decoded.packet)) {
                 handler->handleGeneric(decoded.bytes);
             }
         }

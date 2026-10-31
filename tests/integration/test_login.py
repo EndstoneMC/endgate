@@ -6,6 +6,7 @@ import pytest
 from bedrock import PlayerIdentity, sign_token
 
 LOGIN_FAILED_CLIENT_OLD = 1
+NO_REASON = 40
 DISCONNECT_NOT_AUTHENTICATED = 46
 DISCONNECT_EXPIRED_TOKEN = 144
 
@@ -89,11 +90,11 @@ def test_a_login_from_an_older_protocol_is_refused(proxy, connect):
     assert player.wait_closed()
 
 
-def test_a_backend_disconnect_reaches_the_player(proxy, backend, connect):
+def test_a_backend_disconnect_before_the_join_reaches_the_player(proxy, backend, connect):
     player = connect(proxy)
     upstream = logged_in(player, backend, proxy)
     upstream.peer.command("disconnect " + b"go away".hex())
-    assert player.wait_disconnect() == (0, "go away")
+    assert player.wait_disconnect() == (NO_REASON, "Unable to connect to lobby: go away")
 
 
 def test_closing_the_player_closes_the_backend(proxy, backend, connect):

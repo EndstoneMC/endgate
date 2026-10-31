@@ -146,7 +146,7 @@ void MinecraftConnection::Sink::channelActive()
 
 void MinecraftConnection::Sink::channelRead(ByteBufView batch)
 {
-    if (const auto handler = connection_.handler_) {
+    if (const auto handler = connection_.handler_; handler && !handler->beforeHandle()) {
         handler->handleUnknown(batch);
     }
 }

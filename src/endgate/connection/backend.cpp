@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <map>
 #include <memory>
 #include <optional>
@@ -11,13 +12,10 @@
 #include <string>
 #include <string_view>
 #include <tuple>
-#include <type_traits>
 #include <utility>
 
 #include <asio/as_tuple.hpp>
 #include <asio/cancel_after.hpp>
-#include <asio/co_spawn.hpp>
-#include <asio/detached.hpp>
 #include <asio/ip/udp.hpp>
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
@@ -42,19 +40,14 @@ ServerConnection::ServerConnection(BackendServer &server, std::shared_ptr<Player
 {
 }
 
-void ServerConnection::connect()
-{
-    asio::co_spawn(player_->getConnection().eventLoop().getExecutor(), open(shared_from_this()), asio::detached);
-}
-
-Awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> self)
+Awaitable<ConnectionRequestBuilder::Result> ServerConnection::open(std::shared_ptr<ServerConnection> self)
 {
     constexpr std::chrono::seconds resolve_timeout{2};
 
     const auto &info = self->server_.getServerInfo();
     auto &player = *self->player_;
     auto &endpoint = player.getConnection().getEndpoint();
-    const auto &player_address = player.getConnection().getRemoteAddress();
+    const auto result_future = std::make_shared<ConnectionResultFuture>(co_await asio::this_coro::executor);
 
     std::optional<asio::ip::udp::endpoint> address;
     asio::error_code ec;
@@ -76,49 +69,44 @@ Awaitable<void> ServerConnection::open(std::shared_ptr<ServerConnection> self)
         transport = co_await self->server_.detectTransport(endpoint.getEventLoop().getIoContext(), *address);
     }
     if (!player.isActive()) {
-        co_return;
+        throw std::runtime_error("the player left");
     }
     if (!address || !transport) {
-        self->logger_.error("[connected player] {} ({}): unable to connect to server {}: {}",
-                            self->player_->getGameProfile().name, player_address, info.getName(),
-                            address ? "no NetherNet or RakNet response" : "can't resolve the address");
-        player.disconnect();
-        co_return;
+        throw std::runtime_error(address ? "no NetherNet or RakNet response" : "can't resolve the address");
     }
     if (const auto connect_timeout = endpoint.getServer().getConfiguration().getConnectTimeout(); connect_timeout > 0) {
         self->connect_timeout_ = player.getConnection().eventLoop().schedule(
-            [self] {
-                if (self->established_ || !self->player_->isActive()) {
+            [self, result_future] {
+                if (self->established_) {
                     return;
                 }
-                self->logger_.error("[connected player] {} ({}): unable to connect to server {}: connection timed out",
-                                    self->player_->getGameProfile().name,
-                                    self->player_->getConnection().getRemoteAddress(),
-                                    self->server_.getServerInfo().getName());
-                self->player_->disconnect();
+                result_future->completeExceptionally(
+                    std::make_exception_ptr(std::runtime_error("connection timed out")));
+                self->disconnect();
             },
             std::chrono::milliseconds{connect_timeout});
     }
     if (*transport == ServerInfo::Transport::NetherNet) {
         const auto connection = std::make_shared<NetherNetConnection<nethernet::DialerSession>>(
             endpoint, *address, endpoint.getCertificate());
-        connection->setSessionHandler(std::make_shared<LoginSessionHandler>(self));
+        connection->setSessionHandler(std::make_shared<LoginSessionHandler>(self, result_future));
         self->connection_ = connection;
         endpoint.registerConnection(connection, std::nullopt);
         self->logger_.debug("[server connection] {} -> {}: connecting over NetherNet",
                             self->player_->getGameProfile().name, info.getName());
         connection->connect(info.getHost(), info.getPort(), endpoint.getOfferIdentity());
-        co_return;
     }
-
-    const auto guid = std::mt19937_64{std::random_device{}()}();
-    const auto connection = std::make_shared<RakNetConnection>(endpoint, *address, guid, raknet::Clock::now());
-    connection->setSessionHandler(std::make_shared<LoginSessionHandler>(self));
-    self->connection_ = connection;
-    endpoint.registerConnection(connection, guid);
-    self->logger_.debug("[server connection] {} -> {}: connecting over RakNet", self->player_->getGameProfile().name,
-                        info.getName());
-    connection->connect();
+    else {
+        const auto guid = std::mt19937_64{std::random_device{}()}();
+        const auto connection = std::make_shared<RakNetConnection>(endpoint, *address, guid, raknet::Clock::now());
+        connection->setSessionHandler(std::make_shared<LoginSessionHandler>(self, result_future));
+        self->connection_ = connection;
+        endpoint.registerConnection(connection, guid);
+        self->logger_.debug("[server connection] {} -> {}: connecting over RakNet",
+                            self->player_->getGameProfile().name, info.getName());
+        connection->connect();
+    }
+    co_return co_await result_future->get();
 }
 
 MinecraftConnection &ServerConnection::ensureConnected() const
@@ -139,6 +127,7 @@ void ServerConnection::connectionEstablished()
 
 void ServerConnection::disconnect()
 {
+    graceful_disconnect_ = true;
     if (const auto timeout = std::exchange(connect_timeout_, nullptr)) {
         timeout->cancel();
     }
@@ -202,31 +191,13 @@ BackendPlaySessionHandler::BackendPlaySessionHandler(std::shared_ptr<ServerConne
     }
 }
 
-static_assert(std::is_same_v<PacketTypes<bp::MinecraftPacketIds::StartGame>,
-                             TypeList<bp::StartGamePacket_<MINIMUM_VERSION.getProtocol()>,
-                                      bp::StartGamePacket_<MAXIMUM_VERSION.getProtocol()>>>,
-              "a supported version's StartGame has a type BackendPlaySessionHandler doesn't handle");
-
-bool BackendPlaySessionHandler::handle(const bp::StartGamePacket_<MINIMUM_VERSION.getProtocol()> &packet)
+bool BackendPlaySessionHandler::beforeHandle()
 {
-    return !player_session_handler_->handleBackendStartGame(packet.runtime_id, packet.entity_id, *server_connection_);
-}
-
-bool BackendPlaySessionHandler::handle(const bp::StartGamePacket_<MAXIMUM_VERSION.getProtocol()> &packet)
-{
-    return !player_session_handler_->handleBackendStartGame(packet.runtime_id, packet.entity_id, *server_connection_);
-}
-
-void BackendPlaySessionHandler::activated()
-{
-    connected_ = true;
-    auto &player = server_connection_->getPlayer().getConnection();
-    if (player.getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
-        logger_.info("[server connection] {} -> {} has connected",
-                     server_connection_->getPlayer().getGameProfile().name,
-                     server_connection_->getServer().getServerInfo().getName());
+    if (!server_connection_->isActive()) {
+        server_connection_->disconnect();
+        return true;
     }
-    server_connection_->connected();
+    return false;
 }
 
 void BackendPlaySessionHandler::handleUnknown(ByteBufView batch)
@@ -242,15 +213,67 @@ void BackendPlaySessionHandler::readCompleted()
 void BackendPlaySessionHandler::disconnected()
 {
     auto &player = server_connection_->getPlayer().getConnection();
-    if (connected_ && player.getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
+    if (player.getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
         logger_.info("[server connection] {} -> {} has disconnected",
                      server_connection_->getPlayer().getGameProfile().name,
                      server_connection_->getServer().getServerInfo().getName());
     }
-    if (!connected_) {
-        server_connection_->getServer().forgetTransport();
+    if (!server_connection_->isGracefulDisconnect()) {
+        server_connection_->getPlayer().disconnect();
     }
-    server_connection_->getPlayer().disconnect();
+}
+
+TransitionSessionHandler::TransitionSessionHandler(std::shared_ptr<ServerConnection> server_connection,
+                                                   std::shared_ptr<ConnectionResultFuture> result_future)
+    : logger_(LogManager::getLogger(*this)), server_connection_(std::move(server_connection)),
+      result_future_(std::move(result_future))
+{
+}
+
+bool TransitionSessionHandler::beforeHandle()
+{
+    if (!server_connection_->isActive()) {
+        server_connection_->disconnect();
+        return true;
+    }
+    return false;
+}
+
+void TransitionSessionHandler::activated()
+{
+    auto &player = server_connection_->getPlayer().getConnection();
+    if (player.getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
+        logger_.info("[server connection] {} -> {} has connected",
+                     server_connection_->getPlayer().getGameProfile().name,
+                     server_connection_->getServer().getServerInfo().getName());
+    }
+    server_connection_->connected();
+}
+
+void TransitionSessionHandler::handleUnknown(ByteBufView batch)
+{
+    auto &player = server_connection_->getPlayer();
+    if (const auto &connected = player.getConnectedServer(); connected && connected != server_connection_) {
+        return;
+    }
+    player.getConnection().delayedWrite(batch.copy());
+}
+
+void TransitionSessionHandler::readCompleted()
+{
+    server_connection_->getPlayer().getConnection().flush();
+}
+
+void TransitionSessionHandler::disconnected()
+{
+    auto &player = server_connection_->getPlayer().getConnection();
+    if (player.getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
+        logger_.info("[server connection] {} -> {} has disconnected",
+                     server_connection_->getPlayer().getGameProfile().name,
+                     server_connection_->getServer().getServerInfo().getName());
+    }
+    result_future_->complete(ConnectionRequestBuilder::Result::forDisconnect(
+        std::string{ConnectionMessages::INTERNAL_SERVER_CONNECTION_ERROR}, server_connection_->getServer()));
 }
 
 }  // namespace endgate
@@ -330,8 +353,10 @@ void appendLongString(std::string &out, std::string_view text)
 
 }  // namespace
 
-LoginSessionHandler::LoginSessionHandler(std::shared_ptr<ServerConnection> server_connection)
-    : logger_(LogManager::getLogger(*this)), server_connection_(std::move(server_connection))
+LoginSessionHandler::LoginSessionHandler(std::shared_ptr<ServerConnection> server_connection,
+                                         std::shared_ptr<ConnectionResultFuture> result_future)
+    : logger_(LogManager::getLogger(*this)), server_connection_(std::move(server_connection)),
+      result_future_(std::move(result_future))
 {
 }
 
@@ -345,7 +370,7 @@ void LoginSessionHandler::connected()
     backend->write(bp::RequestNetworkSettingsPacket{.client_network_version = version.getProtocol()});
 }
 
-bool LoginSessionHandler::handle(const bp::NetworkSettingsPacket &packet)
+bool LoginSessionHandler::handleEach(const bp::NetworkSettingsPacket &packet)
 {
     constexpr std::chrono::hours token_lifetime{1};
 
@@ -357,7 +382,9 @@ bool LoginSessionHandler::handle(const bp::NetworkSettingsPacket &packet)
     const auto der_length = i2d_PUBKEY(key, &der);
     const std::unique_ptr<unsigned char, decltype([](unsigned char *p) { OPENSSL_free(p); })> owned_der(der);
     if (der_length <= 0) {
-        server_connection_->getPlayer().disconnect();
+        result_future_->completeExceptionally(
+            std::make_exception_ptr(std::runtime_error("can't encode the proxy's key")));
+        server_connection_->disconnect();
         return true;
     }
     const auto cpk = base64Encode(std::as_bytes(std::span{der, static_cast<std::size_t>(der_length)}));
@@ -378,7 +405,9 @@ bool LoginSessionHandler::handle(const bp::NetworkSettingsPacket &packet)
     std::string name;
     std::string forwarded_client_data;
     if (glz::read_json(client_data_claims, profile.client_data) || glz::write_json(profile.name, name)) {
-        server_connection_->getPlayer().disconnect();
+        result_future_->completeExceptionally(
+            std::make_exception_ptr(std::runtime_error("can't read the player's client data")));
+        server_connection_->disconnect();
         return true;
     }
     client_data_claims["ThirdPartyName"] = std::move(name);
@@ -388,7 +417,8 @@ bool LoginSessionHandler::handle(const bp::NetworkSettingsPacket &packet)
     std::string authentication;
     if (!token || !client_data ||
         glz::write_json(LoginAuthentication{.authentication_type = 2, .token = *token}, authentication)) {
-        server_connection_->getPlayer().disconnect();
+        result_future_->completeExceptionally(std::make_exception_ptr(std::runtime_error("can't sign the login")));
+        server_connection_->disconnect();
         return true;
     }
     std::string request;
@@ -399,17 +429,16 @@ bool LoginSessionHandler::handle(const bp::NetworkSettingsPacket &packet)
     return true;
 }
 
-bool LoginSessionHandler::handle(const bp::ServerToClientHandshakePacket &packet)
+bool LoginSessionHandler::handleEach(const bp::ServerToClientHandshakePacket &packet)
 {
     auto *const backend = server_connection_->getConnection();
     const auto token = JsonWebToken::decode(packet.token).value_or(JsonWebToken{});
     const auto server_key = decodeSubjectPublicKeyInfo(token.x5u);
     HandshakeClaims claims;
     if (!server_key || !token.verify(server_key.get()) || glz::read<LENIENT_READ>(claims, token.claims)) {
-        logger_.error("[server connection] {} -> {}: the server's handshake doesn't verify",
-                      server_connection_->getPlayer().getGameProfile().name,
-                      server_connection_->getServer().getServerInfo().getName());
-        server_connection_->getPlayer().disconnect();
+        result_future_->completeExceptionally(
+            std::make_exception_ptr(std::runtime_error("the server's handshake doesn't verify")));
+        server_connection_->disconnect();
         return true;
     }
     auto salt = base64Decode(claims.salt);
@@ -420,7 +449,9 @@ bool LoginSessionHandler::handle(const bp::ServerToClientHandshakePacket &packet
         salt ? deriveEncryptionKey(backend->getEndpoint().getOfferIdentity()->getKey(), server_key.get(), *salt)
              : std::nullopt;
     if (!key) {
-        server_connection_->getPlayer().disconnect();
+        result_future_->completeExceptionally(
+            std::make_exception_ptr(std::runtime_error("can't derive the encryption key")));
+        server_connection_->disconnect();
         return true;
     }
     if (!backend->isTransportEncrypted()) {
@@ -430,28 +461,53 @@ bool LoginSessionHandler::handle(const bp::ServerToClientHandshakePacket &packet
     return true;
 }
 
-bool LoginSessionHandler::handle(const bp::PlayStatusPacket &packet)
+bool LoginSessionHandler::handleEach(const bp::PlayStatusPacket &packet)
 {
     auto *const backend = server_connection_->getConnection();
     if (packet.status != bp::PlayStatus::LoginSuccess) {
-        server_connection_->getPlayer().getConnection().write(packet);
-        server_connection_->getPlayer().disconnect();
+        std::optional<std::string> reason;
+        switch (packet.status) {
+        case bp::PlayStatus::LoginFailedClientOld:
+            reason = "Could not connect: Outdated client!";
+            break;
+        case bp::PlayStatus::LoginFailedServerOld:
+            reason = "The host is using an older version of Minecraft. Everyone should update to the latest version "
+                     "of Minecraft and try again.";
+            break;
+        case bp::PlayStatus::LoginFailedInvalidTenant:
+            reason = "Unable to connect to the world. Please check your join code and try again.";
+            break;
+        case bp::PlayStatus::LoginFailedEditionMismatchEduToVanilla:
+            reason = "The server is not running Minecraft Education. Failed to connect.";
+            break;
+        case bp::PlayStatus::LoginFailedEditionMismatchVanillaToEdu:
+            reason = "The server is running an incompatible edition of Minecraft. Failed to connect.";
+            break;
+        case bp::PlayStatus::LoginFailedServerFullSubClient:
+            reason = "Wow this server is popular! Check back later to see if space opens up.";
+            break;
+        case bp::PlayStatus::LoginFailedEditorMismatchEditorToVanilla:
+            reason = "The server is not in Editor Mode. Failed to connect.";
+            break;
+        case bp::PlayStatus::LoginFailedEditorMismatchVanillaToEditor:
+            reason = "The server is in Editor Mode. Failed to connect.";
+            break;
+        default:
+            break;
+        }
+        result_future_->complete(
+            ConnectionRequestBuilder::Result::forDisconnect(std::move(reason), server_connection_->getServer()));
+        server_connection_->disconnect();
         return true;
     }
-    if (!server_connection_->getPlayer().isActive()) {
+    if (!server_connection_->isActive()) {
         server_connection_->disconnect();
         return true;
     }
     logged_in_ = true;
     backend->setState(StateRegistry::Play);
-    backend->setSessionHandler(std::make_shared<BackendPlaySessionHandler>(server_connection_));
+    backend->setSessionHandler(std::make_shared<TransitionSessionHandler>(server_connection_, result_future_));
     return true;
-}
-
-void LoginSessionHandler::handleGeneric(ByteBufView packet)
-{
-    server_connection_->getPlayer().getConnection().write(packet.copy());
-    server_connection_->getPlayer().disconnect();
 }
 
 void LoginSessionHandler::handleUnknown(ByteBufView packet)
@@ -466,7 +522,8 @@ void LoginSessionHandler::disconnected()
     if (!logged_in_) {
         server_connection_->getServer().forgetTransport();
     }
-    server_connection_->getPlayer().disconnect();
+    result_future_->completeExceptionally(
+        std::make_exception_ptr(std::runtime_error("the connection to the remote server was unexpectedly closed")));
 }
 
 }  // namespace endgate
