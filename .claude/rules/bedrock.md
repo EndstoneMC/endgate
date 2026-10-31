@@ -23,6 +23,7 @@ Seen on real clients, 1.26.50 and 1.26.60:
 - A NetworkChunkPublisherUpdate centred far away unloads nothing.
 - CubeCraft switches without a dimension change: a 0.5 s, 1.5 s, 0.5 s camera fade; RemoveActor, PlayerList, RemoveObjective, MobEffect, close form, StopSound, SetHud and inventory clears; a MovePlayer teleport; the new world's state as individual packets; a publisher update and request-mode LevelChunks (limit 7) at the new spawn; then PlayStatus PlayerSpawn again. Its worlds sit thousands of blocks apart, so it never overwrites old chunks.
 - Hive switches with ChangeDimension to the Nether at Y 4000 and straight back, which shows the loading screen.
+- Hive and CubeCraft run their own server software, built for minigames rather than SMP. Their captures show what the client tolerates, never what a BDS backend sends or what a switch must do; Velocity, built for SMP, settles that.
 
 ## Online mode
 
