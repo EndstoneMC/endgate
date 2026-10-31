@@ -10,7 +10,8 @@
 - Keep Velocity's class and method names wherever we reasonably can, so every piece of endgate traces back to its Velocity counterpart and to Velocity's own dependencies.
 - Server switching is seamless: fade the screen out and back in with camera packets, so the player feels they stay in the game. Never switch with the transfer packet or the dimension change; both show a loading screen that feels like going back to the menu.
 - The dimension change is banned only as a switching trick. Use it wherever the player really changes dimension.
-- While the screen is dark, resend everything the client holds per server: chunks, actors and the rest of the world state.
+- Switch along Velocity's lifecycle: the new backend logs in while the player stays on the old one, and `handleBackendStartGame` plays `handleBackendJoinGame`'s part. Velocity's own switch step, a JoinGame and Respawn into another dimension, shows a loading screen, so endgate replaces that one step with CubeCraft's switch.
+- Under the fade: take back what the old backend left, teleport with MovePlayer to the new spawn, send the new StartGame's world state as individual packets (never a second StartGame), overwrite the old backend's chunks with empty LevelChunks so the client asks the new backend for its terrain, send PlayStatus PlayerSpawn, then fade back in.
 
 ## Approach
 

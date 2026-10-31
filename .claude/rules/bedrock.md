@@ -15,6 +15,15 @@ Never infer how the game behaves. Check anything touching the protocol, the wire
 - For NetherNet, EndstoneMC's reconstructions outrank clients built from observation, such as df-mc/go-nethernet.
 - When a source is unavailable, say so and leave the question open rather than guessing past it.
 
+## The client during a switch
+
+Seen on real clients, 1.26.50 and 1.26.60:
+
+- A LevelChunk with no subchunks and a biome-only payload (`01 02` per section) replaces the chunk; the client then sends SubChunkRequests for it and draws what comes back, within a frame.
+- A NetworkChunkPublisherUpdate centred far away unloads nothing.
+- CubeCraft switches without a dimension change: a 0.5 s, 1.5 s, 0.5 s camera fade; RemoveActor, PlayerList, RemoveObjective, MobEffect, close form, StopSound, SetHud and inventory clears; a MovePlayer teleport; the new world's state as individual packets; a publisher update and request-mode LevelChunks (limit 7) at the new spawn; then PlayStatus PlayerSpawn again. Its worlds sit thousands of blocks apart, so it never overwrites old chunks.
+- Hive switches with ChangeDimension to the Nether at Y 4000 and straight back, which shows the loading screen.
+
 ## Online mode
 
 BDS authenticates a login against Minecraft Services (MCS), not Xbox Live directly.
