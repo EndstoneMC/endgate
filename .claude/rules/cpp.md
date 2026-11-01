@@ -12,6 +12,7 @@ paths:
 - `#include <...>` for the standard library and third-party headers, `"endgate/..."` for ours.
 - Coroutines return `Awaitable<T>` (`endgate/awaitable.h`), never `asio::awaitable<T>` directly.
 - Spell atomics `std::atomic<T>`, not the `std::atomic_bool` family of aliases.
+- Initialise a member with `=`, never braces: `bool active_ = true;`, `int count_ = 0;`. A member whose default constructor gives what it needs takes no initialiser.
 - `.clang-tidy` owns naming and runs with warnings as errors. Run it rather than guess; don't silence it with `NOLINT`.
 - When a better pattern proves itself, adopt it and update this file.
 
