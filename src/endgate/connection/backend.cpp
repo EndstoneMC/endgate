@@ -296,11 +296,23 @@ void TransitionSessionHandler::readCompleted()
 
 void TransitionSessionHandler::disconnected()
 {
+    constexpr float fade_out_seconds = 0.5F;
+
     auto &player = server_connection_->getPlayer().getConnection();
     if (player.getEndpoint().getServer().getConfiguration().isLogPlayerConnections()) {
         logger_.info("[server connection] {} -> {} has disconnected",
                      server_connection_->getPlayer().getGameProfile().name,
                      server_connection_->getServer().getServerInfo().getName());
+    }
+    if (server_connection_->getPlayer().isActive() && isSwitching()) {
+        visitProtocolVersion(player.getProtocolVersion().getProtocol(), [&]<int Version>() {
+            PacketOf<Version, bp::MinecraftPacketIds::CameraInstruction> camera;
+            auto &fade = camera.camera_instruction.fade.emplace();
+            fade.time = typename decltype(fade.time)::value_type{.fade_out_time = fade_out_seconds};
+            fade.color.emplace();
+            player.write(std::move(camera));
+            return true;
+        });
     }
     result_future_->complete(ConnectionRequestBuilder::Result::forDisconnect(
         std::string{ConnectionMessages::INTERNAL_SERVER_CONNECTION_ERROR}, server_connection_->getServer()));

@@ -19,7 +19,9 @@
 #include <bedrock/protocol/camera.h>
 #include <bedrock/protocol/level.h>
 #include <bedrock/protocol/movement.h>
+#include <bedrock/protocol/serializer.hpp>
 #include <bedrock/protocol/sound.h>
+#include <bedrock/protocol/stream.hpp>
 #include <bedrock/protocol/text.h>
 #include <bedrock/protocol/ui.h>
 
@@ -388,6 +390,11 @@ void ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
         unique_id_ = start_game.entity_id;
         dimension_ = dimension;
         setSpawnPosition(false, start_game.settings.default_spawn.x, start_game.settings.default_spawn.z);
+        block_registry_checksum_ = start_game.server_block_type_registry_checksum;
+        block_network_ids_are_hashes_ = start_game.block_network_ids_are_hashes;
+        server_auth_block_breaking_ = start_game.movement_settings.server_auth_block_breaking;
+        bp::BinaryWriter experiments{experiments_};
+        bp::serialize(experiments, start_game.settings.experiments);
         auto first = start_game;
         first.server_enabled_client_side_generation = false;
         first.settings.seed = 0;
@@ -560,6 +567,31 @@ template void ClientPlaySessionHandler::handleBackendStartGame(
     const bp::StartGamePacket_<MINIMUM_VERSION.getProtocol()> &start_game, ServerConnection &destination);
 template void ClientPlaySessionHandler::handleBackendStartGame(
     const bp::StartGamePacket_<MAXIMUM_VERSION.getProtocol()> &start_game, ServerConnection &destination);
+
+template <typename Packet>
+    requires IsPacket<Packet, bp::MinecraftPacketIds::StartGame>
+std::optional<std::string_view> ClientPlaySessionHandler::findIncompatibility(const Packet &start_game) const
+{
+    if (start_game.server_block_type_registry_checksum != block_registry_checksum_ ||
+        start_game.block_network_ids_are_hashes != block_network_ids_are_hashes_) {
+        return "it has other blocks than the server you joined";
+    }
+    if (start_game.movement_settings.server_auth_block_breaking != server_auth_block_breaking_) {
+        return "it breaks blocks differently from the server you joined";
+    }
+    std::string experiments;
+    bp::BinaryWriter writer{experiments};
+    bp::serialize(writer, start_game.settings.experiments);
+    if (experiments != experiments_) {
+        return "it runs other experiments than the server you joined";
+    }
+    return std::nullopt;
+}
+
+template std::optional<std::string_view> ClientPlaySessionHandler::findIncompatibility(
+    const bp::StartGamePacket_<MINIMUM_VERSION.getProtocol()> &start_game) const;
+template std::optional<std::string_view> ClientPlaySessionHandler::findIncompatibility(
+    const bp::StartGamePacket_<MAXIMUM_VERSION.getProtocol()> &start_game) const;
 
 void ClientPlaySessionHandler::handleBackendPlayerSpawn(ServerConnection &destination)
 {

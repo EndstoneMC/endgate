@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -415,6 +416,10 @@ public:
 
     void handleBackendPlayerSpawn(ServerConnection &destination);
 
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::StartGame>
+    [[nodiscard]] std::optional<std::string_view> findIncompatibility(const Packet &start_game) const;
+
     /**
      * @see com.velocitypowered.proxy.connection.client.ClientPlaySessionHandler#getServerBossBars
      */
@@ -432,6 +437,7 @@ public:
     {
         return server_container_;
     }
+    [[nodiscard]] std::map<std::int32_t, std::string> &getSessionRegistries() { return session_registries_; }
 
     void setChunkRadius(std::int32_t radius);
     void setChunkPublisher(std::int32_t x, std::int32_t z, std::uint32_t radius);
@@ -467,6 +473,11 @@ private:
     std::optional<ChunkView> publisher_view_;
     std::optional<ChunkView> world_spawn_view_;
     std::optional<ChunkView> respawn_view_;
+    std::uint64_t block_registry_checksum_ = 0;
+    bool block_network_ids_are_hashes_ = false;
+    bool server_auth_block_breaking_ = false;
+    std::string experiments_;
+    std::map<std::int32_t, std::string> session_registries_;
 };
 
 }  // namespace endgate

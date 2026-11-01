@@ -8,13 +8,17 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include <bedrock/protocol/serializer.hpp>
+#include <bedrock/protocol/stream.hpp>
 #include <spdlog/logger.h>
 
 #include "endgate/awaitable.h"
+#include "endgate/backend.h"
 #include "endgate/connection/connection.h"
 #include "endgate/connection/player.h"
 #include "endgate/network/eventloop.h"
@@ -23,7 +27,6 @@
 namespace endgate {
 
 class Player;
-class BackendServer;
 class ClientPlaySessionHandler;
 
 /**
@@ -359,12 +362,37 @@ public:
     }
 
     template <typename Packet>
-        requires IsPacket<Packet, bp::MinecraftPacketIds::ItemRegistryPacket,
-                          bp::MinecraftPacketIds::BiomeDefinitionList, bp::MinecraftPacketIds::AvailableActorIDList,
-                          bp::MinecraftPacketIds::DimensionDataPacket>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::BiomeDefinitionList,
+                          bp::MinecraftPacketIds::AvailableActorIDList>
     bool handleEach(const Packet &)
     {
         return player_session_handler_->hasSwitched();
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::ItemRegistryPacket,
+                          bp::MinecraftPacketIds::DimensionDataPacket>
+    bool handleEach(const Packet &packet)
+    {
+        std::string registry;
+        bp::BinaryWriter writer{registry};
+        bp::serialize(writer, packet);
+        auto &registries = player_session_handler_->getSessionRegistries();
+        if (!player_session_handler_->hasSwitched()) {
+            registries[Packet::Id] = std::move(registry);
+            return false;
+        }
+        if (registries[Packet::Id] != registry) {
+            auto &player = server_connection_->getPlayer();
+            const auto &name = server_connection_->getServer().getServerInfo().getName();
+            const std::string_view what =
+                IsPacket<Packet, bp::MinecraftPacketIds::ItemRegistryPacket> ? "items" : "dimensions";
+            logger_.error("[connected player] {} ({}): {} has other {} than the server they joined",
+                          player.getUsername(), player.getConnection().getRemoteAddress(), name, what);
+            player.disconnect(DisconnectFailReason::NoReason,
+                              std::format("{} has other {} than the server you joined.", name, what));
+        }
+        return true;
     }
 
     template <typename Packet>
@@ -422,6 +450,12 @@ public:
         auto play_handler =
             std::dynamic_pointer_cast<ClientPlaySessionHandler>(player.getConnection().getActiveSessionHandler());
         const auto switching = play_handler != nullptr;
+        if (const auto incompatibility = switching ? play_handler->findIncompatibility(packet) : std::nullopt) {
+            server_connection_->disconnect();
+            result_future_->complete(ConnectionRequestBuilder::Result::forDisconnect(std::string{*incompatibility},
+                                                                                     server_connection_->getServer()));
+            return true;
+        }
         const auto existing_connection = player.getConnectedServer();
         if (existing_connection) {
             player.setConnectedServer(nullptr);
