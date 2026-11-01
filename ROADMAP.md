@@ -10,16 +10,18 @@ Phases 1 to 4 run in order; 5 and 7 can start once login works, and 6 once switc
 
 ## Where endgate is today
 
-Endgate logs a player in on both legs, rewrites the player's actor IDs per backend, and follows what each backend leaves on the client's screen. Phase 4's switch is next, and the chunks are the open question in front of it.
+Endgate logs a player in on both legs, rewrites the player's actor IDs per backend, and switches a real client between two backends under a camera fade. Commands and version routing are next.
 
 | Area | State |
 | --- | --- |
 | RakNet and NetherNet on one UDP port, all four player/backend pairings, backend transport detection | Built |
-| Netty-style event loops and a typed pipeline | Built; the cipher, compression, framing and decoding stages are switched off |
+| Netty-style event loops and a typed pipeline: cipher, compression, framing and decoding | Built |
 | Ping over RakNet and NetherNet, per client protocol | Built |
 | Console, endgate.toml, Velocity's log lines | Built |
-| Online mode: MCS keys, token validation, the NetherNet offer identity | Built on local main, not pushed |
-| Packet decoding, login, encryption, switching, commands, version routing | Not started |
+| Online mode: MCS keys, token validation, the NetherNet offer identity | Built |
+| Login and encryption on both legs, entity ID rewriting, the client's state per backend | Built |
+| Switching, failover, the guard and transfers | Built; a player-facing /server waits for commands |
+| Commands, version routing | Not started |
 
 Endgate supports protocols 2168, 2169, 2193 and 2225 (1.26.40 to 1.26.60). bedrock-protocol models 729 to 2225, so adding a release is a bump and a line in version.h.
 
@@ -69,7 +71,7 @@ Velocity's login-ratelimit, connection-timeout and read-timeout keys arrive here
 - **State per backend, kept player-side as Velocity keeps it.** The player owns the tab list, and ClientPlaySessionHandler keeps the backend's boss bars, actors, objectives, the player's own effects and an open container, each fed by its own handler in BackendPlaySessionHandler. The switch takes them back, and resets the title, sounds, forms, HUD, fog and camera unconditionally, as Velocity resets the title.
 - **Settings replay.** Keep what the client told its first backend, such as RequestChunkRadius and ClientCacheStatus, to send to the next one, as Velocity replays ClientSettings.
 
-Built: the entity map and its generated rewriting, the client's settings, and the state each backend leaves, kept player-side and taken back at the switch. Not rewritten yet: the camera's target and attach IDs, the pick request's and the telemetry's, which bedrock-protocol still types as plain integers. Left: the chunks, the debug shapes, and the state a backend only replaces, which waits for the new StartGame in Phase 4. The switch-time reset has no test until Phase 4 can bring up a second backend.
+Built: the entity map and its generated rewriting, the client's settings, and the state each backend leaves, chunks and debug shapes included, kept player-side and taken back at the switch. Not rewritten yet: the camera's target and attach IDs, the pick request's and the telemetry's, which bedrock-protocol still types as plain integers. The switch-time reset runs in Phase 4's two-backend test.
 
 ## Phase 4: the seamless switch
 
@@ -80,13 +82,15 @@ This follows Velocity's ConnectedPlayer#createConnectionRequest and TransitionSe
 1. Connect and log in to the new backend while the player stays on the old one, up to its StartGame and the chunks around spawn.
 2. Fade the camera out.
 3. Take back what the old backend left (see World state), and overwrite its chunks with empty LevelChunks so the client asks the new backend for its terrain.
-4. Turn the new StartGame into packets the client accepts mid-session: game rules, game type, difficulty, time, spawn, abilities, attributes, inventory and commands. Then teleport the player with MovePlayer, or with a real ChangeDimension when the new backend puts them in another dimension.
-5. Replay the client's settings to the new backend, flush what it queued, and disconnect the old backend.
-6. Send PlayStatus PlayerSpawn again, then fade back in.
+4. Turn the new StartGame into packets the client accepts mid-session: game rules, game type, difficulty, time and spawn. The new backend's RespawnPacket places the player, as on any join, or a real ChangeDimension when it puts them in another dimension.
+5. Replay the client's settings to the new backend, tell it the loading screen started, flush what it queued, and disconnect the old backend.
+6. At the new backend's PlayStatus PlayerSpawn, tell it the loading screen ended and the player is initialised, then fade back in.
 
 - **Guard.** Refuse a switch the client can't survive. That means a different block registry checksum or hashing flag, item registry, pack set or movement authority.
 - **Failover.** On a kick or an unexpected disconnect, move the player to the next server in try, as Velocity's failover-on-unexpected-server-disconnect does.
 - **Transfers.** A backend's TransferPacket naming a registered server becomes a seamless switch instead.
+
+Built: the switch, on a real 1.26.60 client from a NetherNet to a RakNet backend with the console's send; failover; the guard on the new StartGame, with the item registry and dimension data checked once they arrive; transfers; and a two-backend integration test. The first StartGame reaches the client with client-side generation off and seed 0, since the client keeps both for the session. Left: a player-facing /server, which needs Phase 6's commands; refusing a different item registry before the switch commits; and real-client runs of switching back, repeated switches and a switch into another dimension.
 
 ## Phase 5: version routing
 
