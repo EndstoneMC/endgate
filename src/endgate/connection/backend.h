@@ -419,14 +419,15 @@ public:
     {
         auto &backend = server_connection_->ensureConnected();
         auto &player = server_connection_->getPlayer();
+        auto play_handler =
+            std::dynamic_pointer_cast<ClientPlaySessionHandler>(player.getConnection().getActiveSessionHandler());
+        const auto switching = play_handler != nullptr;
         const auto existing_connection = player.getConnectedServer();
         if (existing_connection) {
             player.setConnectedServer(nullptr);
             existing_connection->disconnect();
         }
 
-        auto play_handler =
-            std::dynamic_pointer_cast<ClientPlaySessionHandler>(player.getConnection().getActiveSessionHandler());
         if (!play_handler) {
             play_handler = std::make_shared<ClientPlaySessionHandler>(player.shared_from_this());
             player.getConnection().setSessionHandler(play_handler);
@@ -435,7 +436,7 @@ public:
 
         backend.setSessionHandler(std::make_shared<BackendPlaySessionHandler>(server_connection_));
         player.setConnectedServer(server_connection_);
-        if (existing_connection) {
+        if (switching) {
             player.getPlayerSettings().replay(backend);
         }
         result_future_->complete(ConnectionRequestBuilder::Result::successful(server_connection_->getServer()));
@@ -462,7 +463,7 @@ public:
         }
         std::ranges::sort(packs);
         auto &player = server_connection_->getPlayer();
-        if (!player.getConnectedServer()) {
+        if (!isSwitching()) {
             player.setAppliedResourcePacks(std::move(packs));
             return false;
         }
@@ -485,7 +486,7 @@ public:
         requires IsPacket<Packet, bp::MinecraftPacketIds::ResourcePackStack>
     bool handleEach(const Packet &)
     {
-        if (!server_connection_->getPlayer().getConnectedServer()) {
+        if (!isSwitching()) {
             return false;
         }
         auto &backend = server_connection_->ensureConnected();
@@ -522,6 +523,8 @@ public:
     void disconnected() override;
 
 private:
+    [[nodiscard]] bool isSwitching() const;
+
     spdlog::logger &logger_;
     std::shared_ptr<ServerConnection> server_connection_;
     std::shared_ptr<ConnectionResultFuture> result_future_;

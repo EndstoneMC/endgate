@@ -219,9 +219,16 @@ void BackendPlaySessionHandler::disconnected()
                      server_connection_->getPlayer().getGameProfile().name,
                      server_connection_->getServer().getServerInfo().getName());
     }
-    if (!server_connection_->isGracefulDisconnect()) {
-        server_connection_->getPlayer().disconnect();
+    if (server_connection_->isGracefulDisconnect()) {
+        return;
     }
+    if (player.getEndpoint().getServer().getConfiguration().isFailoverOnUnexpectedServerDisconnect()) {
+        server_connection_->getPlayer().handleConnectionException(server_connection_->getServer(),
+                                                                  ConnectionMessages::INTERNAL_SERVER_CONNECTION_ERROR);
+        return;
+    }
+    server_connection_->getPlayer().disconnect(DisconnectFailReason::NoReason,
+                                               std::string{ConnectionMessages::INTERNAL_SERVER_CONNECTION_ERROR});
 }
 
 TransitionSessionHandler::TransitionSessionHandler(std::shared_ptr<ServerConnection> server_connection,
@@ -253,7 +260,7 @@ void TransitionSessionHandler::activated()
                      server_connection_->getServer().getServerInfo().getName());
     }
     server_connection_->connected();
-    if (!server_connection_->getPlayer().getConnectedServer()) {
+    if (!isSwitching()) {
         return;
     }
     visitProtocolVersion(player.getProtocolVersion().getProtocol(), [&]<int Version>() {
@@ -270,10 +277,16 @@ void TransitionSessionHandler::activated()
 void TransitionSessionHandler::handleUnknown(ByteBufView batch)
 {
     auto &player = server_connection_->getPlayer();
-    if (const auto &connected = player.getConnectedServer(); connected && connected != server_connection_) {
+    if (isSwitching() && player.getConnectedServer() != server_connection_) {
         return;
     }
     player.getConnection().delayedWrite(batch.copy());
+}
+
+bool TransitionSessionHandler::isSwitching() const
+{
+    return std::dynamic_pointer_cast<ClientPlaySessionHandler>(
+               server_connection_->getPlayer().getConnection().getActiveSessionHandler()) != nullptr;
 }
 
 void TransitionSessionHandler::readCompleted()

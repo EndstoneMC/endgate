@@ -19,13 +19,14 @@ namespace endgate {
 
 namespace {
 struct Advanced {
-    int compression_threshold{};
-    int compression_level{};
-    int login_ratelimit{};
-    int connection_timeout{};
-    int read_timeout{};
-    bool log_command_executions{};
-    bool log_player_connections{};
+    int compression_threshold = 0;
+    int compression_level = 0;
+    int login_ratelimit = 0;
+    int connection_timeout = 0;
+    int read_timeout = 0;
+    bool log_command_executions = false;
+    bool log_player_connections = false;
+    bool failover_on_unexpected_server_disconnect = false;
 
     struct glaze {
         using T = Advanced;
@@ -33,13 +34,14 @@ struct Advanced {
             glz::object("compression-threshold", &T::compression_threshold, "compression-level", &T::compression_level,
                         "login-ratelimit", &T::login_ratelimit, "connection-timeout", &T::connection_timeout,
                         "read-timeout", &T::read_timeout, "log-command-executions", &T::log_command_executions,
-                        "log-player-connections", &T::log_player_connections);
+                        "log-player-connections", &T::log_player_connections,
+                        "failover-on-unexpected-server-disconnect", &T::failover_on_unexpected_server_disconnect);
     };
 };
 
 struct Debug {
-    bool packet_decode_logging{};
-    bool log_server_backpressure{};
+    bool packet_decode_logging = false;
+    bool log_server_backpressure = false;
 
     struct glaze {
         using T = Debug;
@@ -54,9 +56,9 @@ struct Document {
     std::string tls_certificate;
     std::string tls_certificate_key;
     std::string motd;
-    int show_max_players{};
-    bool online_mode{};
-    bool kick_existing_players{};
+    int show_max_players = 0;
+    bool online_mode = false;
+    bool kick_existing_players = false;
     std::map<std::string, std::variant<std::string, std::vector<std::string>>> servers;
     Advanced advanced;
     Debug debug;
@@ -126,6 +128,7 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
     config.read_timeout_ = document.advanced.read_timeout;
     config.log_command_executions_ = document.advanced.log_command_executions;
     config.log_player_connections_ = document.advanced.log_player_connections;
+    config.failover_on_unexpected_server_disconnect_ = document.advanced.failover_on_unexpected_server_disconnect;
     config.packet_decode_logging_ = document.debug.packet_decode_logging;
     config.log_server_backpressure_ = document.debug.log_server_backpressure;
     config.tls_certificate_ = document.tls_certificate;
@@ -268,6 +271,11 @@ bool ProxyConfig::isLogCommandExecutions() const
 bool ProxyConfig::isLogPlayerConnections() const
 {
     return log_player_connections_;
+}
+
+bool ProxyConfig::isFailoverOnUnexpectedServerDisconnect() const
+{
+    return failover_on_unexpected_server_disconnect_;
 }
 
 bool ProxyConfig::isPacketDecodeLogging() const

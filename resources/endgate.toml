@@ -60,6 +60,10 @@ log-command-executions = false
 # and disconnecting from the proxy.
 log-player-connections = true
 
+# Moves a player to the next server in try when their server drops them without a disconnect
+# message, instead of disconnecting them.
+failover-on-unexpected-server-disconnect = true
+
 [debug]
 # Logs a malformed packet's full decode error instead of a one-line notice.
 packet-decode-logging = false

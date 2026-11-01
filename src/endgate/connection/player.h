@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <memory>
@@ -213,9 +214,11 @@ public:
     void resetInFlightConnection() { connection_in_flight_ = nullptr; }
 
     /**
+     * Finds another server to attempt to log into, if we were unexpectedly disconnected from the server.
+     *
      * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer#getNextServerToTry
      */
-    [[nodiscard]] BackendServer *getNextServerToTry() const;
+    [[nodiscard]] BackendServer *getNextServerToTry(const BackendServer *current = nullptr);
 
     /**
      * @see com.velocitypowered.api.proxy.Player#createConnectionRequest
@@ -300,7 +303,13 @@ public:
 private:
     friend class ConnectionRequestBuilder;
 
+    /**
+     * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer#handleConnectionException(RegisteredServer,
+     * Component, Component, boolean)
+     * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer#handleKickEvent
+     */
     void handleKickEvent(BackendServer &server, const std::string &friendly_reason);
+    static Awaitable<void> redirect(std::shared_ptr<Player> self, BackendServer &server, std::string friendly_reason);
 
     ProxyServer &server_;
     spdlog::logger &logger_;
@@ -308,6 +317,7 @@ private:
     GameProfile profile_;
     std::shared_ptr<ServerConnection> connected_server_;
     std::shared_ptr<ServerConnection> connection_in_flight_;
+    std::size_t try_index_ = 0;
     std::optional<std::vector<std::string>> applied_resource_packs_;
     ClientSettings settings_;
     PlayerList player_list_;

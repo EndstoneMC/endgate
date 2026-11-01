@@ -108,26 +108,25 @@ Player::Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connect
 {
 }
 
-BackendServer *Player::getNextServerToTry() const
+BackendServer *Player::getNextServerToTry(const BackendServer *current)
 {
-    const auto &order = server_.getConfiguration().getAttemptConnectionOrder();
-    if (order.empty()) {
-        logger_.warn("[initial connection] {}: no available servers, try is empty", connection_->getRemoteAddress());
-        return nullptr;
-    }
-    for (const auto &name : order) {
-        if (auto *const server = server_.getServer(name)) {
-            return server;
+    const auto &servers_to_try = server_.getConfiguration().getAttemptConnectionOrder();
+    for (auto i = try_index_; i < servers_to_try.size(); ++i) {
+        auto *const to_try = server_.getServer(servers_to_try[i]);
+        if ((connected_server_ && &connected_server_->getServer() == to_try) ||
+            (connection_in_flight_ && &connection_in_flight_->getServer() == to_try) || (current == to_try)) {
+            continue;
         }
+        try_index_ = i;
+        return to_try;
     }
-    logger_.warn("[initial connection] {}: no available servers, none of try is configured",
-                 connection_->getRemoteAddress());
     return nullptr;
 }
 
 void Player::setConnectedServer(std::shared_ptr<ServerConnection> server_connection)
 {
     connected_server_ = std::move(server_connection);
+    try_index_ = 0;
     if (connected_server_ == connection_in_flight_) {
         connection_in_flight_ = nullptr;
     }
@@ -172,14 +171,56 @@ void Player::handleConnectionException(BackendServer &server, std::string_view r
 
 void Player::handleKickEvent(BackendServer &server, const std::string &friendly_reason)
 {
-    if (!connected_server_ || &connected_server_->getServer() == &server) {
-        disconnect(DisconnectFailReason::NoReason, friendly_reason);
+    const auto kicked_from_current = !connected_server_ || &connected_server_->getServer() == &server;
+    auto *const redirect_to = kicked_from_current ? getNextServerToTry(&server) : nullptr;
+
+    connection_in_flight_ = nullptr;
+    const auto previous_connection = connected_server_;
+    if (kicked_from_current) {
+        connected_server_ = nullptr;
+    }
+    if (!isActive()) {
         return;
     }
-    if (connection_in_flight_ && &connection_in_flight_->getServer() == &server) {
-        resetInFlightConnection();
+    if (redirect_to != nullptr) {
+        asio::co_spawn(connection_->eventLoop().getExecutor(),
+                       redirect(shared_from_this(), *redirect_to, friendly_reason), asio::detached);
+        return;
     }
-    sendMessage(friendly_reason);
+    if (!kicked_from_current && previous_connection) {
+        sendMessage(friendly_reason);
+        return;
+    }
+    disconnect(DisconnectFailReason::NoReason, friendly_reason);
+}
+
+Awaitable<void> Player::redirect(std::shared_ptr<Player> self, BackendServer &server, std::string friendly_reason)
+{
+    std::optional<ConnectionRequestBuilder::Result> result;
+    try {
+        result.emplace(co_await self->createConnectionRequest(server).connect());
+    }
+    catch (const std::exception &cause) {
+        self->handleConnectionException(server, cause);
+        co_return;
+    }
+    switch (result->getStatus()) {
+    case ConnectionRequestBuilder::Status::AlreadyConnected:
+        self->logger_.error("[connected player] {} ({}): already connected to {}", self->profile_.name,
+                            self->connection_->getRemoteAddress(), server.getServerInfo().getName());
+        break;
+    case ConnectionRequestBuilder::Status::ConnectionInProgress:
+    case ConnectionRequestBuilder::Status::ConnectionCancelled:
+        self->disconnect(DisconnectFailReason::NoReason, result->getReason().value_or(friendly_reason));
+        break;
+    case ConnectionRequestBuilder::Status::ServerDisconnected:
+        self->handleConnectionException(
+            server, result->getReason().value_or(std::string{ConnectionMessages::INTERNAL_SERVER_CONNECTION_ERROR}));
+        break;
+    case ConnectionRequestBuilder::Status::Success:
+        self->sendMessage(friendly_reason);
+        break;
+    }
 }
 
 void Player::sendMessage(std::string_view message)

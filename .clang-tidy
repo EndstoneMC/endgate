@@ -15,6 +15,7 @@ Checks: >
   -misc-const-correctness,
   -misc-non-private-member-variables-in-classes,
   -misc-include-cleaner,
+  -misc-no-recursion,
   -modernize-use-trailing-return-type,
   -modernize-avoid-c-arrays,
   -performance-enum-size,
