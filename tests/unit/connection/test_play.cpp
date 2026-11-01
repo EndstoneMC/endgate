@@ -176,7 +176,10 @@ TEST_F(PlayTest, ObjectivesFollowDisplayAndRemove)
 TEST_F(PlayTest, OnlyThePlayersOwnEffectsAreKept)
 {
     using MobEffect = Latest<bp::MinecraftPacketIds::MobEffect>;
-    node_.call([&] { return client_handler_->handleBackendStartGame(startGame(1, 10), *server_connection_); });
+    node_.call([&] {
+        client_handler_->handleBackendStartGame(startGame(1, 10), *server_connection_);
+        return 0;
+    });
 
     MobEffect effect;
     effect.event_id = MobEffect::Event::Add;
@@ -225,18 +228,15 @@ TEST_F(PlayTest, DebugShapesFollowDrawAndRemove)
     EXPECT_EQ(client_handler_->getServerShapes(), (std::set<std::uint64_t>{1, 3}));
 }
 
-TEST_F(PlayTest, ChunksAreKeptWhileTheyAreInView)
+TEST_F(PlayTest, ChunksAreKeptHoweverFarThePlayerMoves)
 {
     using LevelChunk = Latest<bp::MinecraftPacketIds::FullChunkData>;
     fromBackend(LevelChunk{.pos = {.x = 0, .z = 0}});
     fromBackend(LevelChunk{.pos = {.x = -3, .z = 2}});
-    fromBackend(LevelChunk{.pos = {.x = 40, .z = 0}});
-    Latest<bp::MinecraftPacketIds::NetworkChunkPublisherUpdate> publisher;
-    publisher.position = {.x = 8, .y = 64, .z = 8};
-    publisher.radius = 128;
-    fromBackend(publisher);
+    fromBackend(LevelChunk{.pos = {.x = 4000, .z = 0}});
 
-    EXPECT_EQ(client_handler_->getServerChunks(), (std::set<std::pair<std::int32_t, std::int32_t>>{{-3, 2}, {0, 0}}));
+    EXPECT_EQ(client_handler_->getServerChunks(),
+              (std::set<std::pair<std::int32_t, std::int32_t>>{{-3, 2}, {0, 0}, {4000, 0}}));
 }
 
 TEST_F(PlayTest, ADimensionChangeLeavesNoChunks)
@@ -256,19 +256,34 @@ TEST_F(PlayTest, TheFirstBackendsRegistriesReachTheClient)
         node_.call([&] { return backend_handler_->handle(Latest<bp::MinecraftPacketIds::ItemRegistryPacket>{}); }));
 }
 
-TEST_F(PlayTest, TheFirstStartGameReachesTheClient)
+TEST_F(PlayTest, TheFirstStartGameReachesTheClientWithoutClientSideGeneration)
 {
-    EXPECT_TRUE(
-        node_.call([&] { return client_handler_->handleBackendStartGame(startGame(1, 10), *server_connection_); }));
+    auto start_game = startGame(1, 10);
+    start_game.server_enabled_client_side_generation = true;
+    start_game.settings.seed = 4604325614334842756;
+
+    node_.call([&] {
+        client_handler_->handleBackendStartGame(start_game, *server_connection_);
+        client_->flush();
+        return 0;
+    });
+
+    ASSERT_EQ(idsOf(client_->batches()), (std::vector<std::uint32_t>{Latest<bp::MinecraftPacketIds::StartGame>::Id}));
+    const auto sent = decode<Latest<bp::MinecraftPacketIds::StartGame>>(client_->batches()[0]);
+    EXPECT_FALSE(sent.server_enabled_client_side_generation);
+    EXPECT_EQ(sent.settings.seed, 0);
 }
 
 TEST_F(PlayTest, ALaterStartGameNeedsTheBackendLeg)
 {
-    node_.call([&] { return client_handler_->handleBackendStartGame(startGame(1, 10), *server_connection_); });
+    node_.call([&] {
+        client_handler_->handleBackendStartGame(startGame(1, 10), *server_connection_);
+        return 0;
+    });
 
     EXPECT_TRUE(node_.call([&] {
         try {
-            std::ignore = client_handler_->handleBackendStartGame(startGame(2, 20), *server_connection_);
+            client_handler_->handleBackendStartGame(startGame(2, 20), *server_connection_);
         }
         catch (const std::logic_error &) {
             return true;

@@ -387,13 +387,13 @@ public:
 
     /**
      * Handles the StartGame packet. This function is responsible for handling the client-side
-     * switching servers in endgate. Returns whether the client takes the packet.
+     * switching servers in endgate.
      *
      * @see com.velocitypowered.proxy.connection.client.ClientPlaySessionHandler#handleBackendJoinGame
      */
     template <typename Packet>
         requires IsPacket<Packet, bp::MinecraftPacketIds::StartGame>
-    [[nodiscard]] bool handleBackendStartGame(const Packet &start_game, ServerConnection &destination);
+    void handleBackendStartGame(const Packet &start_game, ServerConnection &destination);
 
     void handleBackendPlayerSpawn(ServerConnection &destination);
 

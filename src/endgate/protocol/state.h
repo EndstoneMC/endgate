@@ -120,10 +120,9 @@ struct PacketRegistries<StateRegistry::Play> {
                        bp::MinecraftPacketIds::SetDisplayObjective, bp::MinecraftPacketIds::RemoveObjective,
                        bp::MinecraftPacketIds::MobEffect, bp::MinecraftPacketIds::ContainerOpen,
                        bp::MinecraftPacketIds::ContainerClose, bp::MinecraftPacketIds::PrimitiveShapesPacket,
-                       bp::MinecraftPacketIds::FullChunkData, bp::MinecraftPacketIds::NetworkChunkPublisherUpdate,
-                       bp::MinecraftPacketIds::ChangeDimension, bp::MinecraftPacketIds::ItemRegistryPacket,
-                       bp::MinecraftPacketIds::BiomeDefinitionList, bp::MinecraftPacketIds::AvailableActorIDList,
-                       bp::MinecraftPacketIds::DimensionDataPacket>;
+                       bp::MinecraftPacketIds::FullChunkData, bp::MinecraftPacketIds::ChangeDimension,
+                       bp::MinecraftPacketIds::ItemRegistryPacket, bp::MinecraftPacketIds::BiomeDefinitionList,
+                       bp::MinecraftPacketIds::AvailableActorIDList, bp::MinecraftPacketIds::DimensionDataPacket>;
 };
 
 template <StateRegistry State, Direction D, int Version>

@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <deque>
 #include <format>
-#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -326,23 +325,6 @@ public:
     }
 
     template <typename Packet>
-        requires IsPacket<Packet, bp::MinecraftPacketIds::NetworkChunkPublisherUpdate>
-    bool handleEach(const Packet &packet)
-    {
-        constexpr std::int64_t margin = 32;
-        constexpr std::int64_t chunk_centre = 8;
-
-        const auto reach = static_cast<std::int64_t>(packet.radius) + margin;
-        auto &chunks = player_session_handler_->getServerChunks();
-        for (auto it = chunks.begin(); it != chunks.end();) {
-            const auto dx = (static_cast<std::int64_t>(it->first) << 4) + chunk_centre - packet.position.x;
-            const auto dz = (static_cast<std::int64_t>(it->second) << 4) + chunk_centre - packet.position.z;
-            it = dx * dx + dz * dz > reach * reach ? chunks.erase(it) : std::next(it);
-        }
-        return false;
-    }
-
-    template <typename Packet>
         requires IsPacket<Packet, bp::MinecraftPacketIds::ChangeDimension>
     bool handleEach(const Packet &packet)
     {
@@ -424,7 +406,7 @@ public:
             play_handler = std::make_shared<ClientPlaySessionHandler>(player.shared_from_this());
             player.getConnection().setSessionHandler(play_handler);
         }
-        const auto client_takes_it = play_handler->handleBackendStartGame(packet, *server_connection_);
+        play_handler->handleBackendStartGame(packet, *server_connection_);
 
         backend.setSessionHandler(std::make_shared<BackendPlaySessionHandler>(server_connection_));
         player.setConnectedServer(server_connection_);
@@ -432,7 +414,7 @@ public:
             player.getPlayerSettings().replay(backend);
         }
         result_future_->complete(ConnectionRequestBuilder::Result::successful(server_connection_->getServer()));
-        return !client_takes_it;
+        return true;
     }
 
     /**

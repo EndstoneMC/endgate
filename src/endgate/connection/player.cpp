@@ -268,7 +268,7 @@ void ClientPlaySessionHandler::disconnected()
 
 template <typename Packet>
     requires IsPacket<Packet, bp::MinecraftPacketIds::StartGame>
-bool ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, ServerConnection &destination)
+void ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, ServerConnection &destination)
 {
     constexpr std::int32_t nether = 1;
     constexpr std::int32_t the_end = 2;
@@ -284,10 +284,20 @@ bool ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
         runtime_id_ = start_game.runtime_id;
         unique_id_ = start_game.entity_id;
         dimension_ = dimension;
-        return true;
+        auto first = start_game;
+        first.server_enabled_client_side_generation = false;
+        first.settings.seed = 0;
+        player_->getConnection().delayedWrite(std::move(first));
+        return;
     }
 
     auto &backend = destination.ensureConnected();
+    visitProtocolVersion(backend.getProtocolVersion().getProtocol(), [&]<int Version>() {
+        PacketOf<Version, bp::MinecraftPacketIds::ServerboundLoadingScreenPacket> start;
+        start.loading_screen_packet_type = decltype(start.loading_screen_packet_type)::StartLoadingScreen;
+        backend.write(std::move(start));
+        return true;
+    });
     player_->getPlayerList().clearAll();
     auto &client = player_->getConnection();
     visitProtocolVersion(client.getProtocolVersion().getProtocol(), [&]<int Version>() {
@@ -380,13 +390,6 @@ bool ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
                 chunk.serialized_chunk = biomes;
                 client.delayedWrite(std::move(chunk));
             }
-            PacketOf<Version, bp::MinecraftPacketIds::MovePlayer> move;
-            move.player_id = runtime_id_;
-            move.pos = start_game.pos;
-            move.rot = start_game.rot;
-            move.y_head_rot = start_game.rot.y;
-            move.reset_position = decltype(move.reset_position)::Teleport;
-            client.delayedWrite(std::move(move));
         }
 
         const auto &settings = start_game.settings;
@@ -439,7 +442,6 @@ bool ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
 
     backend.setEntityMap(EntityMap{runtime_id_, unique_id_, start_game.runtime_id, start_game.entity_id});
     client.flush();
-    return false;
 }
 
 static_assert(std::is_same_v<PacketTypes<bp::MinecraftPacketIds::StartGame>,
@@ -447,9 +449,9 @@ static_assert(std::is_same_v<PacketTypes<bp::MinecraftPacketIds::StartGame>,
                                       bp::StartGamePacket_<MAXIMUM_VERSION.getProtocol()>>>,
               "a supported version's StartGame has a type handleBackendStartGame isn't instantiated for");
 
-template bool ClientPlaySessionHandler::handleBackendStartGame(
+template void ClientPlaySessionHandler::handleBackendStartGame(
     const bp::StartGamePacket_<MINIMUM_VERSION.getProtocol()> &start_game, ServerConnection &destination);
-template bool ClientPlaySessionHandler::handleBackendStartGame(
+template void ClientPlaySessionHandler::handleBackendStartGame(
     const bp::StartGamePacket_<MAXIMUM_VERSION.getProtocol()> &start_game, ServerConnection &destination);
 
 void ClientPlaySessionHandler::handleBackendPlayerSpawn(ServerConnection &destination)
@@ -461,6 +463,9 @@ void ClientPlaySessionHandler::handleBackendPlayerSpawn(ServerConnection &destin
     }
     auto &backend = destination.ensureConnected();
     visitProtocolVersion(backend.getProtocolVersion().getProtocol(), [&]<int Version>() {
+        PacketOf<Version, bp::MinecraftPacketIds::ServerboundLoadingScreenPacket> end;
+        end.loading_screen_packet_type = decltype(end.loading_screen_packet_type)::EndLoadingScreen;
+        backend.delayedWrite(std::move(end));
         backend.write(PacketOf<Version, bp::MinecraftPacketIds::SetLocalPlayerAsInit>{.player_id = runtime_id_});
         return true;
     });
