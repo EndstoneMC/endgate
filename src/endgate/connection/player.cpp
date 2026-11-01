@@ -1,12 +1,17 @@
 #include "endgate/connection/player.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <format>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -266,6 +271,63 @@ void ClientPlaySessionHandler::disconnected()
     player_->teardown();
 }
 
+void ClientPlaySessionHandler::setChunkRadius(std::int32_t radius)
+{
+    chunk_radius_ = radius;
+    pruneServerChunks();
+}
+
+void ClientPlaySessionHandler::setChunkPublisher(std::int32_t x, std::int32_t z, std::uint32_t radius)
+{
+    publisher_view_ = ChunkView{.x = x >> 4, .z = z >> 4, .radius = static_cast<std::int32_t>(radius >> 4) + 1};
+    pruneServerChunks();
+}
+
+void ClientPlaySessionHandler::setSpawnPosition(bool respawn, std::int32_t x, std::int32_t z)
+{
+    constexpr std::int32_t spawn_radius = 112;
+
+    (respawn ? respawn_view_ : world_spawn_view_) =
+        ChunkView{.x = x >> 4, .z = z >> 4, .radius = (spawn_radius >> 4) + 1};
+    pruneServerChunks();
+}
+
+void ClientPlaySessionHandler::setPlayerPosition(float x, float z)
+{
+    const std::pair chunk{static_cast<std::int32_t>(std::floor(x)) >> 4, static_cast<std::int32_t>(std::floor(z)) >> 4};
+    if (player_chunk_ == chunk) {
+        return;
+    }
+    player_chunk_ = chunk;
+    pruneServerChunks();
+}
+
+void ClientPlaySessionHandler::pruneServerChunks()
+{
+    constexpr std::int32_t margin = 2;
+
+    const auto requested = player_->getPlayerSettings().getViewDistance();
+    if (!player_chunk_ || (!chunk_radius_ && !requested)) {
+        return;
+    }
+    std::vector<ChunkView> views{{.x = player_chunk_->first,
+                                  .z = player_chunk_->second,
+                                  .radius = std::max(chunk_radius_.value_or(0) + 1, requested.value_or(0))}};
+    for (const auto &view : {publisher_view_, world_spawn_view_, respawn_view_}) {
+        if (view) {
+            views.push_back(*view);
+        }
+    }
+    for (auto it = server_chunks_.begin(); it != server_chunks_.end();) {
+        auto held = false;
+        for (const auto &view : views) {
+            held = held || (std::abs(it->first - view.x) <= view.radius + margin &&
+                            std::abs(it->second - view.z) <= view.radius + margin);
+        }
+        it = held ? std::next(it) : server_chunks_.erase(it);
+    }
+}
+
 template <typename Packet>
     requires IsPacket<Packet, bp::MinecraftPacketIds::StartGame>
 void ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, ServerConnection &destination)
@@ -284,6 +346,7 @@ void ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
         runtime_id_ = start_game.runtime_id;
         unique_id_ = start_game.entity_id;
         dimension_ = dimension;
+        setSpawnPosition(false, start_game.settings.default_spawn.x, start_game.settings.default_spawn.z);
         auto first = start_game;
         first.server_enabled_client_side_generation = false;
         first.settings.seed = 0;
@@ -292,6 +355,8 @@ void ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
     }
 
     auto &backend = destination.ensureConnected();
+    logger_.debug("[connected player] {} ({}): clearing {} chunks", player_->getGameProfile().name,
+                  player_->getConnection().getRemoteAddress(), server_chunks_.size());
     visitProtocolVersion(backend.getProtocolVersion().getProtocol(), [&]<int Version>() {
         PacketOf<Version, bp::MinecraftPacketIds::ServerboundLoadingScreenPacket> start;
         start.loading_screen_packet_type = decltype(start.loading_screen_packet_type)::StartLoadingScreen;
@@ -437,6 +502,7 @@ void ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
     server_shapes_.clear();
     server_chunks_.clear();
     dimension_ = dimension;
+    setSpawnPosition(false, start_game.settings.default_spawn.x, start_game.settings.default_spawn.z);
     switched_ = true;
     awaiting_spawn_ = true;
 

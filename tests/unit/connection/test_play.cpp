@@ -228,15 +228,56 @@ TEST_F(PlayTest, DebugShapesFollowDrawAndRemove)
     EXPECT_EQ(client_handler_->getServerShapes(), (std::set<std::uint64_t>{1, 3}));
 }
 
-TEST_F(PlayTest, ChunksAreKeptHoweverFarThePlayerMoves)
+TEST_F(PlayTest, NoChunkIsDroppedBeforeThePlayerIsPlaced)
 {
     using LevelChunk = Latest<bp::MinecraftPacketIds::FullChunkData>;
     fromBackend(LevelChunk{.pos = {.x = 0, .z = 0}});
-    fromBackend(LevelChunk{.pos = {.x = -3, .z = 2}});
     fromBackend(LevelChunk{.pos = {.x = 4000, .z = 0}});
 
+    fromBackend(Latest<bp::MinecraftPacketIds::ChunkRadiusUpdated>{.chunk_radius = 8});
+
+    EXPECT_EQ(client_handler_->getServerChunks(), (std::set<std::pair<std::int32_t, std::int32_t>>{{0, 0}, {4000, 0}}));
+}
+
+TEST_F(PlayTest, ChunksBeyondThePlayersViewAreDropped)
+{
+    using LevelChunk = Latest<bp::MinecraftPacketIds::FullChunkData>;
+    for (const auto x : {0, 11, 12}) {
+        fromBackend(LevelChunk{.pos = {.x = x, .z = 0}});
+        fromBackend(LevelChunk{.pos = {.x = 0, .z = -x}});
+    }
+    Latest<bp::MinecraftPacketIds::PlayerAuthInputPacket> input;
+    input.pos = {.x = 8.5F, .y = 64.0F, .z = 8.5F};
+    node_.call([&] { return client_handler_->handle(input); });
+
+    fromBackend(Latest<bp::MinecraftPacketIds::ChunkRadiusUpdated>{.chunk_radius = 8});
+
     EXPECT_EQ(client_handler_->getServerChunks(),
-              (std::set<std::pair<std::int32_t, std::int32_t>>{{-3, 2}, {0, 0}, {4000, 0}}));
+              (std::set<std::pair<std::int32_t, std::int32_t>>{{0, -11}, {0, 0}, {11, 0}}));
+}
+
+TEST_F(PlayTest, ThePublisherAndTheRespawnPointKeepTheirChunks)
+{
+    Latest<bp::MinecraftPacketIds::NetworkChunkPublisherUpdate> publisher;
+    publisher.position = {.x = 1600, .y = 64, .z = 0};
+    publisher.radius = 64;
+    fromBackend(publisher);
+    Latest<bp::MinecraftPacketIds::SetSpawnPosition> spawn;
+    spawn.spawn_pos_type = decltype(spawn.spawn_pos_type)::PlayerRespawn;
+    spawn.pos = {.x = -1600, .y = 64, .z = 0};
+    fromBackend(spawn);
+    using LevelChunk = Latest<bp::MinecraftPacketIds::FullChunkData>;
+    for (const auto x : {107, 108, -110, -111}) {
+        fromBackend(LevelChunk{.pos = {.x = x, .z = 0}});
+    }
+    Latest<bp::MinecraftPacketIds::PlayerAuthInputPacket> input;
+    input.pos = {.x = 8.5F, .y = 64.0F, .z = 8.5F};
+    node_.call([&] { return client_handler_->handle(input); });
+
+    fromBackend(Latest<bp::MinecraftPacketIds::ChunkRadiusUpdated>{.chunk_radius = 8});
+
+    EXPECT_EQ(client_handler_->getServerChunks(),
+              (std::set<std::pair<std::int32_t, std::int32_t>>{{-110, 0}, {107, 0}}));
 }
 
 TEST_F(PlayTest, ADimensionChangeLeavesNoChunks)

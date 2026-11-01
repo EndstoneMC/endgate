@@ -34,6 +34,14 @@ public:
         cache_enabled_ = packet.enabled;
     }
 
+    /**
+     * @see com.velocitypowered.api.proxy.player.PlayerSettings#getViewDistance
+     */
+    [[nodiscard]] std::optional<std::int32_t> getViewDistance() const
+    {
+        return chunk_radius_ ? std::optional{chunk_radius_->radius} : std::nullopt;
+    }
+
     void replay(MinecraftConnection &backend) const;
 
 private:

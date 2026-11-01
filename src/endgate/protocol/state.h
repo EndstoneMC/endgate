@@ -12,6 +12,7 @@
 #include <bedrock/protocol/dimension.h>
 #include <bedrock/protocol/effect.h>
 #include <bedrock/protocol/game.h>
+#include <bedrock/protocol/input.h>
 #include <bedrock/protocol/inventory.h>
 #include <bedrock/protocol/item.h>
 #include <bedrock/protocol/network.h>
@@ -109,7 +110,8 @@ struct PacketRegistries<StateRegistry::Login> {
 template <>
 struct PacketRegistries<StateRegistry::Play> {
     using Serverbound =
-        PacketRegistry<bp::MinecraftPacketIds::RequestChunkRadius, bp::MinecraftPacketIds::ClientCacheStatus>;
+        PacketRegistry<bp::MinecraftPacketIds::RequestChunkRadius, bp::MinecraftPacketIds::ClientCacheStatus,
+                       bp::MinecraftPacketIds::PlayerAuthInputPacket>;
     using Clientbound =
         PacketRegistry<bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::PlayStatus,
                        bp::MinecraftPacketIds::ResourcePacksInfo, bp::MinecraftPacketIds::ResourcePackStack,
@@ -120,9 +122,11 @@ struct PacketRegistries<StateRegistry::Play> {
                        bp::MinecraftPacketIds::SetDisplayObjective, bp::MinecraftPacketIds::RemoveObjective,
                        bp::MinecraftPacketIds::MobEffect, bp::MinecraftPacketIds::ContainerOpen,
                        bp::MinecraftPacketIds::ContainerClose, bp::MinecraftPacketIds::PrimitiveShapesPacket,
-                       bp::MinecraftPacketIds::FullChunkData, bp::MinecraftPacketIds::ChangeDimension,
-                       bp::MinecraftPacketIds::ItemRegistryPacket, bp::MinecraftPacketIds::BiomeDefinitionList,
-                       bp::MinecraftPacketIds::AvailableActorIDList, bp::MinecraftPacketIds::DimensionDataPacket>;
+                       bp::MinecraftPacketIds::FullChunkData, bp::MinecraftPacketIds::ChunkRadiusUpdated,
+                       bp::MinecraftPacketIds::NetworkChunkPublisherUpdate, bp::MinecraftPacketIds::SetSpawnPosition,
+                       bp::MinecraftPacketIds::ChangeDimension, bp::MinecraftPacketIds::ItemRegistryPacket,
+                       bp::MinecraftPacketIds::BiomeDefinitionList, bp::MinecraftPacketIds::AvailableActorIDList,
+                       bp::MinecraftPacketIds::DimensionDataPacket>;
 };
 
 template <StateRegistry State, Direction D, int Version>

@@ -325,6 +325,31 @@ public:
     }
 
     template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::ChunkRadiusUpdated>
+    bool handleEach(const Packet &packet)
+    {
+        player_session_handler_->setChunkRadius(packet.chunk_radius);
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::NetworkChunkPublisherUpdate>
+    bool handleEach(const Packet &packet)
+    {
+        player_session_handler_->setChunkPublisher(packet.position.x, packet.position.z, packet.radius);
+        return false;
+    }
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::SetSpawnPosition>
+    bool handleEach(const Packet &packet)
+    {
+        player_session_handler_->setSpawnPosition(
+            packet.spawn_pos_type == decltype(packet.spawn_pos_type)::PlayerRespawn, packet.pos.x, packet.pos.z);
+        return false;
+    }
+
+    template <typename Packet>
         requires IsPacket<Packet, bp::MinecraftPacketIds::ChangeDimension>
     bool handleEach(const Packet &packet)
     {

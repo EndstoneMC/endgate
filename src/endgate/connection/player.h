@@ -380,6 +380,14 @@ public:
         return false;
     }
 
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::PlayerAuthInputPacket>
+    bool handleEach(const Packet &packet)
+    {
+        setPlayerPosition(packet.pos.x, packet.pos.z);
+        return false;
+    }
+
     void connected() override {}
     void handleUnknown(ByteBufView batch) override;
     void readCompleted() override;
@@ -415,7 +423,20 @@ public:
         return server_container_;
     }
 
+    void setChunkRadius(std::int32_t radius);
+    void setChunkPublisher(std::int32_t x, std::int32_t z, std::uint32_t radius);
+    void setSpawnPosition(bool respawn, std::int32_t x, std::int32_t z);
+
 private:
+    struct ChunkView {
+        std::int32_t x;
+        std::int32_t z;
+        std::int32_t radius;
+    };
+
+    void setPlayerPosition(float x, float z);
+    void pruneServerChunks();
+
     spdlog::logger &logger_;
     std::shared_ptr<Player> player_;
     bool spawned_{false};
@@ -431,6 +452,11 @@ private:
     std::set<std::int32_t> server_effects_;
     std::set<std::uint64_t> server_shapes_;
     std::optional<std::pair<std::int32_t, std::int32_t>> server_container_;
+    std::optional<std::pair<std::int32_t, std::int32_t>> player_chunk_;
+    std::optional<std::int32_t> chunk_radius_;
+    std::optional<ChunkView> publisher_view_;
+    std::optional<ChunkView> world_spawn_view_;
+    std::optional<ChunkView> respawn_view_;
 };
 
 }  // namespace endgate
