@@ -141,6 +141,16 @@ BackendServer *ProxyServer::getServer(std::string_view name)
     return server == servers_.end() ? nullptr : &server->second;
 }
 
+std::vector<BackendServer *> ProxyServer::getAllServers()
+{
+    std::vector<BackendServer *> servers;
+    servers.reserve(servers_.size());
+    for (auto &[name, server] : servers_) {
+        servers.push_back(&server);
+    }
+    return servers;
+}
+
 std::shared_ptr<Player> ProxyServer::getPlayer(std::string_view username)
 {
     const std::scoped_lock lock(connections_mutex_);

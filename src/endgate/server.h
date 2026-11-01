@@ -64,6 +64,11 @@ public:
     [[nodiscard]] BackendServer *getServer(std::string_view name);
 
     /**
+     * @see com.velocitypowered.api.proxy.ProxyServer#getAllServers
+     */
+    [[nodiscard]] std::vector<BackendServer *> getAllServers();
+
+    /**
      * Retrieves the player currently connected to this proxy by their Minecraft username.
      *
      * @see com.velocitypowered.api.proxy.ProxyServer#getPlayer(String)

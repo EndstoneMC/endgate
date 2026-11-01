@@ -211,6 +211,19 @@ void BackendPlaySessionHandler::readCompleted()
     server_connection_->getPlayer().getConnection().flush();
 }
 
+bool BackendPlaySessionHandler::handleTransfer(std::string_view host, std::uint16_t port)
+{
+    auto &player = server_connection_->getPlayer();
+    for (auto *const server : player.getConnection().getEndpoint().getServer().getAllServers()) {
+        const auto &info = server->getServerInfo();
+        if (info.getHost() == host && info.getPort() == port) {
+            player.createConnectionRequest(*server).fireAndForget();
+            return true;
+        }
+    }
+    return false;
+}
+
 void BackendPlaySessionHandler::disconnected()
 {
     auto &player = server_connection_->getPlayer().getConnection();

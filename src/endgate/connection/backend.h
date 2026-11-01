@@ -328,6 +328,13 @@ public:
     }
 
     template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::Transfer>
+    bool handleEach(const Packet &packet)
+    {
+        return handleTransfer(packet.destination, packet.destination_port);
+    }
+
+    template <typename Packet>
         requires IsPacket<Packet, bp::MinecraftPacketIds::ChunkRadiusUpdated>
     bool handleEach(const Packet &packet)
     {
@@ -412,6 +419,8 @@ public:
     void disconnected() override;
 
 private:
+    [[nodiscard]] bool handleTransfer(std::string_view host, std::uint16_t port);
+
     spdlog::logger &logger_;
     std::shared_ptr<ServerConnection> server_connection_;
     std::shared_ptr<ClientPlaySessionHandler> player_session_handler_;

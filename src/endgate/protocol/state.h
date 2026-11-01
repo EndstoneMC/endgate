@@ -19,6 +19,7 @@
 #include <bedrock/protocol/pack.h>
 #include <bedrock/protocol/packet.hpp>
 #include <bedrock/protocol/player.h>
+#include <bedrock/protocol/presence.h>
 #include <bedrock/protocol/scoreboard.h>
 #include <bedrock/protocol/script.h>
 
@@ -124,9 +125,9 @@ struct PacketRegistries<StateRegistry::Play> {
                        bp::MinecraftPacketIds::ContainerClose, bp::MinecraftPacketIds::PrimitiveShapesPacket,
                        bp::MinecraftPacketIds::FullChunkData, bp::MinecraftPacketIds::ChunkRadiusUpdated,
                        bp::MinecraftPacketIds::NetworkChunkPublisherUpdate, bp::MinecraftPacketIds::SetSpawnPosition,
-                       bp::MinecraftPacketIds::ChangeDimension, bp::MinecraftPacketIds::ItemRegistryPacket,
-                       bp::MinecraftPacketIds::BiomeDefinitionList, bp::MinecraftPacketIds::AvailableActorIDList,
-                       bp::MinecraftPacketIds::DimensionDataPacket>;
+                       bp::MinecraftPacketIds::Transfer, bp::MinecraftPacketIds::ChangeDimension,
+                       bp::MinecraftPacketIds::ItemRegistryPacket, bp::MinecraftPacketIds::BiomeDefinitionList,
+                       bp::MinecraftPacketIds::AvailableActorIDList, bp::MinecraftPacketIds::DimensionDataPacket>;
 };
 
 template <StateRegistry State, Direction D, int Version>
