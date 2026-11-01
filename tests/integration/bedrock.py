@@ -435,11 +435,18 @@ class Backend:
         threshold: int = 256,
         delay: int = 0,
         protocol: int = 2225,
+        play: bool = False,
+        runtime_id: int = 1,
+        unique_id: int = -1,
+        checksum: int = 0,
     ) -> None:
         self.transport = transport
         self.protocol = protocol
         self.arguments = ["server", "--threshold", str(threshold), "--delay", str(delay)]
         self.arguments += ["--encrypt"] if encrypt else []
+        if play:
+            self.arguments += ["--play", "--runtime-id", str(runtime_id), "--unique-id", str(unique_id)]
+            self.arguments += ["--checksum", str(checksum)]
         self.sessions: queue.Queue[Session] = queue.Queue()
         self.all: list[Session] = []
         if transport == "raknet":

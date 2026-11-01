@@ -98,6 +98,9 @@ def make_proxy(binary: Path, tmp_path: Path):
         log_player_connections: bool = True,
         packet_decode_logging: bool = False,
         services: Services | None = None,
+        servers: dict[str, str] | None = None,
+        try_order: list[str] | None = None,
+        console: bool = False,
     ) -> Proxy:
         workdir = tmp_path / f"proxy{len(started)}"
         proxy = Proxy(
@@ -111,6 +114,9 @@ def make_proxy(binary: Path, tmp_path: Path):
             log_player_connections,
             packet_decode_logging,
             services,
+            servers=servers,
+            try_order=try_order,
+            console=console,
         ).start()
         started.append(proxy)
         return proxy

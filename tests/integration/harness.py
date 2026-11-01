@@ -69,6 +69,9 @@ class Proxy:
         packet_decode_logging: bool = False,
         services=None,
         login_ratelimit: int = 0,
+        servers: dict[str, str] | None = None,
+        try_order: list[str] | None = None,
+        console: bool = False,
     ) -> None:
         self.binary = binary
         self.workdir = workdir
@@ -82,6 +85,9 @@ class Proxy:
         self.packet_decode_logging = packet_decode_logging
         self.login_ratelimit = login_ratelimit
         self.services = services
+        self.servers = servers or {}
+        self.try_order = try_order or ["lobby"]
+        self.console = console
         self.lines: list[str] = []
         self._listening = threading.Event()
         self.process: subprocess.Popen | None = None
@@ -115,7 +121,8 @@ class Proxy:
                     f'tls-certificate-key = "{self.tls[1] if self.tls else ""}"',
                     "[servers]",
                     f'lobby = "{self.backend}"',
-                    'try = ["lobby"]',
+                    *(f'{name} = "{address}"' for name, address in self.servers.items()),
+                    "try = [" + ", ".join(f'"{name}"' for name in self.try_order) + "]",
                     "[advanced]",
                     "compression-level = -1",
                     f"login-ratelimit = {self.login_ratelimit}",
@@ -137,7 +144,7 @@ class Proxy:
             [str(self.binary)],
             cwd=self.workdir,
             env=environment,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE if self.console else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -184,12 +191,20 @@ class Proxy:
             time.sleep(0.01)
         return False
 
+    def command(self, line: str) -> None:
+        """Types a line on the proxy's console."""
+        assert self.process is not None and self.process.stdin is not None
+        self.process.stdin.write(line + "\n")
+        self.process.stdin.flush()
+
     def alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
 
     def stop(self) -> int | None:
         if self.process is None:
             return None
+        if self.process.stdin is not None:
+            self.process.stdin.close()
         if self.process.poll() is None:
             self.process.send_signal(signal.SIGTERM)
             try:

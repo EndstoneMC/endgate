@@ -6,6 +6,9 @@
  *   wire <hex>           a message that arrived from the transport
  *   text <hex>           send a TextPacket whose message is the hex-decoded bytes
  *   disconnect <hex>     send a DisconnectPacket carrying the hex-decoded message
+ *   kick <reason> <hex>  send a DisconnectPacket with this reason and the hex-decoded message
+ *   transfer <host> <port>
+ *   chunk <x> <z>        send a LevelChunk with no subchunks
  *
  * Events on stdout, one per line:
  *   wire <hex>           a message for the transport
@@ -16,7 +19,19 @@
  *   client-data <json>   the claims of the login's client data
  *   text <hex>
  *   disconnect <reason> <hex>
+ *   start-game <runtime id> <unique id> <client-side generation> <seed>
+ *   camera <fade|clear> [<in> <hold> <out>]
+ *   chunk <x> <z>
+ *   transfer <host> <port>
+ *   initialized <runtime id>
+ *   loading-screen <type>
+ *   chunk-radius <radius>
+ *   packet <id>          any other packet
  *   error <what>
+ *
+ * With --play, a server plays a join after the login: the pack exchange, then StartGame with
+ * --runtime-id, --unique-id and --checksum, then PlayStatus PlayerSpawn. A client answers the pack
+ * exchange and the spawn as the game does.
  *
  * The batch framing, compression and encryption here are written from the wire format, not shared with
  * the proxy, so a mistake the proxy makes on both of its legs shows up as a failure.
@@ -41,11 +56,18 @@
 #include <variant>
 #include <vector>
 
+#include <bedrock/protocol/camera.h>
+#include <bedrock/protocol/chunk.h>
+#include <bedrock/protocol/game.h>
 #include <bedrock/protocol/network.h>
+#include <bedrock/protocol/pack.h>
 #include <bedrock/protocol/packet.hpp>
+#include <bedrock/protocol/player.h>
+#include <bedrock/protocol/presence.h>
 #include <bedrock/protocol/serializer.hpp>
 #include <bedrock/protocol/stream.hpp>
 #include <bedrock/protocol/text.h>
+#include <bedrock/protocol/ui.h>
 #include <glaze/json.hpp>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
@@ -263,6 +285,10 @@ struct Options {
     std::string key_path;
     std::uint16_t threshold{0};
     int delay_ms{0};
+    bool play = false;
+    std::uint64_t runtime_id = 1;
+    std::int64_t unique_id = -1;
+    std::uint64_t checksum = 0;
 };
 
 class Peer {
@@ -295,6 +321,30 @@ public:
         bp::DisconnectPacket_<PROTOCOL> packet;
         packet.reason = {};
         packet.messages = bp::DisconnectPacketMessages{.message = message, .filtered_message = message};
+        send(packet);
+    }
+
+    void sendKick(int reason, const std::string &message)
+    {
+        bp::DisconnectPacket_<PROTOCOL> packet;
+        packet.reason = static_cast<decltype(packet.reason)>(reason);
+        packet.messages = bp::DisconnectPacketMessages{.message = message, .filtered_message = message};
+        send(packet);
+    }
+
+    void sendTransfer(std::string host, std::uint16_t port)
+    {
+        bp::TransferPacket_<PROTOCOL> packet;
+        packet.destination = std::move(host);
+        packet.destination_port = port;
+        send(packet);
+    }
+
+    void sendChunk(std::int32_t x, std::int32_t z)
+    {
+        bp::LevelChunkPacket_<PROTOCOL> packet;
+        packet.pos = {.x = x, .z = z};
+        packet.serialized_chunk = std::string(1, '\0');
         send(packet);
     }
 
@@ -447,7 +497,39 @@ private:
         }
         else if (id == bp::ClientToServerHandshakePacket::Id) {
             std::cout << "handshake\n";
-            send(bp::PlayStatusPacket{.status = bp::PlayStatus::LoginSuccess});
+            loggedIn();
+        }
+        else if (id == bp::ResourcePackClientResponsePacket_<PROTOCOL>::Id) {
+            const auto response = decode<bp::ResourcePackClientResponsePacket_<PROTOCOL>>(packet).response;
+            if (std::holds_alternative<bp::ResourcePackClientResponsePacket_<PROTOCOL>::DownloadingFinished>(
+                    response)) {
+                send(bp::ResourcePackStackPacket_<PROTOCOL>{});
+            }
+            else if (std::holds_alternative<bp::ResourcePackClientResponsePacket_<PROTOCOL>::ResourcePackStackFinished>(
+                         response)) {
+                bp::StartGamePacket_<PROTOCOL> start_game;
+                start_game.runtime_id = bp::ActorRuntimeID{options_.runtime_id};
+                start_game.entity_id = bp::ActorUniqueID{options_.unique_id};
+                start_game.server_block_type_registry_checksum = options_.checksum;
+                send(start_game);
+                send(bp::PlayStatusPacket{.status = bp::PlayStatus::PlayerSpawn});
+            }
+        }
+        else if (id == bp::SetLocalPlayerAsInitializedPacket::Id) {
+            std::cout << "initialized "
+                      << static_cast<std::uint64_t>(decode<bp::SetLocalPlayerAsInitializedPacket>(packet).player_id)
+                      << '\n';
+        }
+        else if (id == bp::ServerboundLoadingScreenPacket::Id) {
+            std::cout << "loading-screen "
+                      << static_cast<int>(decode<bp::ServerboundLoadingScreenPacket>(packet).loading_screen_packet_type)
+                      << '\n';
+        }
+        else if (id == bp::RequestChunkRadiusPacket::Id) {
+            std::cout << "chunk-radius " << decode<bp::RequestChunkRadiusPacket>(packet).chunk_radius << '\n';
+        }
+        else if (options_.play) {
+            std::cout << "packet " << id << '\n';
         }
         else {
             std::cout << "error unexpected packet " << id << '\n';
@@ -478,7 +560,50 @@ private:
             std::cout << "handshake\n";
         }
         else if (id == bp::PlayStatusPacket::Id) {
-            std::cout << "play-status " << static_cast<int>(decode<bp::PlayStatusPacket>(packet).status) << '\n';
+            const auto status = decode<bp::PlayStatusPacket>(packet).status;
+            std::cout << "play-status " << static_cast<int>(status) << '\n';
+            if (status == bp::PlayStatus::PlayerSpawn && runtime_id_ && !initialized_) {
+                initialized_ = true;
+                send(bp::ServerboundLoadingScreenPacket{.loading_screen_packet_type =
+                                                            bp::ServerboundLoadingScreenPacketType::EndLoadingScreen});
+                send(bp::SetLocalPlayerAsInitializedPacket{.player_id = *runtime_id_});
+            }
+        }
+        else if (id == bp::ResourcePacksInfoPacket_<PROTOCOL>::Id) {
+            send(bp::ResourcePackClientResponsePacket_<PROTOCOL>{
+                .response = bp::ResourcePackClientResponsePacket_<PROTOCOL>::DownloadingFinished{}});
+        }
+        else if (id == bp::ResourcePackStackPacket_<PROTOCOL>::Id) {
+            send(bp::ResourcePackClientResponsePacket_<PROTOCOL>{
+                .response = bp::ResourcePackClientResponsePacket_<PROTOCOL>::ResourcePackStackFinished{}});
+        }
+        else if (id == bp::StartGamePacket_<PROTOCOL>::Id) {
+            const auto start_game = decode<bp::StartGamePacket_<PROTOCOL>>(packet);
+            std::cout << "start-game " << static_cast<std::uint64_t>(start_game.runtime_id) << ' '
+                      << static_cast<std::int64_t>(start_game.entity_id) << ' '
+                      << start_game.server_enabled_client_side_generation << ' ' << start_game.settings.seed << '\n';
+            runtime_id_ = start_game.runtime_id;
+            send(bp::RequestChunkRadiusPacket{.chunk_radius = 8, .max_chunk_radius = 12});
+            send(bp::ServerboundLoadingScreenPacket{.loading_screen_packet_type =
+                                                        bp::ServerboundLoadingScreenPacketType::StartLoadingScreen});
+        }
+        else if (id == bp::CameraInstructionPacket_<PROTOCOL>::Id) {
+            const auto instruction = decode<bp::CameraInstructionPacket_<PROTOCOL>>(packet).camera_instruction;
+            if (instruction.fade && instruction.fade->time) {
+                std::cout << "camera fade " << instruction.fade->time->fade_in_time << ' '
+                          << instruction.fade->time->hold_time << ' ' << instruction.fade->time->fade_out_time << '\n';
+            }
+            else {
+                std::cout << "camera clear\n";
+            }
+        }
+        else if (id == bp::LevelChunkPacket_<PROTOCOL>::Id) {
+            const auto chunk = decode<bp::LevelChunkPacket_<PROTOCOL>>(packet);
+            std::cout << "chunk " << chunk.pos.x << ' ' << chunk.pos.z << '\n';
+        }
+        else if (id == bp::TransferPacket_<PROTOCOL>::Id) {
+            const auto transfer = decode<bp::TransferPacket_<PROTOCOL>>(packet);
+            std::cout << "transfer " << transfer.destination << ' ' << transfer.destination_port << '\n';
         }
         else if (id == bp::DisconnectPacket_<PROTOCOL>::Id) {
             const auto disconnect = decode<bp::DisconnectPacket_<PROTOCOL>>(packet);
@@ -487,7 +612,15 @@ private:
                       << toHex(messages != nullptr ? messages->message : "") << '\n';
         }
         else {
-            std::cout << "error unexpected packet " << id << '\n';
+            std::cout << "packet " << id << '\n';
+        }
+    }
+
+    void loggedIn()
+    {
+        send(bp::PlayStatusPacket{.status = bp::PlayStatus::LoginSuccess});
+        if (options_.play) {
+            send(bp::ResourcePacksInfoPacket_<PROTOCOL>{});
         }
     }
 
@@ -511,7 +644,7 @@ private:
             throw std::runtime_error("token claims do not parse");
         }
         if (!options_.encrypt) {
-            send(bp::PlayStatusPacket{.status = bp::PlayStatus::LoginSuccess});
+            loggedIn();
             return;
         }
         const auto client_key = endgate::decodeSubjectPublicKeyInfo(claims.cpk);
@@ -539,6 +672,8 @@ private:
     bool compressing_{false};
     std::optional<Cipher> encrypt_;
     std::optional<Cipher> decrypt_;
+    std::optional<bp::ActorRuntimeID> runtime_id_;
+    bool initialized_ = false;
 };
 
 }  // namespace
@@ -577,6 +712,18 @@ int main(int argc, char **argv)
         else if (argument == "--request") {
             options.request = value();
         }
+        else if (argument == "--play") {
+            options.play = true;
+        }
+        else if (argument == "--runtime-id") {
+            options.runtime_id = std::stoull(value());
+        }
+        else if (argument == "--unique-id") {
+            options.unique_id = std::stoll(value());
+        }
+        else if (argument == "--checksum") {
+            options.checksum = std::stoull(value());
+        }
     }
 
     Peer peer(options);
@@ -597,6 +744,19 @@ int main(int argc, char **argv)
             }
             else if (command == "disconnect") {
                 peer.sendDisconnect(fromHex(argument));
+            }
+            else if (command == "kick") {
+                const auto space = argument.find(' ');
+                peer.sendKick(std::stoi(argument.substr(0, space)), fromHex(argument.substr(space + 1)));
+            }
+            else if (command == "transfer") {
+                const auto space = argument.find(' ');
+                peer.sendTransfer(argument.substr(0, space),
+                                  static_cast<std::uint16_t>(std::stoi(argument.substr(space + 1))));
+            }
+            else if (command == "chunk") {
+                const auto space = argument.find(' ');
+                peer.sendChunk(std::stoi(argument.substr(0, space)), std::stoi(argument.substr(space + 1)));
             }
         }
         catch (const std::exception &error) {
