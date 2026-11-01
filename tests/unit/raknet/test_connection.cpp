@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -52,6 +53,9 @@ struct Events : Connection::Listener {
     {
         const auto bytes = message.nioBuffer();
         messages.emplace_back(bytes.begin(), bytes.end());
+        if (on_message) {
+            on_message();
+        }
     }
 
     void onDisconnected(DisconnectReason reason) override { disconnected.push_back(reason); }
@@ -73,6 +77,7 @@ struct Events : Connection::Listener {
     std::vector<DisconnectReason> disconnected;
     std::vector<std::string> notifications;
     int errors{0};
+    std::function<void()> on_message;
 };
 
 struct Server : OfflineHandler::Listener {
@@ -430,6 +435,22 @@ TEST(Connection, GracefulCloseReachesThePeer)
         5s));
     EXPECT_EQ(handshake.client_events.disconnected, std::vector<DisconnectReason>{DisconnectReason::ClosedLocally});
     EXPECT_EQ(handshake.server.events.disconnected, std::vector<DisconnectReason>{DisconnectReason::ClosedByPeer});
+}
+
+TEST(Connection, ClosingTwiceWhileDeliveringStillReachesThePeer)
+{
+    Handshake handshake;
+    ASSERT_TRUE(handshake.connect());
+    handshake.server.events.on_message = [&] {
+        handshake.server.connection->close(true, handshake.simulation.now());
+        handshake.server.connection->close(true, handshake.simulation.now());
+    };
+
+    ASSERT_TRUE(handshake.client.send(Unpooled::copiedBuffer(payload(10)), PacketPriority::High,
+                                      PacketReliability::Reliable, 0, handshake.simulation.now()));
+
+    ASSERT_TRUE(handshake.simulation.runUntil([&] { return !handshake.client_events.disconnected.empty(); }, 5s));
+    EXPECT_EQ(handshake.client_events.disconnected, std::vector<DisconnectReason>{DisconnectReason::ClosedByPeer});
 }
 
 TEST(Connection, ClosingConnectionEndsEvenIfThePeerKeepsSendingWithoutAcking)

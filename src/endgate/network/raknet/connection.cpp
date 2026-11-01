@@ -372,10 +372,13 @@ void Connection::close(bool send_disconnection_notification, TimePoint now)
     if (isClosed()) {
         return;
     }
-    const bool can_notify = reliability_layer_ && connect_mode_ != ConnectMode::DisconnectAsap &&
-                            connect_mode_ != ConnectMode::DisconnectAsapSilently &&
-                            connect_mode_ != ConnectMode::DisconnectOnNoAck;
-    if (!send_disconnection_notification || !can_notify) {
+    const bool disconnecting = connect_mode_ == ConnectMode::DisconnectAsap ||
+                               connect_mode_ == ConnectMode::DisconnectAsapSilently ||
+                               connect_mode_ == ConnectMode::DisconnectOnNoAck;
+    if (send_disconnection_notification && disconnecting) {
+        return;
+    }
+    if (!send_disconnection_notification || !reliability_layer_) {
         closeConnectionInternal(DisconnectReason::ClosedLocally);
         return;
     }
