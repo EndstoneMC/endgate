@@ -179,6 +179,22 @@ public:
     }
 
     /**
+     * @see com.velocitypowered.proxy.connection.backend.BackendPlaySessionHandler#handle(DisconnectPacket)
+     */
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::Disconnect>
+    bool handleEach(const Packet &packet)
+    {
+        std::string reason{bp::enum_name(packet.reason)};
+        if (const auto *const messages = std::get_if<0>(&packet.messages); messages && !messages->message.empty()) {
+            reason = messages->message;
+        }
+        server_connection_->disconnect();
+        server_connection_->getPlayer().handleConnectionException(server_connection_->getServer(), reason);
+        return true;
+    }
+
+    /**
      * @see com.velocitypowered.proxy.connection.backend.BackendPlaySessionHandler#handle(LegacyPlayerListItemPacket)
      */
     template <typename Packet>

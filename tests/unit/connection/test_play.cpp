@@ -6,6 +6,7 @@
 #include <string_view>
 #include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <bedrock/protocol/serializer.hpp>
@@ -274,6 +275,26 @@ TEST_F(PlayTest, ALaterStartGameNeedsTheBackendLeg)
         }
         return false;
     }));
+}
+
+TEST_F(PlayTest, AKickFromTheConnectedServerNamesItAndItsReason)
+{
+    node_.call([&] {
+        player_->setConnectedServer(server_connection_);
+        return 0;
+    });
+    Latest<bp::MinecraftPacketIds::Disconnect> kick;
+    kick.reason = decltype(kick.reason)::BadPacket;
+    kick.messages = std::monostate{};
+
+    fromBackend(kick);
+
+    ASSERT_EQ(idsOf(client_->batches()), (std::vector<std::uint32_t>{Latest<bp::MinecraftPacketIds::Disconnect>::Id}));
+    const auto disconnect = decode<Latest<bp::MinecraftPacketIds::Disconnect>>(client_->batches()[0]);
+    const auto *const messages = std::get_if<bp::DisconnectPacketMessages>(&disconnect.messages);
+    ASSERT_NE(messages, nullptr);
+    EXPECT_EQ(messages->message, "You were kicked from lobby: badpacket");
+    EXPECT_TRUE(client_->closed());
 }
 
 TEST_F(PlayTest, TheClientsSettingsAreSaidAgainToTheNextBackend)
