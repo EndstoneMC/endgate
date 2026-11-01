@@ -20,10 +20,24 @@ Never infer how the game behaves. Check anything touching the protocol, the wire
 Seen on real clients, 1.26.50 and 1.26.60:
 
 - A LevelChunk with no subchunks and a biome-only payload (`01 02` per section) replaces the chunk; the client then sends SubChunkRequests for it and draws what comes back, within a frame.
-- A NetworkChunkPublisherUpdate centred far away unloads nothing.
 - CubeCraft switches without a dimension change: a 0.5 s, 1.5 s, 0.5 s camera fade; RemoveActor, PlayerList, RemoveObjective, MobEffect, close form, StopSound, SetHud and inventory clears; a MovePlayer teleport; the new world's state as individual packets; a publisher update and request-mode LevelChunks (limit 7) at the new spawn; then PlayStatus PlayerSpawn again. Its worlds sit thousands of blocks apart, so it never overwrites old chunks.
 - Hive switches with ChangeDimension to the Nether at Y 4000 and straight back, which shows the loading screen.
 - Hive and CubeCraft run their own server software, built for minigames rather than SMP. Their captures show what the client tolerates, never what a BDS backend sends or what a switch must do; Velocity, built for SMP, settles that.
+
+## How the client drops chunks
+
+- A chunk stays loaded while one of three views covers it: ChunkRadiusUpdated + 1 chunks around the player, the last NetworkChunkPublisherUpdate's area, and 112 blocks around spawn. It is dropped the moment none does.
+- A LevelChunk outside every view is discarded on arrival.
+
+## The client's own disconnects
+
+- A packet that decodes cleanly can still fail its `isValid()`. The client then drops the session with 90 `BadPacket` by itself, with no Disconnect packet either way.
+- A MovePlayer in Teleport mode needs `teleport_data`; every other mode needs it absent.
+
+## Joining a BDS world
+
+- For a player new to the world, StartGame's position is a placeholder at Y 32767. BDS sends the real spawn afterwards in a RespawnPacket with ReadyToSpawn.
+- BDS holds a joining player in a loading state until the client sends ServerboundLoadingScreen End: invulnerable, unable to break blocks or attack, with the server holding movement authority.
 
 ## Online mode
 
