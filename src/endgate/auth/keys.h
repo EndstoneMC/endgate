@@ -78,6 +78,7 @@ private:
     std::chrono::steady_clock::time_point last_fetch_started_;
     bool fetching_{false};
     bool shut_down_{false};
+    bool unreachable_ = false;
     std::shared_ptr<ScheduledFuture> next_fetch_;
 };
 

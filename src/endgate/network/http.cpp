@@ -275,6 +275,9 @@ HttpClient::HttpClient(EventLoop &executor, Config config)
     tls_->set_options(asio::ssl::context::default_workarounds | asio::ssl::context::no_sslv2 |
                       asio::ssl::context::no_sslv3 | asio::ssl::context::no_tlsv1 | asio::ssl::context::no_tlsv1_1);
     tls_->set_default_verify_paths();
+#ifdef _WIN32
+    std::ignore = SSL_CTX_load_verify_store(tls_->native_handle(), "org.openssl.winstore://");
+#endif
     for (const auto bundle : bundles) {
         std::error_code exists_error;
         asio::error_code ignored;

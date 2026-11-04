@@ -22,6 +22,7 @@ namespace endgate {
 namespace {
 
 constexpr glz::opts LENIENT_READ{.error_on_unknown_keys = false, .error_on_missing_keys = true};
+constexpr std::chrono::seconds RETRY_AFTER{60};
 
 struct AuthEnvironment {
     std::string service_uri;
@@ -264,8 +265,10 @@ Awaitable<void> MinecraftServiceKeyManager::fetch()
     if (!fetched) {
         if (keys_.empty()) {
             logger_.error("Could not connect to Minecraft services. This is required to accept connections in "
-                          "online mode.");
+                          "online mode. Trying again every {} seconds.",
+                          RETRY_AFTER.count());
             logger_.debug("Unable to fetch the keys of Minecraft services: {}", fetched.error());
+            unreachable_ = true;
         }
         else {
             logger_.warn("Unable to refresh the keys of Minecraft services: {}", fetched.error());
@@ -276,6 +279,9 @@ Awaitable<void> MinecraftServiceKeyManager::fetch()
         issuer_ = std::move(fetched->issuer);
         offset_ = fetched->offset;
         logger_.debug("Fetched {} keys from Minecraft services", keys_.size());
+        if (std::exchange(unreachable_, false)) {
+            logger_.info("Connected to Minecraft services");
+        }
         if (std::chrono::abs(offset_) >= clock_warning) {
             logger_.warn("The system clock is {}s off the clock of Minecraft services",
                          std::chrono::duration_cast<std::chrono::seconds>(offset_).count());
@@ -286,7 +292,6 @@ Awaitable<void> MinecraftServiceKeyManager::fetch()
 
 void MinecraftServiceKeyManager::scheduleNextFetch()
 {
-    constexpr std::chrono::seconds retry_after{60};
     constexpr std::chrono::days renew_after{7};
 
     if (shut_down_) {
@@ -295,7 +300,7 @@ void MinecraftServiceKeyManager::scheduleNextFetch()
     if (next_fetch_) {
         next_fetch_->cancel();
     }
-    const auto delay = keys_.empty() ? std::chrono::steady_clock::duration{retry_after}
+    const auto delay = keys_.empty() ? std::chrono::steady_clock::duration{RETRY_AFTER}
                                      : last_fetch_started_ + renew_after - std::chrono::steady_clock::now();
     next_fetch_ = client_.executor().schedule(
         [weak = weak_from_this()] {
