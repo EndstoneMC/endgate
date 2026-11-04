@@ -197,6 +197,8 @@ public:
      */
     [[nodiscard]] const UUID &getUniqueId() const { return profile_.id; }
 
+    [[nodiscard]] ProxyServer &getProxyServer() const { return server_; }
+
     [[nodiscard]] MinecraftConnection &getConnection() const { return *connection_; }
 
     /**
@@ -439,10 +441,28 @@ public:
         return false;
     }
 
+    /**
+     * @see com.velocitypowered.proxy.connection.client.ClientPlaySessionHandler#handle(SessionPlayerCommandPacket)
+     */
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::CommandRequest>
+    bool handleEach(const Packet &packet)
+    {
+        return handlePlayerCommand(packet.command);
+    }
+
     void connected() override {}
     void handleUnknown(ByteBufView batch) override;
     void readCompleted() override;
     void disconnected() override;
+
+    /**
+     * Rate limits a command, then runs it on the proxy if it is one, and returns whether the proxy took it
+     * rather than the backend.
+     *
+     * @see com.velocitypowered.proxy.protocol.packet.chat.RateLimitedCommandHandler#handlePlayerCommand
+     */
+    [[nodiscard]] bool handlePlayerCommand(const std::string &command);
 
     /**
      * Handles the StartGame packet. This function is responsible for handling the client-side
@@ -493,8 +513,15 @@ private:
     void setPlayerPosition(float x, float z);
     void pruneServerChunks();
 
+    /**
+     * @see com.velocitypowered.proxy.protocol.packet.chat.session.SessionCommandHandler#handlePlayerCommandInternal
+     * @see com.velocitypowered.proxy.protocol.packet.chat.CommandHandler#queueCommandResult
+     */
+    [[nodiscard]] bool handlePlayerCommandInternal(const std::string &command);
+
     spdlog::logger &logger_;
     std::shared_ptr<Player> player_;
+    int failed_attempts_ = 0;
     bool spawned_{false};
     bool switched_{false};
     bool awaiting_spawn_{false};

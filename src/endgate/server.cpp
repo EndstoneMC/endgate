@@ -33,6 +33,7 @@ ProxyServer::ProxyServer()
       ping_handler_(*this)
 {
     configuration_ = configurations_.emplace_back(std::make_unique<ProxyConfig>()).get();
+    command_rate_limiter_ = command_rate_limiters_.emplace_back(Ratelimiters::createWithMilliseconds<UUID>(0)).get();
 }
 
 bool ProxyServer::start()
@@ -65,6 +66,9 @@ bool ProxyServer::start()
     ip_attempt_limiter_ =
         ip_attempt_limiters_
             .emplace_back(Ratelimiters::createWithMilliseconds<asio::ip::address>(current.getLoginRatelimit()))
+            .get();
+    command_rate_limiter_ =
+        command_rate_limiters_.emplace_back(Ratelimiters::createWithMilliseconds<UUID>(current.getCommandRatelimit()))
             .get();
 
     for (const auto &[name, address] : current.getServers()) {
@@ -179,6 +183,10 @@ bool ProxyServer::reloadConfiguration()
                               .emplace_back(Ratelimiters::createWithMilliseconds<asio::ip::address>(
                                   new_configuration->getLoginRatelimit()))
                               .get();
+    command_rate_limiter_ =
+        command_rate_limiters_
+            .emplace_back(Ratelimiters::createWithMilliseconds<UUID>(new_configuration->getCommandRatelimit()))
+            .get();
     configuration_ = configurations_.emplace_back(std::move(new_configuration)).get();
     return true;
 }
@@ -341,6 +349,11 @@ std::vector<std::shared_ptr<Player>> ProxyServer::getAllPlayers()
 Ratelimiter<asio::ip::address> &ProxyServer::getIpAttemptLimiter() const
 {
     return *ip_attempt_limiter_.load();
+}
+
+Ratelimiter<UUID> &ProxyServer::getCommandRateLimiter() const
+{
+    return *command_rate_limiter_.load();
 }
 
 bool ProxyServer::CaseInsensitiveLess::operator()(std::string_view left, std::string_view right) const

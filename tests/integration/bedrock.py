@@ -356,6 +356,14 @@ class Session:
     def text(self, message: str) -> None:
         self.peer.command("text " + message.encode().hex())
 
+    def command(self, line: str) -> None:
+        """Sends a CommandRequestPacket carrying `line` as typed, with its slash if it has one."""
+        self.peer.command("command " + line.encode().hex())
+
+    def wait_command(self, timeout: float = 10.0) -> str | None:
+        received = self.peer.wait("command", timeout)
+        return None if received is None else bytes.fromhex(received).decode()
+
     def say(self, message: str, **options) -> None:
         """Sends a chat line with the transport's own send options, and waits until it has left."""
         sent = self.peer.wires

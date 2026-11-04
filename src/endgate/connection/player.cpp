@@ -17,6 +17,7 @@
 #include <asio/detached.hpp>
 #include <bedrock/protocol/block.h>
 #include <bedrock/protocol/camera.h>
+#include <bedrock/protocol/command.h>
 #include <bedrock/protocol/level.h>
 #include <bedrock/protocol/movement.h>
 #include <bedrock/protocol/serializer.hpp>
@@ -336,6 +337,47 @@ void ClientPlaySessionHandler::handleUnknown(ByteBufView batch)
         return;
     }
     server->write(batch.copy());
+}
+
+bool ClientPlaySessionHandler::handlePlayerCommand(const std::string &command)
+{
+    if (player_->getCurrentServer() == nullptr) {
+        return true;
+    }
+    auto &server = player_->getProxyServer();
+    const auto &configuration = server.getConfiguration();
+    if (!server.getCommandRateLimiter().attempt(player_->getUniqueId())) {
+        if (configuration.isKickOnCommandRateLimit() &&
+            failed_attempts_++ >= configuration.getKickAfterRateLimitedCommands()) {
+            player_->disconnect(DisconnectFailReason::NoReason, "You are sending too many commands too quickly.");
+        }
+        if (configuration.isForwardCommandsIfRateLimited()) {
+            return false;
+        }
+    }
+    else {
+        failed_attempts_ = 0;
+    }
+    return handlePlayerCommandInternal(command.starts_with('/') ? command.substr(1) : command);
+}
+
+bool ClientPlaySessionHandler::handlePlayerCommandInternal(const std::string &command)
+{
+    auto &server = player_->getProxyServer();
+    bool has_run = false;
+    try {
+        has_run = server.getCommandManager().executeImmediatelyAsync(player_, command);
+    }
+    catch (const std::exception &e) {
+        logger_.info("Exception occurred while running command for {}: {}", player_->getUsername(), e.what());
+        player_->sendMessage("An error occurred while running this command.");
+        return true;
+    }
+    if (server.getConfiguration().isLogCommandExecutions()) {
+        logger_.info("[connected player] {} ({}) -> executed command /{}", player_->getUsername(),
+                     player_->getConnection().getAssociation(), command);
+    }
+    return has_run;
 }
 
 void ClientPlaySessionHandler::readCompleted()

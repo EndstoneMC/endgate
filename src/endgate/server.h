@@ -121,6 +121,11 @@ public:
     [[nodiscard]] Ratelimiter<asio::ip::address> &getIpAttemptLimiter() const;
 
     /**
+     * @see com.velocitypowered.proxy.VelocityServer#getCommandRateLimiter
+     */
+    [[nodiscard]] Ratelimiter<UUID> &getCommandRateLimiter() const;
+
+    /**
      * Checks if the connection can be registered with the proxy.
      *
      * @see com.velocitypowered.proxy.VelocityServer#canRegisterConnection
@@ -156,6 +161,8 @@ private:
     std::atomic<const ProxyConfig *> configuration_ = nullptr;
     std::vector<std::unique_ptr<Ratelimiter<asio::ip::address>>> ip_attempt_limiters_;
     std::atomic<Ratelimiter<asio::ip::address> *> ip_attempt_limiter_ = nullptr;
+    std::vector<std::unique_ptr<Ratelimiter<UUID>>> command_rate_limiters_;
+    std::atomic<Ratelimiter<UUID> *> command_rate_limiter_ = nullptr;
     std::mutex servers_mutex_;
     std::map<std::string, std::unique_ptr<BackendServer>, std::less<>> servers_;
     std::vector<std::unique_ptr<BackendServer>> retired_servers_;

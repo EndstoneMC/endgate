@@ -28,6 +28,9 @@ struct Advanced {
     int connection_timeout = 0;
     int read_timeout = 0;
     bool log_command_executions = false;
+    int command_rate_limit = 0;
+    bool forward_commands_if_rate_limited = true;
+    int kick_after_rate_limited_commands = 0;
     bool log_player_connections = false;
     bool failover_on_unexpected_server_disconnect = false;
     bool show_ping_requests = false;
@@ -41,6 +44,9 @@ struct Advanced {
             "connection-timeout", &T::connection_timeout,                                              //
             "read-timeout", &T::read_timeout,                                                          //
             "log-command-executions", &T::log_command_executions,                                      //
+            "command-rate-limit", &T::command_rate_limit,                                              //
+            "forward-commands-if-rate-limited", &T::forward_commands_if_rate_limited,                  //
+            "kick-after-rate-limited-commands", &T::kick_after_rate_limited_commands,                  //
             "log-player-connections", &T::log_player_connections,                                      //
             "failover-on-unexpected-server-disconnect", &T::failover_on_unexpected_server_disconnect,  //
             "show-ping-requests", &T::show_ping_requests);
@@ -196,6 +202,9 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
     config.connection_timeout_ = document.advanced.connection_timeout;
     config.read_timeout_ = document.advanced.read_timeout;
     config.log_command_executions_ = document.advanced.log_command_executions;
+    config.command_rate_limit_ = document.advanced.command_rate_limit;
+    config.forward_commands_if_rate_limited_ = document.advanced.forward_commands_if_rate_limited;
+    config.kick_after_rate_limited_commands_ = document.advanced.kick_after_rate_limited_commands;
     config.log_player_connections_ = document.advanced.log_player_connections;
     config.failover_on_unexpected_server_disconnect_ = document.advanced.failover_on_unexpected_server_disconnect;
     config.query_enabled_ = document.query.enabled;
@@ -253,6 +262,11 @@ bool ProxyConfig::validate() const
 
     if (login_ratelimit_ < 0) {
         logger().error("Invalid login ratelimit {}ms", login_ratelimit_);
+        valid = false;
+    }
+
+    if (command_rate_limit_ < 0) {
+        logger().error("Invalid command rate limit {}", command_rate_limit_);
         valid = false;
     }
 
@@ -372,6 +386,26 @@ int ProxyConfig::getReadTimeout() const
 bool ProxyConfig::isLogCommandExecutions() const
 {
     return log_command_executions_;
+}
+
+int ProxyConfig::getCommandRatelimit() const
+{
+    return command_rate_limit_;
+}
+
+bool ProxyConfig::isForwardCommandsIfRateLimited() const
+{
+    return forward_commands_if_rate_limited_;
+}
+
+int ProxyConfig::getKickAfterRateLimitedCommands() const
+{
+    return kick_after_rate_limited_commands_;
+}
+
+bool ProxyConfig::isKickOnCommandRateLimit() const
+{
+    return kick_after_rate_limited_commands_ > 0;
 }
 
 bool ProxyConfig::isLogPlayerConnections() const

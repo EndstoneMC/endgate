@@ -77,6 +77,20 @@ read-timeout = 30000
 # Enables the logging of commands
 log-command-executions = false
 
+# How fast (in milliseconds) are clients allowed to send commands after the last command.
+# By default this is 50ms (20 commands per second). Disable this by setting this to 0.
+command-rate-limit = 50
+
+# Should we forward commands to the backend upon being rate limited?
+# This will forward the command to the server instead of processing it on the proxy.
+# Since most server implementations have a rate limit, this will prevent the player
+# from being able to send excessive commands to the server.
+forward-commands-if-rate-limited = true
+
+# How many commands are allowed to be sent after the rate limit is hit before the player is kicked?
+# Setting this to 0 or lower will disable this feature.
+kick-after-rate-limited-commands = 0
+
 # Enables logging of player connections when connecting to the proxy, switching servers
 # and disconnecting from the proxy.
 log-player-connections = true

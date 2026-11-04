@@ -9,6 +9,7 @@
 #include <bedrock/protocol/biome.h>
 #include <bedrock/protocol/boss.h>
 #include <bedrock/protocol/chunk.h>
+#include <bedrock/protocol/command.h>
 #include <bedrock/protocol/dimension.h>
 #include <bedrock/protocol/effect.h>
 #include <bedrock/protocol/game.h>
@@ -112,7 +113,7 @@ template <>
 struct PacketRegistries<StateRegistry::Play> {
     using Serverbound =
         PacketRegistry<bp::MinecraftPacketIds::RequestChunkRadius, bp::MinecraftPacketIds::ClientCacheStatus,
-                       bp::MinecraftPacketIds::PlayerAuthInputPacket>;
+                       bp::MinecraftPacketIds::PlayerAuthInputPacket, bp::MinecraftPacketIds::CommandRequest>;
     using Clientbound =
         PacketRegistry<bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::PlayStatus,
                        bp::MinecraftPacketIds::ResourcePacksInfo, bp::MinecraftPacketIds::ResourcePackStack,

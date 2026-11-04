@@ -4,6 +4,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -52,3 +53,12 @@ public:
 };
 
 }  // namespace endgate
+
+template <>
+struct std::hash<endgate::UUID> {
+    std::size_t operator()(const endgate::UUID &uuid) const noexcept
+    {
+        return std::hash<std::string_view>{}(
+            std::string_view{reinterpret_cast<const char *>(uuid.bytes.data()), uuid.bytes.size()});
+    }
+};

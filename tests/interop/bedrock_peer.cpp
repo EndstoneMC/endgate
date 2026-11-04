@@ -5,6 +5,7 @@
  *   start                client: send RequestNetworkSettings
  *   wire <hex>           a message that arrived from the transport
  *   text <hex>           send a TextPacket whose message is the hex-decoded bytes
+ *   command <hex>        send a CommandRequestPacket whose command is the hex-decoded bytes
  *   disconnect <hex>     send a DisconnectPacket carrying the hex-decoded message
  *   kick <reason> <hex>  send a DisconnectPacket with this reason and the hex-decoded message
  *   transfer <host> <port>
@@ -18,6 +19,7 @@
  *   login-token <json>   the claims of the login's token
  *   client-data <json>   the claims of the login's client data
  *   text <hex>
+ *   command <hex>        a CommandRequestPacket arrived
  *   disconnect <reason> <hex>
  *   start-game <runtime id> <unique id> <client-side generation> <seed>
  *   camera <fade|clear> [<in> <hold> <out>]
@@ -59,6 +61,7 @@
 
 #include <bedrock/protocol/camera.h>
 #include <bedrock/protocol/chunk.h>
+#include <bedrock/protocol/command.h>
 #include <bedrock/protocol/dimension.h>
 #include <bedrock/protocol/game.h>
 #include <bedrock/protocol/network.h>
@@ -303,6 +306,7 @@ public:
 
     virtual void start() = 0;
     virtual void sendText(std::string message) = 0;
+    virtual void sendCommand(std::string command) = 0;
     virtual void sendDisconnect(const std::string &message) = 0;
     virtual void sendKick(int reason, const std::string &message) = 0;
     virtual void sendTransfer(std::string host, std::uint16_t port) = 0;
@@ -334,6 +338,15 @@ public:
         bp::TextPacket_<V> packet;
         packet.body =
             typename bp::TextPacket_<V>::MessageOnly{.type = bp::TextPacketType::Raw, .message = std::move(message)};
+        send(packet);
+    }
+
+    void sendCommand(std::string command) override
+    {
+        bp::CommandRequestPacket_<V> packet;
+        packet.command = std::move(command);
+        packet.origin.type = bp::CommandOriginType::Player;
+        packet.version = decltype(packet.version)::Latest;
         send(packet);
     }
 
@@ -550,6 +563,9 @@ private:
         }
         else if (id == bp::RequestChunkRadiusPacket::Id) {
             std::cout << "chunk-radius " << decode<bp::RequestChunkRadiusPacket>(packet).chunk_radius << '\n';
+        }
+        else if (id == bp::CommandRequestPacket_<V>::Id) {
+            std::cout << "command " << toHex(decode<bp::CommandRequestPacket_<V>>(packet).command) << '\n';
         }
         else if (options_.play) {
             std::cout << "packet " << id << '\n';
@@ -785,6 +801,9 @@ int main(int argc, char **argv)
             }
             else if (command == "text") {
                 peer.sendText(fromHex(argument));
+            }
+            else if (command == "command") {
+                peer.sendCommand(fromHex(argument));
             }
             else if (command == "disconnect") {
                 peer.sendDisconnect(fromHex(argument));
