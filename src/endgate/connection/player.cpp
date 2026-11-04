@@ -549,6 +549,7 @@ void ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
     server_container_.reset();
     server_shapes_.clear();
     server_chunks_.clear();
+    fade_lifted_ = dimension != dimension_;
     dimension_ = dimension;
     setSpawnPosition(false, start_game.settings.default_spawn.x, start_game.settings.default_spawn.z);
     switched_ = true;
@@ -608,6 +609,9 @@ void ClientPlaySessionHandler::handleBackendPlayerSpawn(ServerConnection &destin
         backend.write(PacketOf<Version, bp::MinecraftPacketIds::SetLocalPlayerAsInit>{.player_id = runtime_id_});
         return true;
     });
+    if (std::exchange(fade_lifted_, false)) {
+        return;
+    }
     auto &client = player_->getConnection();
     visitProtocolVersion(client.getProtocolVersion().getProtocol(), [&]<int Version>() {
         PacketOf<Version, bp::MinecraftPacketIds::CameraInstruction> camera;

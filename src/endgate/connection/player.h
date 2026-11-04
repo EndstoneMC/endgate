@@ -458,6 +458,7 @@ private:
     bool spawned_{false};
     bool switched_{false};
     bool awaiting_spawn_{false};
+    bool fade_lifted_ = false;
     bp::ActorRuntimeID runtime_id_;
     bp::ActorUniqueID unique_id_;
     std::int32_t dimension_{0};

@@ -21,6 +21,7 @@
  *   disconnect <reason> <hex>
  *   start-game <runtime id> <unique id> <client-side generation> <seed>
  *   camera <fade|clear> [<in> <hold> <out>]
+ *   change-dimension <dimension>
  *   chunk <x> <z>
  *   transfer <host> <port>
  *   initialized <runtime id>
@@ -30,7 +31,7 @@
  *   error <what>
  *
  * With --play, a server plays a join after the login: the pack exchange, then StartGame with
- * --runtime-id, --unique-id and --checksum, then PlayStatus PlayerSpawn. A client answers the pack
+ * --runtime-id, --unique-id, --checksum and --dimension, then PlayStatus PlayerSpawn. A client answers the pack
  * exchange and the spawn as the game does.
  *
  * The batch framing, compression and encryption here are written from the wire format, not shared with
@@ -58,6 +59,7 @@
 
 #include <bedrock/protocol/camera.h>
 #include <bedrock/protocol/chunk.h>
+#include <bedrock/protocol/dimension.h>
 #include <bedrock/protocol/game.h>
 #include <bedrock/protocol/network.h>
 #include <bedrock/protocol/pack.h>
@@ -289,6 +291,7 @@ struct Options {
     std::uint64_t runtime_id = 1;
     std::int64_t unique_id = -1;
     std::uint64_t checksum = 0;
+    int dimension = 0;
 };
 
 class Peer {
@@ -511,6 +514,8 @@ private:
                 start_game.runtime_id = bp::ActorRuntimeID{options_.runtime_id};
                 start_game.entity_id = bp::ActorUniqueID{options_.unique_id};
                 start_game.server_block_type_registry_checksum = options_.checksum;
+                start_game.settings.spawn_settings.dimension =
+                    static_cast<decltype(start_game.settings.spawn_settings.dimension)>(options_.dimension);
                 send(start_game);
                 send(bp::PlayStatusPacket{.status = bp::PlayStatus::PlayerSpawn});
             }
@@ -596,6 +601,10 @@ private:
             else {
                 std::cout << "camera clear\n";
             }
+        }
+        else if (id == bp::ChangeDimensionPacket::Id) {
+            std::cout << "change-dimension " << static_cast<int>(decode<bp::ChangeDimensionPacket>(packet).dimension_id)
+                      << '\n';
         }
         else if (id == bp::LevelChunkPacket_<PROTOCOL>::Id) {
             const auto chunk = decode<bp::LevelChunkPacket_<PROTOCOL>>(packet);
@@ -723,6 +732,9 @@ int main(int argc, char **argv)
         }
         else if (argument == "--checksum") {
             options.checksum = std::stoull(value());
+        }
+        else if (argument == "--dimension") {
+            options.dimension = std::stoi(value());
         }
     }
 

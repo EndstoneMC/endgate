@@ -7,6 +7,7 @@ LOBBY_RUNTIME_ID = 1
 SECOND_RUNTIME_ID = 7
 START_LOADING_SCREEN = 1
 END_LOADING_SCREEN = 2
+NETHER = 1
 
 
 @pytest.fixture
@@ -19,6 +20,13 @@ def lobby():
 @pytest.fixture
 def second():
     server = Backend("raknet", play=True, runtime_id=SECOND_RUNTIME_ID, unique_id=-7)
+    yield server
+    server.close()
+
+
+@pytest.fixture
+def nether():
+    server = Backend("raknet", play=True, runtime_id=SECOND_RUNTIME_ID, unique_id=-7, dimension=NETHER)
     yield server
     server.close()
 
@@ -63,6 +71,20 @@ def test_send_moves_the_player_under_a_fade(make_proxy, lobby, second, connect):
     assert upstream.wait_closed()
     assert [player.peer.wait("camera", 10) for _ in range(3)] == ["fade 0.5 5 0.5", "clear", "fade 0 0 0.5"]
     assert player.peer.pending("start-game") == []
+
+
+def test_a_switch_into_another_dimension_leaves_the_fade_to_the_camera_clear(make_proxy, lobby, nether, connect):
+    proxy = proxy_for(make_proxy, lobby, nether)
+    player = connect(proxy)
+    upstream = joined(player, lobby, proxy)
+
+    proxy.command(f"send {player.identity.name} second")
+
+    assert spawned(nether.accept(), proxy)
+    assert upstream.wait_closed()
+    assert [player.peer.wait("camera", 10) for _ in range(2)] == ["fade 0.5 5 0.5", "clear"]
+    assert player.peer.wait("change-dimension", 10) == str(NETHER)
+    assert player.peer.wait("camera", 2) is None
 
 
 def test_the_first_start_game_reaches_the_player_without_its_generator(make_proxy, lobby, second, connect):
