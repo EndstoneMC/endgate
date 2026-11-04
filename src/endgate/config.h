@@ -59,6 +59,7 @@ public:
     [[nodiscard]] int getQueryPort() const;
     [[nodiscard]] const std::string &getQueryMap() const;
     [[nodiscard]] bool shouldQueryShowPlugins() const;
+    [[nodiscard]] bool isMetricsEnabled() const;
     [[nodiscard]] bool isPacketDecodeLogging() const;
     [[nodiscard]] bool isLogServerBackpressure() const;
     [[nodiscard]] const std::filesystem::path &getTlsCertificate() const;
@@ -94,6 +95,7 @@ private:
     int query_port_ = 0;
     std::string query_map_;
     bool query_show_plugins_ = false;
+    bool metrics_enabled_ = true;
     bool packet_decode_logging_ = false;
     bool log_server_backpressure_ = false;
     std::filesystem::path tls_certificate_;

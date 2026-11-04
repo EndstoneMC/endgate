@@ -71,6 +71,15 @@ struct Query {
     };
 };
 
+struct Metrics {
+    bool enabled = true;
+
+    struct glaze {
+        using T = Metrics;
+        static constexpr auto value = glz::object("enabled", &T::enabled);
+    };
+};
+
 struct Debug {
     bool packet_decode_logging = false;
     bool log_server_backpressure = false;
@@ -98,6 +107,7 @@ struct Document {
     std::optional<std::map<std::string, std::variant<std::string, std::vector<std::string>>>> forced_hosts;
     Advanced advanced;
     Query query;
+    Metrics metrics;
     Debug debug;
 
     struct glaze {
@@ -117,6 +127,7 @@ struct Document {
             "forced-hosts", &T::forced_hosts,                                    //
             "advanced", &T::advanced,                                            //
             "query", &T::query,                                                  //
+            "metrics", &T::metrics,                                              //
             "debug", &T::debug);
     };
 };
@@ -214,6 +225,7 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
     config.query_port_ = document.query.port;
     config.query_map_ = document.query.map;
     config.query_show_plugins_ = document.query.show_plugins;
+    config.metrics_enabled_ = document.metrics.enabled;
     config.packet_decode_logging_ = document.debug.packet_decode_logging;
     config.log_server_backpressure_ = document.debug.log_server_backpressure;
     config.tls_certificate_ = document.tls_certificate;
@@ -444,6 +456,11 @@ const std::string &ProxyConfig::getQueryMap() const
 bool ProxyConfig::shouldQueryShowPlugins() const
 {
     return query_show_plugins_;
+}
+
+bool ProxyConfig::isMetricsEnabled() const
+{
+    return metrics_enabled_;
 }
 
 bool ProxyConfig::isPacketDecodeLogging() const

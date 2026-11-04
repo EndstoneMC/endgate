@@ -111,6 +111,8 @@ bool ProxyServer::start()
     }
 
     cm_.start();
+
+    metrics_ = Metrics::EndgateMetrics::startMetrics(*this, current.isMetricsEnabled());
     return true;
 }
 
@@ -259,6 +261,9 @@ void ProxyServer::shutdown([[maybe_unused]] bool explicit_exit, const std::strin
             logger_.error("Some players took over 10 seconds to disconnect.");
         }
 
+        if (metrics_) {
+            metrics_->shutdown();
+        }
         if (keys_) {
             keys_->shutdown();
         }
@@ -352,6 +357,12 @@ std::shared_ptr<Player> ProxyServer::getPlayer(std::string_view username)
     const std::scoped_lock lock(connections_mutex_);
     const auto player = connections_by_name_.find(std::string{username});
     return player == connections_by_name_.end() ? nullptr : player->second;
+}
+
+std::size_t ProxyServer::getPlayerCount()
+{
+    const std::scoped_lock lock(connections_mutex_);
+    return connections_by_uuid_.size();
 }
 
 std::vector<std::shared_ptr<Player>> ProxyServer::getAllPlayers()

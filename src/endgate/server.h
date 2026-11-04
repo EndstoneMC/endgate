@@ -23,6 +23,7 @@
 #include "endgate/command/manager.h"
 #include "endgate/config.h"
 #include "endgate/console.h"
+#include "endgate/metrics.h"
 #include "endgate/network/http.h"
 #include "endgate/network/manager.h"
 #include "endgate/network/ping.h"
@@ -109,6 +110,13 @@ public:
     [[nodiscard]] std::shared_ptr<Player> getPlayer(std::string_view username);
 
     /**
+     * Returns the number of players currently connected to this proxy.
+     *
+     * @see com.velocitypowered.api.proxy.ProxyServer#getPlayerCount
+     */
+    [[nodiscard]] std::size_t getPlayerCount();
+
+    /**
      * Retrieves all players currently connected to this proxy.
      *
      * @see com.velocitypowered.api.proxy.ProxyServer#getAllPlayers
@@ -173,6 +181,7 @@ private:
     std::shared_ptr<Console> console_;
     ServerListPingHandler ping_handler_;
     std::shared_ptr<MinecraftServiceKeyManager> keys_;
+    std::unique_ptr<Metrics> metrics_;
     std::mutex connections_mutex_;
     std::condition_variable connections_changed_;
     std::map<UUID, std::shared_ptr<Player>> connections_by_uuid_;

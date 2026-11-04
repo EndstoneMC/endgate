@@ -93,6 +93,7 @@ add_library(endgate_proxy STATIC
         src/endgate/logging/appender.cpp
         src/endgate/logging/formatter.cpp
         src/endgate/logging/manager.cpp
+        src/endgate/metrics.cpp
         src/endgate/network/endpoint.cpp
         src/endgate/network/manager.cpp
         src/endgate/network/offline.cpp

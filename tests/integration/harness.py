@@ -144,6 +144,11 @@ class Proxy:
                     f"packet-decode-logging = {str(self.packet_decode_logging).lower()}",
                     *self._settings("debug"),
                     *(
+                        []
+                        if "metrics" in self.settings or "ENDGATE_BSTATS_URI" in os.environ
+                        else ["[metrics]", "enabled = false"]
+                    ),
+                    *(
                         line
                         for section in self.settings
                         if section not in ("", "servers", "advanced", "debug")
