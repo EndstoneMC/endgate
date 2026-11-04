@@ -38,7 +38,7 @@ public:
      * @see com.velocitypowered.proxy.network.ConnectionManager#createHttpClient
      */
     [[nodiscard]] HttpClient createHttpClient();
-    bool bind(const asio::ip::address &address, std::uint16_t port);
+    bool bind(asio::ip::address address, std::uint16_t port);
 
     /**
      * @see com.velocitypowered.proxy.network.ConnectionManager#queryBind

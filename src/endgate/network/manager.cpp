@@ -50,8 +50,17 @@ HttpClient ConnectionManager::createHttpClient()
     return HttpClient(group_.next(), {});
 }
 
-bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t port)
+bool ConnectionManager::bind(asio::ip::address address, std::uint16_t port)
 {
+    if (address.is_v6() && address.is_unspecified()) {
+        asio::error_code ec;
+        asio::ip::udp::socket probe(group_.begin()->getExecutor());
+        if (probe.open(asio::ip::udp::v6(), ec) || probe.set_option(asio::ip::v6_only(false), ec)) {
+            logger_.warn("IPv6 is not available, so the proxy listens on IPv4 only: {}", ec.message());
+            address = asio::ip::address_v4::any();
+        }
+    }
+
 #ifdef SO_REUSEPORT
     using ReusePort = asio::detail::socket_option::boolean<SOL_SOCKET, SO_REUSEPORT>;
     const auto binds = group_.size();

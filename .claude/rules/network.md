@@ -66,6 +66,7 @@ Deviations from Netty, all for performance:
 ## Transports
 
 - One UDP port carries RakNet and NetherNet. NetherNet's HTTP signalling listens on TCP at the same port number.
+- The default `bind` is `[::]:19132`, one dual-stack socket for IPv6 and IPv4, where Velocity's is `0.0.0.0`. A Bedrock client tries a name's IPv6 address first, so behind an IPv4-only bind a join to a name such as `localhost` waits for that attempt to time out; BDS listens on IPv6 too (`server-portv6`). A machine without IPv6 falls back to `0.0.0.0` with a warning.
 - `0xFE` is added and stripped only at the RakNet edge.
 - Closing after a message is Velocity's `closeWith`: `writeAndFlush(message).addListener(ChannelFutureListener::CLOSE)`. Never close on a grace timer or a deadline.
 - The transport completes a write's `ChannelPromise` once a close can no longer lose the bytes, which a TCP socket's kernel guarantees for Netty. RakNet completes it on `send`, since its graceful close (`DisconnectAsap`) delivers queued reliable messages first. NetherNet has no kernel behind it, so it completes the promise once SCTP has every chunk acknowledged (`Sender::idle()`).
