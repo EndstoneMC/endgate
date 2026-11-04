@@ -90,14 +90,14 @@ This follows Velocity's ConnectedPlayer#createConnectionRequest and TransitionSe
 - **Failover.** On a kick or an unexpected disconnect, move the player to the next server in try, as Velocity's failover-on-unexpected-server-disconnect does.
 - **Transfers.** A backend's TransferPacket naming a registered server becomes a seamless switch instead.
 
-Built: the switch, on a real 1.26.60 client from a NetherNet to a RakNet backend with the console's send; failover; the guard on the new StartGame, with the item registry and dimension data checked once they arrive; transfers; and a two-backend integration test. The first StartGame reaches the client with client-side generation off and seed 0, since the client keeps both for the session. Left: a player-facing /server, which needs Phase 6's commands; refusing a different item registry before the switch commits; and real-client runs of switching back, repeated switches and a switch into another dimension.
+Built: the switch, with the console's send; failover; the guard on the new StartGame, with the item registry and dimension data checked once they arrive; transfers; and a two-backend integration test. A real 1.26.60 client, between a NetherNet and a RakNet backend, has switched there and back, switched repeatedly, failed over after a BDS kick, and switched into and out of the Nether. The first StartGame reaches the client with client-side generation off and seed 0, since the client keeps both for the session. A switch into another dimension leaves the fade to the camera clear, so its loading screen hides the swap and nothing fades in after it. Left: a player-facing /server, which needs Phase 6's commands, and refusing a different item registry before the switch commits.
 
 ## Phase 5: version routing
 
 **Gate:** 1.26.50 and 1.26.60 clients share one proxy, and each reaches only backends on its own protocol.
 
 - The supported versions are endgate's list where bedrock-protocol models them. Adding a release means bumping bedrock-protocol and adding a line to version.h.
-- Read each backend's protocol from its ping: the RakNet pong or the NetherNet /v1/join answer. Cache it beside the detected transport.
+- Read each backend's protocol from its ping: the RakNet pong or the NetherNet /v1/join answer. Cache it beside the detected transport. BDS 1.26.60 answered a plain GET /v1/join with 200 and an empty body, so find what makes it fill the answer before relying on it.
 - try, forced hosts, /server and failover choose only among backends on the player's protocol. A player with none is told why it can't join.
 - Each version gets its own registry from Phase 1. The ping already answers each client with its own protocol.
 
@@ -133,7 +133,7 @@ Left out: the plugin API (events, plugins, scheduler), bStats metrics and Java-o
 - **The address rides in the same signed token** as an extra claim, the IP only, as Velocity's payload carries it. BDS ignores unknown claims. Endstone reads it only when the kid is a trusted proxy key and makes it the player's address.
 - **Endgate gets Velocity's player-info-forwarding-mode.** none keeps today's self-signed login, with the backend in offline mode; the new mode signs the token. Endgate refuses the new mode while it runs offline, since it would vouch for xuids it never checked.
 - **The signed token also works on an offline-mode backend.** \_validateBase checks a token that isn't self-signed the same way in both modes; online mode only sets mAllowSelfSigned. Offline mode also admits direct self-signed logins, so the gate's refusal needs online mode on plus a proxy-only setting that drops Microsoft's keys.
-- **A vanilla BDS backend never gets the xuid or pfid.** It accepts endgate's self-signed login only with online mode off and the world's LANBroadcastIntent set (bedrock.md). It takes the name and UUID from that login, but getTrustedInfo reads xid and mid only from a trusted token (1.26.32).
+- **A vanilla BDS backend never gets the xuid or pfid.** It accepts endgate's self-signed login only with online mode off and the world's LANBroadcastIntent set (bedrock.md). It takes the name and UUID from that login, but getTrustedInfo reads xid and mid only from a trusted token (1.26.32). It still keeps each player's save: endgate sets the client data's SelfSignedId to the player's pocket-auth-1-xuid UUID, the id an online-mode join saves under as MsaId, so the backend loads the same save as a direct online-mode join (1.26.60). A client that reaches the backend directly could claim the same id.
 - Backends must be unreachable except through endgate, as Velocity's docs require.
 
 Velocity's modern forwarding maps onto Bedrock's login as follows. Bedrock's login is one message the server never asks for, so the request step disappears and the payload becomes claims in the token BDS already verifies.
@@ -197,7 +197,7 @@ Ticked items are decided. Resource packs needs your decision; the rest are check
 - [ ] **Resource packs.** Bedrock applies packs only at login. Require one pack set across backends, or have endgate serve a pack set from its own config? Gates Phase 2.
 - [x] **Packaging.** Decided: FetchContent of a pinned release src.zip and its generated headers, never uv or bpc (rules/protocol.md).
 - [x] **Unloading chunks without ChangeDimension.** Answered on a real client: empty LevelChunks. The client requests each one's terrain again, so the new backend fills it in; a far NetworkChunkPublisherUpdate unloads nothing. CubeCraft's capture switches the same way, under a camera fade.
-- [x] **Vanilla BDS identity.** Answered: a self-signed token gives BDS the name and UUID, never the xuid or pfid (1.26.32). Vanilla backends work, without xuids.
+- [x] **Vanilla BDS identity.** Answered: a self-signed token gives BDS the name and UUID, never the xuid or pfid (1.26.32). Vanilla backends work without xuids, and keep each player's save through SelfSignedId (1.26.60).
 - [ ] **Encryption of a self-signed session.** Does BDS still encrypt it? Decides the backend leg's cipher setup in Phase 2.
 - [ ] **The offer token's audience.** Confirm it is the multiplayer audience on the next real-client capture.
 
