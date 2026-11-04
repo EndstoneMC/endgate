@@ -10,7 +10,7 @@ Phases 1 to 4 run in order; 5 and 7 can start once login works, and 6 once switc
 
 ## Where endgate is today
 
-Endgate logs a player in on both legs, rewrites the player's actor IDs per backend, and switches a real client between two backends under a camera fade. Commands and version routing are next.
+Endgate logs a player in on both legs, rewrites the player's actor IDs per backend, switches a real client between two backends under a camera fade, and sends each player only to backends on its own version. Phase 6's commands and proxy features are next.
 
 | Area | State |
 | --- | --- |
@@ -21,7 +21,8 @@ Endgate logs a player in on both legs, rewrites the player's actor IDs per backe
 | Online mode: MCS keys, token validation, the NetherNet offer identity | Built |
 | Login and encryption on both legs, entity ID rewriting, the client's state per backend | Built |
 | Switching, failover, the guard and transfers | Built; a player-facing /server waits for commands |
-| Commands, version routing | Not started |
+| Version routing: each backend's protocol from its ping, try and failover among backends on the player's version | Built |
+| Commands, forced hosts, ping passthrough and the rest of Phase 6 | Not started |
 
 Endgate supports protocols 2168, 2169, 2193 and 2225 (1.26.40 to 1.26.60). bedrock-protocol models 729 to 2225, so adding a release is a bump and a line in version.h.
 
@@ -97,9 +98,11 @@ Built: the switch, with the console's send; failover; the guard on the new Start
 **Gate:** 1.26.50 and 1.26.60 clients share one proxy, and each reaches only backends on its own protocol.
 
 - The supported versions are endgate's list where bedrock-protocol models them. Adding a release means bumping bedrock-protocol and adding a line to version.h.
-- Read each backend's protocol from its ping: the RakNet pong or the NetherNet /v1/join answer. Cache it beside the detected transport. BDS 1.26.60 answered a plain GET /v1/join with 200 and an empty body, so find what makes it fill the answer before relying on it.
+- Read each backend's protocol from its ping: the RakNet pong or the NetherNet /v1/join answer. Cache it beside the detected transport. BDS fills both only with enable-lan-visibility=true; without it, the pong's payload and the /v1/join body are empty.
 - try, forced hosts, /server and failover choose only among backends on the player's protocol. A player with none is told why it can't join.
 - Each version gets its own registry from Phase 1. The ping already answers each client with its own protocol.
+
+Built: each backend's protocol read from its RakNet pong or NetherNet /v1/join and cached beside the transport; try and failover skip backends on another version; a connection request to one is refused with the versions named; a player with no backend on their version is told so; and a warning, once per backend, when one doesn't say which version it runs. A real 1.26.60 client reached the 1.26.60 backend and a real 1.26.51 client the 1.26.52 one, through one proxy at the same time, and endgate refused to send the 1.26.51 client to the 1.26.60 backend. Left: forced hosts and a player-facing /server, which arrive with Phase 6 and pass the same check. A backend without LAN visibility is routed to every version, so BDS refuses the wrong one itself.
 
 ## Phase 6: Velocity's proxy features
 
