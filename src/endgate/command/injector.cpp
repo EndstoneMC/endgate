@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <string_view>
@@ -32,7 +33,6 @@ constexpr std::uint16_t NOT_CHEAT = 128;
 constexpr std::uint16_t MESSAGE = 64;
 constexpr auto DESCRIPTION = "A command of the proxy.";
 constexpr auto COMMAND_NAME_ENUM = "CommandName";
-constexpr auto SOFT_ENUM_PREFIX = "Endgate";
 
 struct HardNonTerminals {
     std::uint32_t id;
@@ -174,14 +174,12 @@ public:
         }
         for (const Literal *literal : literals) {
             const std::string keyword = lowered(literal->getLiteral());
-            path_.push_back(keyword);
             steps_.push_back(Parameter{.kind = Parameter::Kind::Keyword,
                                        .name = keyword,
                                        .enum_name = pascal(command_) + pascal(keyword),
                                        .values = {keyword}});
             walk(*literal, plan);
             steps_.pop_back();
-            path_.pop_back();
         }
     }
 
@@ -221,20 +219,13 @@ private:
         return parameter;
     }
 
-    [[nodiscard]] std::string softEnumName(const std::string &argument) const
+    [[nodiscard]] static std::string softEnumName(const std::string &argument)
     {
-        std::vector<std::string> parts{pascal(command_)};
-        for (const std::string &keyword : path_) {
-            parts.push_back(pascal(keyword));
+        std::string name = pascal(argument);
+        if (lowered(name).ends_with("names")) {
+            return name;
         }
-        parts.push_back(pascal(argument));
-        std::string name = SOFT_ENUM_PREFIX;
-        for (std::size_t i = 0; i < parts.size(); i++) {
-            if (i == 0 || parts[i] != parts[i - 1]) {
-                name += parts[i];
-            }
-        }
-        return name + "s";
+        return lowered(name).ends_with("name") ? name + "s" : name + "Names";
     }
 
     [[nodiscard]] std::vector<std::string> suggestionsOf(const Argument &argument) const
@@ -252,7 +243,6 @@ private:
     brigadier::CommandDispatcher<Source> &dispatcher_;
     const Source &source_;
     std::string command_;
-    std::vector<std::string> path_;
     std::vector<Parameter> steps_;
 };
 
@@ -428,6 +418,35 @@ private:
     std::unordered_map<std::string, std::uint32_t> soft_enums_;
 };
 
+void shareSoftEnums(std::vector<Plan> &plans)
+{
+    std::map<std::string, std::vector<std::string>> shared;
+    for (const Plan &plan : plans) {
+        for (const Overload &overload : plan.overloads) {
+            for (const Parameter &parameter : overload) {
+                if (parameter.kind != Parameter::Kind::SoftEnum) {
+                    continue;
+                }
+                auto [found, inserted] = shared.try_emplace(parameter.enum_name, parameter.values);
+                if (!inserted) {
+                    std::erase_if(found->second, [&parameter](const std::string &value) {
+                        return !std::ranges::contains(parameter.values, value);
+                    });
+                }
+            }
+        }
+    }
+    for (Plan &plan : plans) {
+        for (Overload &overload : plan.overloads) {
+            for (Parameter &parameter : overload) {
+                if (parameter.kind == Parameter::Kind::SoftEnum) {
+                    parameter.values = shared.at(parameter.enum_name);
+                }
+            }
+        }
+    }
+}
+
 std::vector<Plan> plansOf(brigadier::CommandDispatcher<Source> &dispatcher, std::shared_mutex &lock,
                           const std::map<std::string, CommandMeta> &metas, const Source &source)
 {
@@ -460,6 +479,7 @@ std::vector<Plan> plansOf(brigadier::CommandDispatcher<Source> &dispatcher, std:
             plans.push_back(std::move(plan));
         }
     }
+    shareSoftEnums(plans);
     return plans;
 }
 

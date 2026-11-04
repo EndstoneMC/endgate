@@ -220,7 +220,7 @@ TEST_F(InjectorTest, APlayerGetsServerAsOneOptionalSoftEnum)
     EXPECT_TRUE(param.optional);
     EXPECT_EQ(param.param_options, 0);
     EXPECT_EQ(param.parse_symbol, SOFT_ENUM_SYMBOL | 0U);
-    EXPECT_EQ(softEnumOf(packet, param.parse_symbol).name, "EndgateServers");
+    EXPECT_EQ(softEnumOf(packet, param.parse_symbol).name, "ServerNames");
     EXPECT_EQ(softEnumOf(packet, param.parse_symbol).values,
               (std::vector<std::string>{"creative", "lobby", "survival"}));
     const Packet::EnumData *names = findEnum(packet, "CommandName");
@@ -229,7 +229,7 @@ TEST_F(InjectorTest, APlayerGetsServerAsOneOptionalSoftEnum)
     expectConsistent(packet);
 }
 
-TEST_F(InjectorTest, GlistFoldsAllIntoItsServers)
+TEST_F(InjectorTest, GlistSharesTheServerNamesWithoutAll)
 {
     const Packet packet = injected(everything_);
 
@@ -240,9 +240,9 @@ TEST_F(InjectorTest, GlistFoldsAllIntoItsServers)
     const auto &param = command->overloads.front().params.front();
     EXPECT_TRUE(param.optional);
     EXPECT_EQ(param.parse_symbol & SOFT_ENUM_SYMBOL, SOFT_ENUM_SYMBOL);
-    EXPECT_EQ(softEnumOf(packet, param.parse_symbol).name, "EndgateGlistServers");
+    EXPECT_EQ(softEnumOf(packet, param.parse_symbol).name, "ServerNames");
     EXPECT_EQ(softEnumOf(packet, param.parse_symbol).values,
-              (std::vector<std::string>{"all", "creative", "lobby", "survival"}));
+              (std::vector<std::string>{"creative", "lobby", "survival"}));
     EXPECT_EQ(command->flags, 128);
     expectConsistent(packet);
 }
@@ -257,10 +257,10 @@ TEST_F(InjectorTest, SendTakesAPlayerAndAServerBothOptional)
     const auto &params = command->overloads.front().params;
     ASSERT_EQ(params.size(), 2U);
     EXPECT_EQ(params[0].name, "player");
-    EXPECT_EQ(softEnumOf(packet, params[0].parse_symbol).name, "EndgateSendPlayers");
+    EXPECT_EQ(softEnumOf(packet, params[0].parse_symbol).name, "PlayerNames");
     EXPECT_EQ(softEnumOf(packet, params[0].parse_symbol).values, (std::vector<std::string>{"all"}));
     EXPECT_EQ(params[1].name, "server");
-    EXPECT_EQ(softEnumOf(packet, params[1].parse_symbol).name, "EndgateSendServers");
+    EXPECT_EQ(softEnumOf(packet, params[1].parse_symbol).name, "ServerNames");
     EXPECT_TRUE(params[0].optional);
     EXPECT_TRUE(params[1].optional);
 }
@@ -331,7 +331,7 @@ TEST_F(InjectorTest, TheSoftEnumsFollowTheServers)
 
     EXPECT_EQ(sent, injector.getSoftEnums(player));
     server_.registerServer(ServerInfo::parse("minigames", "127.0.0.1:19135").value());
-    EXPECT_EQ(injector.getSoftEnums(player).at("EndgateServers"),
+    EXPECT_EQ(injector.getSoftEnums(player).at("ServerNames"),
               (std::vector<std::string>{"creative", "lobby", "minigames", "survival"}));
 }
 
@@ -495,7 +495,7 @@ TEST_F(ClashTest, ACommandThatFitsIsRegistered)
 
 TEST_F(ClashTest, AFoldedKeywordJoinsTheSoftEnum)
 {
-    ASSERT_TRUE(registers(literal("warp").then(literal("home").executes(run)).then(suggesting("name").executes(run))));
+    ASSERT_TRUE(registers(literal("warp").then(literal("home").executes(run)).then(suggesting("warp").executes(run))));
 
     Packet packet;
     manager_.getInjector().inject(packet, source_, PROTOCOL);
@@ -504,9 +504,27 @@ TEST_F(ClashTest, AFoldedKeywordJoinsTheSoftEnum)
     ASSERT_NE(command, nullptr);
     ASSERT_EQ(command->overloads.size(), 1U);
     ASSERT_EQ(command->overloads[0].params.size(), 1U);
-    EXPECT_EQ(softEnumOf(packet, command->overloads[0].params[0].parse_symbol).name, "EndgateWarpNames");
+    EXPECT_EQ(softEnumOf(packet, command->overloads[0].params[0].parse_symbol).name, "WarpNames");
     EXPECT_EQ(softEnumOf(packet, command->overloads[0].params[0].parse_symbol).values,
               (std::vector<std::string>{"alpha", "home"}));
+}
+
+TEST_F(ClashTest, ArgumentsOfOneNameShareASoftEnumHoldingWhatEverySharerSuggests)
+{
+    ASSERT_TRUE(registers(literal("visit").then(suggesting("warp").executes(run))));
+    ASSERT_TRUE(registers(literal("tour").then(word("warp")
+                                                   .suggests([](const Context &, SuggestionsBuilder &builder) {
+                                                       return builder.suggest("alpha").suggest("all").build();
+                                                   })
+                                                   .executes(run))));
+
+    Packet packet;
+    const auto sent = manager_.getInjector().inject(packet, source_, PROTOCOL);
+
+    ASSERT_EQ(packet.soft_enums.size(), 1U);
+    EXPECT_EQ(packet.soft_enums[0].name, "WarpNames");
+    EXPECT_EQ(packet.soft_enums[0].values, (std::vector<std::string>{"alpha"}));
+    EXPECT_EQ(sent.at("WarpNames"), (std::vector<std::string>{"alpha"}));
 }
 
 TEST_F(ClashTest, WordsAndMessagesUseTheIdAndMessageRootSymbols)

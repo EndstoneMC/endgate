@@ -64,7 +64,7 @@ def test_a_player_gets_the_backends_commands_and_server(make_proxy, lobby, secon
     assert [(p["name"], p["optional"]) for p in server["overloads"][0]["params"]] == [("server", True)]
     symbol = server["overloads"][0]["params"][0]["parse_symbol"]
     assert symbol == commandwire.SOFT_ENUM_SYMBOL | len(sent["soft_enums"])
-    assert commandwire.soft_enum(received, "EndgateServers") == ["lobby", "second"]
+    assert commandwire.soft_enum(received, "ServerNames") == ["lobby", "second"]
     assert "server" in commandwire.enum_values(received, "CommandName")
     assert commandwire.find(received, "glist") is None
     assert commandwire.find(received, "send") is None
@@ -131,7 +131,7 @@ def test_a_reload_that_adds_a_server_updates_the_soft_enum(make_proxy, lobby, se
     rewrite(proxy, ("[advanced]", f'third = "127.0.0.1:{free_port()}"\n[advanced]'))
     proxy.command("endgate reload")
 
-    assert player.wait_soft_enum() == ("EndgateServers", 0, ["third"]), proxy.lines[-20:]
+    assert player.wait_soft_enum() == ("ServerNames", 0, ["third"]), proxy.lines[-20:]
     assert player.wait_soft_enum(0.5) is None
 
 
@@ -146,7 +146,7 @@ def test_a_player_joining_changes_no_soft_enum_a_player_holds(make_proxy, lobby,
     joined(other, lobby, proxy)
 
     assert first.wait_soft_enum(1.0) is None
-    assert commandwire.soft_enum(commandwire.backend(), "EndgatePlayers") is None
+    assert commandwire.soft_enum(commandwire.backend(), "PlayerNames") is None
 
 
 def test_a_switch_injects_the_next_backends_packet(make_proxy, lobby, second, connect):
@@ -165,4 +165,4 @@ def test_a_switch_injects_the_next_backends_packet(make_proxy, lobby, second, co
 
     assert received is not None, proxy.lines[-20:]
     assert [item["name"] for item in received["commands"]] == ["list", "ban", "server"]
-    assert commandwire.soft_enum(received, "EndgateServers") == ["lobby", "second"]
+    assert commandwire.soft_enum(received, "ServerNames") == ["lobby", "second"]
