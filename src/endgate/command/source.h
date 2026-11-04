@@ -23,6 +23,13 @@ public:
     virtual void sendMessage(std::string_view message) = 0;
 
     /**
+     * Sends an error message to the source.
+     *
+     * @see endstone::CommandSender#sendErrorMessage
+     */
+    virtual void sendErrorMessage(std::string_view message) = 0;
+
+    /**
      * Whether this source is an instance of the given type. A subclass overrides it to answer for itself and
      * defer to its base.
      *

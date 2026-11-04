@@ -273,6 +273,11 @@ void Player::sendMessage(std::string_view message)
     });
 }
 
+void Player::sendErrorMessage(std::string_view message)
+{
+    sendMessage("§c" + std::string{message});
+}
+
 void Player::updateSoftEnums()
 {
     if (!active_ || soft_enums_.empty()) {
@@ -406,7 +411,7 @@ bool ClientPlaySessionHandler::handlePlayerCommandInternal(const std::string &co
     }
     catch (const std::exception &e) {
         logger_.info("Exception occurred while running command for {}: {}", player_->getUsername(), e.what());
-        player_->sendMessage("An error occurred while running this command.");
+        player_->sendErrorMessage("An error occurred while running this command.");
         return true;
     }
     if (server.getConfiguration().isLogCommandExecutions()) {

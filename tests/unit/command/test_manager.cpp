@@ -70,7 +70,7 @@ TEST_F(ManagerTest, ASyntaxErrorIsReportedAndCountsAsRun)
     manager_.registerCommand(echo("echo"));
 
     EXPECT_TRUE(manager_.executeImmediatelyAsync(source_, "echo a b"));
-    EXPECT_EQ(source_->messages.size(), 1U);
+    EXPECT_EQ(source_->errors.size(), 1U);
 }
 
 TEST_F(ManagerTest, ACommandTheSourceMayNotUseIsUnknownToIt)

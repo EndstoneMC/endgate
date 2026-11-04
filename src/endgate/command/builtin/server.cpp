@@ -34,21 +34,20 @@ BrigadierCommand ServerCommand::create(ProxyServer &server)
                 const BackendServer *current = player.getCurrentServer();
                 const std::string current_server =
                     current != nullptr ? current->getServerInfo().getName() : "<unknown>";
-                player.sendMessage(std::format("§eYou are currently connected to {}.", current_server));
+                player.sendMessage(std::format("You are currently connected to {}.", current_server));
 
                 const auto servers = BuiltinCommandUtil::sortedServerList(server);
                 if (servers.size() > MAX_SERVERS_TO_LIST) {
-                    player.sendMessage("§cThere are too many servers set up. Use tab completion to view all servers "
-                                       "available.");
+                    player.sendErrorMessage("There are too many servers set up. Use tab completion to view all servers "
+                                            "available.");
                     return SINGLE_SUCCESS;
                 }
 
-                std::string list = "§eAvailable servers: ";
+                std::string list = "Available servers: ";
                 for (std::size_t i = 0; i < servers.size(); i++) {
-                    list += servers[i] == current ? "§a" : "§7";
                     list += servers[i]->getServerInfo().getName();
                     if (i != servers.size() - 1) {
-                        list += "§7, ";
+                        list += ", ";
                     }
                 }
                 player.sendMessage(list);
@@ -72,7 +71,7 @@ BrigadierCommand ServerCommand::create(ProxyServer &server)
                           const std::string server_name = StringArgumentType::getString(context, SERVER_ARG);
                           BackendServer *const to_connect = server.getServer(server_name);
                           if (to_connect == nullptr) {
-                              player.sendMessage(CommandMessages::serverDoesNotExist(server_name));
+                              player.sendErrorMessage(CommandMessages::serverDoesNotExist(server_name));
                               return -1;
                           }
 

@@ -46,8 +46,8 @@ def test_server_lists_the_servers(make_proxy, lobby, second, connect, line):
 
     player.command(line)
 
-    assert player.wait_text() == "§eYou are currently connected to lobby."
-    assert player.wait_text() == "§eAvailable servers: §alobby§7, §7second"
+    assert player.wait_text() == "You are currently connected to lobby."
+    assert player.wait_text() == "Available servers: lobby, second"
     player.command("/after")
     assert upstream.wait_command() == "/after"
 
@@ -95,7 +95,7 @@ def test_a_rate_limited_command_is_forwarded(make_proxy, lobby, second, connect)
     upstream = joined(player, lobby, proxy)
 
     player.command("/server")
-    assert player.wait_text() == "§eYou are currently connected to lobby."
+    assert player.wait_text() == "You are currently connected to lobby."
     player.texts()
     player.command("/server")
 

@@ -28,6 +28,11 @@ public:
     void sendMessage(std::string_view message) override;
 
     /**
+     * @see endstone::core::EndstoneConsoleCommandSender#sendErrorMessage
+     */
+    void sendErrorMessage(std::string_view message) override;
+
+    /**
      * The console has every permission until a permission provider exists.
      *
      * @see com.velocitypowered.proxy.console.VelocityConsole#getPermissionValue

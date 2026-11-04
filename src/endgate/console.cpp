@@ -108,6 +108,11 @@ void Console::sendMessage(std::string_view message)
     logger_.info("{}", message);
 }
 
+void Console::sendErrorMessage(std::string_view message)
+{
+    logger_.error("{}", message);
+}
+
 void Console::printAbove(std::string_view message)
 {
     const bool has_newline = !message.empty() && message.back() == '\n';
@@ -132,7 +137,7 @@ void Console::runCommand(const std::string &command)
 {
     try {
         if (!server_.getCommandManager().executeImmediatelyAsync(shared_from_this(), command)) {
-            sendMessage("§cThis command does not exist.");
+            sendErrorMessage("This command does not exist.");
             return;
         }
         if (server_.getConfiguration().isLogCommandExecutions()) {

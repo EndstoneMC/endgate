@@ -111,7 +111,7 @@ bool CommandManager::executeImmediately0(const Source &source, const ParseResult
         const bool is_syntax_error =
             &e.getType() != &CommandSyntaxException::BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand();
         if (is_syntax_error) {
-            source->sendMessage(e.getRawMessage());
+            source->sendErrorMessage(e.getRawMessage());
             return true;
         }
         return false;

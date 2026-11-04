@@ -14,6 +14,7 @@ public:
     explicit TestSource(Tristate fallback = Tristate::True) : fallback_(fallback) {}
 
     void sendMessage(std::string_view message) override { messages.emplace_back(message); }
+    void sendErrorMessage(std::string_view message) override { errors.emplace_back(message); }
 
     [[nodiscard]] Tristate getPermissionValue(const std::string &permission) const override
     {
@@ -27,6 +28,7 @@ public:
     }
 
     std::vector<std::string> messages;
+    std::vector<std::string> errors;
     std::map<std::string, Tristate> permissions;
 
 private:

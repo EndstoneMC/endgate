@@ -28,7 +28,7 @@ void SendCommand::registerCommand() const
     ProxyServer &proxy = server_;
 
     const auto usage = [](const Context &context) {
-        context.getSource()->sendMessage("§e/send <player> <server>");
+        context.getSource()->sendErrorMessage("/send <player> <server>");
         return SINGLE_SUCCESS;
     };
 
@@ -78,13 +78,13 @@ void SendCommand::registerCommand() const
 
                 BackendServer *const target_server = proxy.getServer(server_name);
                 if (target_server == nullptr) {
-                    context.getSource()->sendMessage(CommandMessages::serverDoesNotExist(server_name));
+                    context.getSource()->sendErrorMessage(CommandMessages::serverDoesNotExist(server_name));
                     return 0;
                 }
 
                 const std::shared_ptr<Player> maybe_player = proxy.getPlayer(player);
                 if (!maybe_player && player != "all" && player != "current") {
-                    context.getSource()->sendMessage(CommandMessages::playerNotFound(player));
+                    context.getSource()->sendErrorMessage(CommandMessages::playerNotFound(player));
                     return 0;
                 }
 
@@ -98,7 +98,7 @@ void SendCommand::registerCommand() const
                 if (player == "current") {
                     const auto *source = context.getSource()->as<Player>();
                     if (source == nullptr) {
-                        context.getSource()->sendMessage(CommandMessages::PLAYERS_ONLY);
+                        context.getSource()->sendErrorMessage(CommandMessages::PLAYERS_ONLY);
                         return 0;
                     }
 

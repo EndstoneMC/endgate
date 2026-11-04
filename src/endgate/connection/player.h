@@ -266,6 +266,11 @@ public:
     void sendMessage(std::string_view message) override;
 
     /**
+     * @see endstone::core::EndstonePlayer#sendErrorMessage
+     */
+    void sendErrorMessage(std::string_view message) override;
+
+    /**
      * A player has no permission set until a permission provider exists.
      *
      * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer#getPermissionValue

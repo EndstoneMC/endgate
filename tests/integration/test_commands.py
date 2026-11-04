@@ -118,7 +118,7 @@ def test_send_all_moves_every_player(make_proxy, lobby, second, connect):
 def test_send_an_unknown_player_is_refused(make_proxy, lobby, second):
     proxy = proxy_for(make_proxy, lobby, second)
 
-    run(proxy, "send nobody second", r"The specified player nobody does not exist\.")
+    run(proxy, "send nobody second", r"ERROR The specified player nobody does not exist\.")
 
 
 def test_send_to_an_unknown_server_is_refused(make_proxy, lobby, second, connect):
@@ -231,7 +231,7 @@ def test_shutdown_answers_to_its_aliases(binary, tmp_path, lobby, connect, alias
 def test_an_unknown_command_gets_the_unknown_command_reply(make_proxy, lobby, second):
     proxy = proxy_for(make_proxy, lobby, second)
 
-    run(proxy, "frobnicate now", UNKNOWN)
+    run(proxy, "frobnicate now", r"ERROR This command does not exist\.")
 
 
 def test_commands_are_matched_without_regard_to_case(make_proxy, lobby, second):
