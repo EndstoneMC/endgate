@@ -28,7 +28,7 @@
 namespace endgate {
 
 ConnectionManager::ConnectionManager(ProxyServer &server)
-    : server_(server), logger_(LogManager::getLogger(*this)), offline_(server),
+    : server_(server), logger_(LogManager::getLogger(*this)), offline_(server), query_(server),
       group_(std::max(1U, std::thread::hardware_concurrency()), "IO Worker"),
       signals_(group_.begin()->getIoContext(), SIGINT, SIGTERM)
 {
@@ -146,7 +146,24 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
     for (auto &endpoint : endpoints_) {
         endpoint.getEventLoop().execute([&endpoint] { endpoint.start(); });
     }
+
+    game_port_ = port;
+    if (configuration.isQueryEnabled()) {
+        queryBind(address, static_cast<std::uint16_t>(configuration.getQueryPort()));
+    }
     return true;
+}
+
+void ConnectionManager::queryBind(const asio::ip::address &address, std::uint16_t port)
+{
+    if (port == game_port_) {
+        logger_.info("Listening for GS4 query on {}", endpoints_.front().getLocalAddress());
+        for (auto &endpoint : endpoints_) {
+            endpoint.getEventLoop().execute([&endpoint, this] { endpoint.setQueryHandler(&query_); });
+        }
+        return;
+    }
+    query_.queryBind(group_.next(), address, port);
 }
 
 void ConnectionManager::start()
@@ -168,6 +185,7 @@ void ConnectionManager::shutdown()
     for (auto &endpoint : endpoints_) {
         endpoint.getEventLoop().execute([&endpoint] { endpoint.close(); });
     }
+    query_.close();
     group_.begin()->execute([this] { signals_.cancel(); });
     group_.shutdownGracefully();
 }

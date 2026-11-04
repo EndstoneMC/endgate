@@ -37,6 +37,10 @@ public:
     [[nodiscard]] bool isLogCommandExecutions() const;
     [[nodiscard]] bool isLogPlayerConnections() const;
     [[nodiscard]] bool isFailoverOnUnexpectedServerDisconnect() const;
+    [[nodiscard]] bool isQueryEnabled() const;
+    [[nodiscard]] int getQueryPort() const;
+    [[nodiscard]] const std::string &getQueryMap() const;
+    [[nodiscard]] bool shouldQueryShowPlugins() const;
     [[nodiscard]] bool isPacketDecodeLogging() const;
     [[nodiscard]] bool isLogServerBackpressure() const;
     [[nodiscard]] const std::filesystem::path &getTlsCertificate() const;
@@ -60,6 +64,10 @@ private:
     bool log_command_executions_ = false;
     bool log_player_connections_ = false;
     bool failover_on_unexpected_server_disconnect_ = false;
+    bool query_enabled_ = false;
+    int query_port_ = 0;
+    std::string query_map_;
+    bool query_show_plugins_ = false;
     bool packet_decode_logging_ = false;
     bool log_server_backpressure_ = false;
     std::filesystem::path tls_certificate_;

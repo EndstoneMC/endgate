@@ -30,12 +30,31 @@ struct Advanced {
 
     struct glaze {
         using T = Advanced;
-        static constexpr auto value =
-            glz::object("compression-threshold", &T::compression_threshold, "compression-level", &T::compression_level,
-                        "login-ratelimit", &T::login_ratelimit, "connection-timeout", &T::connection_timeout,
-                        "read-timeout", &T::read_timeout, "log-command-executions", &T::log_command_executions,
-                        "log-player-connections", &T::log_player_connections,
-                        "failover-on-unexpected-server-disconnect", &T::failover_on_unexpected_server_disconnect);
+        static constexpr auto value = glz::object(                 //
+            "compression-threshold", &T::compression_threshold,    //
+            "compression-level", &T::compression_level,            //
+            "login-ratelimit", &T::login_ratelimit,                //
+            "connection-timeout", &T::connection_timeout,          //
+            "read-timeout", &T::read_timeout,                      //
+            "log-command-executions", &T::log_command_executions,  //
+            "log-player-connections", &T::log_player_connections,  //
+            "failover-on-unexpected-server-disconnect", &T::failover_on_unexpected_server_disconnect);
+    };
+};
+
+struct Query {
+    bool enabled = false;
+    int port = 0;
+    std::string map;
+    bool show_plugins = false;
+
+    struct glaze {
+        using T = Query;
+        static constexpr auto value = glz::object(  //
+            "enabled", &T::enabled,                 //
+            "port", &T::port,                       //
+            "map", &T::map,                         //
+            "show-plugins", &T::show_plugins);
     };
 };
 
@@ -45,8 +64,9 @@ struct Debug {
 
     struct glaze {
         using T = Debug;
-        static constexpr auto value = glz::object("packet-decode-logging", &T::packet_decode_logging,
-                                                  "log-server-backpressure", &T::log_server_backpressure);
+        static constexpr auto value = glz::object(               //
+            "packet-decode-logging", &T::packet_decode_logging,  //
+            "log-server-backpressure", &T::log_server_backpressure);
     };
 };
 
@@ -61,15 +81,24 @@ struct Document {
     bool kick_existing_players = false;
     std::map<std::string, std::variant<std::string, std::vector<std::string>>> servers;
     Advanced advanced;
+    Query query;
     Debug debug;
 
     struct glaze {
         using T = Document;
-        static constexpr auto value = glz::object(
-            "config-version", &T::config_version, "bind", &T::bind, "tls-certificate", &T::tls_certificate,
-            "tls-certificate-key", &T::tls_certificate_key, "motd", &T::motd, "show-max-players", &T::show_max_players,
-            "online-mode", &T::online_mode, "kick-existing-players", &T::kick_existing_players, "servers", &T::servers,
-            "advanced", &T::advanced, "debug", &T::debug);
+        static constexpr auto value = glz::object(               //
+            "config-version", &T::config_version,                //
+            "bind", &T::bind,                                    //
+            "tls-certificate", &T::tls_certificate,              //
+            "tls-certificate-key", &T::tls_certificate_key,      //
+            "motd", &T::motd,                                    //
+            "show-max-players", &T::show_max_players,            //
+            "online-mode", &T::online_mode,                      //
+            "kick-existing-players", &T::kick_existing_players,  //
+            "servers", &T::servers,                              //
+            "advanced", &T::advanced,                            //
+            "query", &T::query,                                  //
+            "debug", &T::debug);
     };
 };
 }  // namespace
@@ -129,6 +158,10 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
     config.log_command_executions_ = document.advanced.log_command_executions;
     config.log_player_connections_ = document.advanced.log_player_connections;
     config.failover_on_unexpected_server_disconnect_ = document.advanced.failover_on_unexpected_server_disconnect;
+    config.query_enabled_ = document.query.enabled;
+    config.query_port_ = document.query.port;
+    config.query_map_ = document.query.map;
+    config.query_show_plugins_ = document.query.show_plugins;
     config.packet_decode_logging_ = document.debug.packet_decode_logging;
     config.log_server_backpressure_ = document.debug.log_server_backpressure;
     config.tls_certificate_ = document.tls_certificate;
@@ -276,6 +309,26 @@ bool ProxyConfig::isLogPlayerConnections() const
 bool ProxyConfig::isFailoverOnUnexpectedServerDisconnect() const
 {
     return failover_on_unexpected_server_disconnect_;
+}
+
+bool ProxyConfig::isQueryEnabled() const
+{
+    return query_enabled_;
+}
+
+int ProxyConfig::getQueryPort() const
+{
+    return query_port_;
+}
+
+const std::string &ProxyConfig::getQueryMap() const
+{
+    return query_map_;
+}
+
+bool ProxyConfig::shouldQueryShowPlugins() const
+{
+    return query_show_plugins_;
 }
 
 bool ProxyConfig::isPacketDecodeLogging() const

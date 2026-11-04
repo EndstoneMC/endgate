@@ -13,6 +13,7 @@
 #include "endgate/network/http.h"
 #include "endgate/network/nethernet/identity.h"
 #include "endgate/network/offline.h"
+#include "endgate/network/query.h"
 #include "endgate/network/registry.h"
 
 namespace endgate {
@@ -38,6 +39,11 @@ public:
      */
     [[nodiscard]] HttpClient createHttpClient();
     bool bind(const asio::ip::address &address, std::uint16_t port);
+
+    /**
+     * @see com.velocitypowered.proxy.network.ConnectionManager#queryBind
+     */
+    void queryBind(const asio::ip::address &address, std::uint16_t port);
     void start();
     void shutdown();
     void awaitTermination();
@@ -49,9 +55,11 @@ private:
     std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity_;
     std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> offer_identity_;
     Registry registry_;
+    GameSpyQueryHandler query_;
     EventLoopGroup group_;
     asio::signal_set signals_;
     std::deque<Endpoint> endpoints_;
+    std::uint16_t game_port_ = 0;
     std::atomic<bool> shut_down_{false};
 };
 

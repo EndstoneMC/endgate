@@ -80,6 +80,7 @@ add_library(endgate_proxy STATIC
         src/endgate/network/manager.cpp
         src/endgate/network/offline.cpp
         src/endgate/network/ping.cpp
+        src/endgate/network/query.cpp
         src/endgate/protocol/cipher.cpp
         src/endgate/protocol/compress.cpp
         src/endgate/protocol/entity.cpp

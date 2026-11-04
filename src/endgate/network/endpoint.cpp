@@ -37,6 +37,7 @@
 #include "endgate/connection/raknet.h"
 #include "endgate/logging/manager.h"
 #include "endgate/network/nethernet/candidates.h"
+#include "endgate/network/query.h"
 #include "endgate/network/rtc/stun.h"
 #include "endgate/server.h"
 
@@ -157,6 +158,11 @@ void Endpoint::sendTo(const raknet::SystemAddress &address, ByteBufView datagram
 void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::ip::udp::endpoint &sender)
 {
     constexpr std::size_t forward_limit = 4096;
+
+    if (query_ != nullptr && GameSpyQueryHandler::isQuery(datagram) && !routes_.contains(sender)) {
+        query_->channelRead0(datagram, sender, *socket_);
+        return;
+    }
 
     const auto buffer = Unpooled::wrappedBuffer(datagram);
     const auto id = static_cast<raknet::MessageId>(datagram.front());

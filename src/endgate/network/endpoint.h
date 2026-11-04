@@ -31,6 +31,7 @@
 
 namespace endgate {
 
+class GameSpyQueryHandler;
 class ProxyServer;
 
 /**
@@ -71,6 +72,11 @@ public:
     }
 
     void listen(const asio::ip::tcp::endpoint &endpoint);
+
+    /**
+     * Hands the datagrams that start with GameSpy's magic to the handler instead of RakNet and NetherNet.
+     */
+    void setQueryHandler(GameSpyQueryHandler *query) { query_ = query; }
 
     void start();
     void close();
@@ -122,6 +128,7 @@ private:
     EventLoop &event_loop_;
     Registry &registry_;
     std::shared_ptr<asio::ip::udp::socket> socket_;
+    GameSpyQueryHandler *query_ = nullptr;
     raknet::OfflineHandler offline_;
     std::shared_ptr<const rtc::Certificate> certificate_;
     std::shared_ptr<const nethernet::ServerIdentityAssertionGenerator> identity_;
