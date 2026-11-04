@@ -162,11 +162,20 @@ protected:
 
         CommandManager &commands = server_.getCommandManager();
         const auto endgate_command = EndgateCommand::create(server_);
-        commands.registerCommand(CommandManager::metaBuilder(endgate_command).build(), endgate_command);
+        commands.registerCommand(CommandManager::metaBuilder(endgate_command)
+                                     .description("Shows information about the proxy and reloads its configuration.")
+                                     .build(),
+                                 endgate_command);
         const auto server_command = ServerCommand::create(server_);
-        commands.registerCommand(CommandManager::metaBuilder(server_command).build(), server_command);
+        commands.registerCommand(CommandManager::metaBuilder(server_command)
+                                     .description("Moves you to another server of the proxy.")
+                                     .build(),
+                                 server_command);
         const auto shutdown_command = ShutdownCommand::command(server_);
-        commands.registerCommand(CommandManager::metaBuilder(shutdown_command).aliases({"end", "stop"}).build(),
+        commands.registerCommand(CommandManager::metaBuilder(shutdown_command)
+                                     .aliases({"end", "stop"})
+                                     .description("Shuts down the proxy.")
+                                     .build(),
                                  shutdown_command);
         GlistCommand(server_).registerCommand();
         SendCommand(server_).registerCommand();
@@ -227,6 +236,23 @@ TEST_F(InjectorTest, APlayerGetsServerAsOneOptionalSoftEnum)
     ASSERT_NE(names, nullptr);
     EXPECT_EQ(valuesOf(packet, *names), (std::vector<std::string>{"server"}));
     expectConsistent(packet);
+}
+
+TEST_F(InjectorTest, EveryProxyCommandCarriesItsDescription)
+{
+    const Packet player = injected(join("Steve"));
+    const Packet admin = injected(everything_);
+    const Packet console = injected(this->console());
+    const auto described = [](const Packet &packet, const std::string &name) {
+        const CommandData *command = find(packet, name);
+        return command == nullptr ? "missing " + name : command->description;
+    };
+
+    EXPECT_EQ(described(player, "server"), "Moves you to another server of the proxy.");
+    EXPECT_EQ(described(admin, "glist"), "Lists the players connected to the proxy.");
+    EXPECT_EQ(described(admin, "send"), "Sends players to a server of the proxy.");
+    EXPECT_EQ(described(console, "shutdown"), "Shuts down the proxy.");
+    EXPECT_EQ(described(admin, "endgate"), "Shows information about the proxy and reloads its configuration.");
 }
 
 TEST_F(InjectorTest, GlistSharesTheServerNamesWithoutAll)
@@ -349,7 +375,7 @@ TEST_F(InjectorTest, ABackendCommandOfTheSameNameIsReplacedAndNothingElseMoves)
     EXPECT_EQ(packet.commands[0].name, "help");
     EXPECT_EQ(packet.commands[1].name, "kick");
     EXPECT_EQ(packet.commands[2].name, "server");
-    EXPECT_EQ(packet.commands[2].description, "A command of the proxy.");
+    EXPECT_EQ(packet.commands[2].description, "Moves you to another server of the proxy.");
     EXPECT_TRUE(std::ranges::equal(backend.enum_values, packet.enum_values | std::views::take(2)));
     EXPECT_TRUE(same(packet.enums.front(), backend.enums.front()));
     EXPECT_TRUE(same(packet.soft_enums.front(), backend.soft_enums.front()));

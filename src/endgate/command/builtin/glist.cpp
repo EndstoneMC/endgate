@@ -99,7 +99,8 @@ void GlistCommand::registerCommand() const
 
     const BrigadierCommand command(root_node);
     CommandManager &commands = proxy.getCommandManager();
-    commands.registerCommand(CommandManager::metaBuilder(command).build(), command);
+    commands.registerCommand(
+        CommandManager::metaBuilder(command).description("Lists the players connected to the proxy.").build(), command);
 }
 
 }  // namespace endgate

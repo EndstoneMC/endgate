@@ -42,11 +42,20 @@ bool ProxyServer::start()
     logger_.info("Starting {} {}...", version.getName(), version.getVersion());
 
     const auto endgate_command = EndgateCommand::create(*this);
-    command_manager_.registerCommand(CommandManager::metaBuilder(endgate_command).build(), endgate_command);
+    command_manager_.registerCommand(
+        CommandManager::metaBuilder(endgate_command)
+            .description("Shows information about the proxy and reloads its configuration.")
+            .build(),
+        endgate_command);
     const auto server_command = ServerCommand::create(*this);
-    command_manager_.registerCommand(CommandManager::metaBuilder(server_command).build(), server_command);
+    command_manager_.registerCommand(
+        CommandManager::metaBuilder(server_command).description("Moves you to another server of the proxy.").build(),
+        server_command);
     const auto shutdown_command = ShutdownCommand::command(*this);
-    command_manager_.registerCommand(CommandManager::metaBuilder(shutdown_command).aliases({"end", "stop"}).build(),
+    command_manager_.registerCommand(CommandManager::metaBuilder(shutdown_command)
+                                         .aliases({"end", "stop"})
+                                         .description("Shuts down the proxy.")
+                                         .build(),
                                      shutdown_command);
     GlistCommand(*this).registerCommand();
     SendCommand(*this).registerCommand();

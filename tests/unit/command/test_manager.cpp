@@ -98,6 +98,16 @@ TEST_F(ManagerTest, ACommandReturningForwardIsNotAnExecutedCommand)
     EXPECT_FALSE(manager_.executeImmediatelyAsync(source_, "forwarded"));
 }
 
+TEST_F(ManagerTest, AMetaCarriesItsDescription)
+{
+    const BrigadierCommand command = echo("echo");
+    const CommandMeta meta = CommandManager::metaBuilder(command).description("Repeats a message.").build();
+    manager_.registerCommand(meta, command);
+
+    EXPECT_EQ(manager_.getCommandMeta("echo")->getDescription(), "Repeats a message.");
+    EXPECT_TRUE(CommandManager::metaBuilder(command).build().getDescription().empty());
+}
+
 TEST_F(ManagerTest, UnregisteringRemovesTheAliasAndItsMeta)
 {
     const BrigadierCommand command = echo("echo");

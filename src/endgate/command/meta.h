@@ -40,9 +40,20 @@ public:
         }
 
         /**
+         * Specifies the description a Bedrock client shows for the command.
+         *
+         * @see endstone::Command#setDescription
+         */
+        Builder &description(std::string description)
+        {
+            description_ = std::move(description);
+            return *this;
+        }
+
+        /**
          * @see com.velocitypowered.api.command.CommandMeta.Builder#build
          */
-        [[nodiscard]] CommandMeta build() const { return CommandMeta(aliases_); }
+        [[nodiscard]] CommandMeta build() const { return CommandMeta(aliases_, description_); }
 
     private:
         void add(std::string alias)
@@ -55,6 +66,7 @@ public:
         }
 
         std::vector<std::string> aliases_;
+        std::string description_;
     };
 
     /**
@@ -64,12 +76,23 @@ public:
      */
     [[nodiscard]] const std::vector<std::string> &getAliases() const { return aliases_; }
 
+    /**
+     * Returns the description a Bedrock client shows for the command.
+     *
+     * @see endstone::Command#getDescription
+     */
+    [[nodiscard]] const std::string &getDescription() const { return description_; }
+
     bool operator==(const CommandMeta &) const = default;
 
 private:
-    explicit CommandMeta(std::vector<std::string> aliases) : aliases_(std::move(aliases)) {}
+    CommandMeta(std::vector<std::string> aliases, std::string description)
+        : aliases_(std::move(aliases)), description_(std::move(description))
+    {
+    }
 
     std::vector<std::string> aliases_;
+    std::string description_;
 };
 
 }  // namespace endgate

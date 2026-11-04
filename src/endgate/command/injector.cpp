@@ -31,7 +31,6 @@ constexpr std::uint32_t ENUM_SYMBOL = 0x300000;
 constexpr std::uint32_t SOFT_ENUM_SYMBOL = 0x4100000;
 constexpr std::uint16_t NOT_CHEAT = 128;
 constexpr std::uint16_t MESSAGE = 64;
-constexpr auto DESCRIPTION = "A command of the proxy.";
 constexpr auto COMMAND_NAME_ENUM = "CommandName";
 
 struct HardNonTerminals {
@@ -97,6 +96,7 @@ using Overload = std::vector<Parameter>;
 
 struct Plan {
     std::vector<std::string> names;
+    std::string description;
     std::vector<Overload> overloads;
 };
 
@@ -473,6 +473,9 @@ std::vector<Plan> plansOf(brigadier::CommandDispatcher<Source> &dispatcher, std:
             continue;
         }
         Plan plan{.names = std::move(names)};
+        if (const auto meta = metas.find(plan.names.front()); meta != metas.end()) {
+            plan.description = meta->second.getDescription();
+        }
         Walker(dispatcher, source, plan.names.front()).walk(*child, plan);
         dropCovered(plan.overloads);
         if (!plan.overloads.empty()) {
@@ -502,7 +505,7 @@ CommandGraphInjector::SoftEnums CommandGraphInjector::inject(bp::AvailableComman
         packet.appendToEnum(COMMAND_NAME_ENUM, plan.names);
 
         bp::AvailableCommandsPacket::CommandData command{.name = plan.names.front(),
-                                                         .description = DESCRIPTION,
+                                                         .description = plan.description,
                                                          .flags = NOT_CHEAT,
                                                          .permission = bp::CommandPermissionLevel::Any,
                                                          .alias_enum = -1};
