@@ -102,7 +102,7 @@ void JoinResponse::reject(std::uint32_t session_error) const
     });
 }
 
-HttpSignalingServer::HttpSignalingServer(EventLoop &event_loop, JoinHandler &handler, Config config,
+HttpSignalingServer::HttpSignalingServer(Passkey, EventLoop &event_loop, JoinHandler &handler, Config config,
                                          std::shared_ptr<asio::ssl::context> tls)
     : event_loop_(event_loop), acceptor_(event_loop.getExecutor()), handler_(handler), config_(config),
       tls_(std::move(tls))
@@ -112,7 +112,7 @@ HttpSignalingServer::HttpSignalingServer(EventLoop &event_loop, JoinHandler &han
 std::shared_ptr<HttpSignalingServer> HttpSignalingServer::create(EventLoop &event_loop, JoinHandler &handler,
                                                                  Config config, std::shared_ptr<asio::ssl::context> tls)
 {
-    return std::shared_ptr<HttpSignalingServer>(new HttpSignalingServer(event_loop, handler, config, std::move(tls)));
+    return std::make_shared<HttpSignalingServer>(Passkey{}, event_loop, handler, config, std::move(tls));
 }
 
 std::shared_ptr<asio::ssl::context> HttpSignalingServer::loadTls(const std::filesystem::path &certificate_chain,

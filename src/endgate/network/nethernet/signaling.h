@@ -79,6 +79,10 @@ public:
  * @see NetherNet::HttpServer
  */
 class HttpSignalingServer : public std::enable_shared_from_this<HttpSignalingServer> {
+    struct Passkey {
+        explicit Passkey() = default;
+    };
+
 public:
     struct Config {
         std::size_t max_request_bytes{65536};
@@ -86,6 +90,9 @@ public:
         std::chrono::milliseconds write_timeout{std::chrono::seconds{10}};
         std::chrono::milliseconds join_timeout{std::chrono::seconds{10}};
     };
+
+    HttpSignalingServer(Passkey, EventLoop &event_loop, JoinHandler &handler, Config config,
+                        std::shared_ptr<asio::ssl::context> tls);
 
     [[nodiscard]] static std::shared_ptr<HttpSignalingServer> create(EventLoop &event_loop, JoinHandler &handler,
                                                                      Config config,
@@ -116,9 +123,6 @@ private:
         std::string content_type;
         std::string body;
     };
-
-    HttpSignalingServer(EventLoop &event_loop, JoinHandler &handler, Config config,
-                        std::shared_ptr<asio::ssl::context> tls);
 
     static Awaitable<void> accept(std::shared_ptr<HttpSignalingServer> self);
     static Awaitable<void> serve(std::shared_ptr<HttpSignalingServer> self, asio::ip::tcp::socket socket);
