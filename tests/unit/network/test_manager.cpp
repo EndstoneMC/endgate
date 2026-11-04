@@ -41,8 +41,15 @@ const auto LOOPBACK = asio::ip::make_address("127.0.0.1");
 [[nodiscard]] std::uint16_t freePort()
 {
     asio::io_context io;
-    asio::ip::udp::socket socket(io, asio::ip::udp::endpoint{LOOPBACK, 0});
-    return socket.local_endpoint().port();
+    for (;;) {
+        asio::ip::udp::socket udp(io, asio::ip::udp::endpoint{LOOPBACK, 0});
+        const auto port = udp.local_endpoint().port();
+        asio::ip::tcp::acceptor tcp(io);
+        asio::error_code ec;
+        if (!tcp.open(asio::ip::tcp::v4(), ec) && !tcp.bind({LOOPBACK, port}, ec)) {
+            return port;
+        }
+    }
 }
 
 TEST(ConnectionManagerTest, BindsTheGroupOnOnePort)
