@@ -60,6 +60,10 @@ Awaitable<ConnectionRequestBuilder::Result> ConnectionRequestBuilder::internalCo
     const auto connection = std::make_shared<ServerConnection>(*self.to_connect_, self.player_);
     player.connection_in_flight_ = connection;
 
+    if (std::dynamic_pointer_cast<ClientPlaySessionHandler>(player.getConnection().getActiveSessionHandler())) {
+        player.sendMessage(std::format("Connecting to {}…", self.to_connect_->getServerInfo().getName()));
+    }
+
     std::optional<Result> result;
     std::exception_ptr failure;
     try {

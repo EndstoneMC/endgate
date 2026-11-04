@@ -13,6 +13,7 @@
 - Server switching is seamless: fade the screen out and back in with camera packets, so the player feels they stay in the game. Never switch with the transfer packet or the dimension change; both show a loading screen that feels like going back to the menu.
 - The dimension change is banned only as a switching trick. Use it wherever the player really changes dimension.
 - Switch along Velocity's lifecycle: the new backend logs in while the player stays on the old one, and `handleBackendStartGame` plays `handleBackendJoinGame`'s part. Velocity's own switch step, a JoinGame and Respawn into another dimension, shows a loading screen, so endgate replaces that one step with CubeCraft's switch. Everything else about a switch follows Velocity, which is built for SMP; CubeCraft is not.
+- A switch announces "Connecting to <server>…" in chat when it starts. Velocity has no counterpart; this is an endgate addition, because nothing is visible until the new backend's StartGame, which can take seconds on Bedrock.
 - Under the fade: take back what the old backend left, teleport with MovePlayer to the new spawn, send the new StartGame's world state as individual packets (never a second StartGame), overwrite the old backend's chunks with empty LevelChunks so the client asks the new backend for its terrain, send PlayStatus PlayerSpawn, then fade back in.
 
 ## Approach

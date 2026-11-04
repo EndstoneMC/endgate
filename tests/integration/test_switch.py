@@ -8,6 +8,7 @@ SECOND_RUNTIME_ID = 7
 START_LOADING_SCREEN = 1
 END_LOADING_SCREEN = 2
 NETHER = 1
+CONNECTING_TO_SECOND = "Connecting to second…"
 
 
 @pytest.fixture
@@ -73,6 +74,26 @@ def test_send_moves_the_player_under_a_fade(make_proxy, lobby, second, connect):
     assert player.peer.pending("start-game") == []
 
 
+def test_a_switch_announces_itself_before_the_new_server_starts_the_game(make_proxy, lobby, second, connect):
+    proxy = proxy_for(make_proxy, lobby, second)
+    player = connect(proxy)
+    joined(player, lobby, proxy)
+
+    proxy.command(f"send {player.identity.name} second")
+
+    assert player.wait_text() == CONNECTING_TO_SECOND, proxy.lines[-20:]
+    assert player.peer.pending("start-game") == []
+    assert spawned(second.accept(), proxy)
+
+
+def test_the_first_join_announces_nothing(make_proxy, lobby, second, connect):
+    proxy = proxy_for(make_proxy, lobby, second)
+    player = connect(proxy)
+    joined(player, lobby, proxy)
+
+    assert player.texts() == []
+
+
 def test_a_switch_into_another_dimension_leaves_the_fade_to_the_camera_clear(make_proxy, lobby, nether, connect):
     proxy = proxy_for(make_proxy, lobby, nether)
     player = connect(proxy)
@@ -104,6 +125,7 @@ def test_a_kick_moves_the_player_to_the_next_server(make_proxy, lobby, second, c
     upstream.peer.command("kick 0 " + b"go away".hex())
 
     assert spawned(second.accept(), proxy)
+    assert player.wait_text() == CONNECTING_TO_SECOND
     assert player.wait_text() == "§cYou were kicked from lobby: go away"
     assert player.peer.pending("disconnect") == []
 
@@ -116,6 +138,7 @@ def test_a_server_that_drops_the_player_hands_them_on(make_proxy, lobby, second,
     upstream.close()
 
     assert spawned(second.accept(), proxy)
+    assert player.wait_text() == CONNECTING_TO_SECOND
     assert player.wait_text() == "§cYou were kicked from lobby: An internal server connection error occurred."
 
 
@@ -127,6 +150,7 @@ def test_a_server_with_other_blocks_is_refused(make_proxy, lobby, different_bloc
     proxy.command(f"send {player.identity.name} second")
 
     refused = different_blocks.accept()
+    assert player.wait_text() == CONNECTING_TO_SECOND
     assert player.wait_text() == "§cUnable to connect to second: it has other blocks than the server you joined", (
         proxy.lines[-20:]
     )
