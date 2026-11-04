@@ -153,11 +153,11 @@ public:
             if (!child->canUse(source_)) {
                 continue;
             }
-            if (const auto *literal = dynamic_cast<const Literal *>(child.get())) {
+            if (const auto *literal = child->as<Literal>()) {
                 literals.push_back(literal);
             }
             else if (argument == nullptr) {
-                argument = dynamic_cast<const Argument *>(child.get());
+                argument = child->as<Argument>();
             }
         }
 
@@ -198,7 +198,7 @@ private:
     [[nodiscard]] Parameter parameterOf(const Argument &argument, bool parent_executes,
                                         const std::vector<const Literal *> &folded) const
     {
-        const auto *type = dynamic_cast<const StringArgumentType *>(argument.getType().get());
+        const auto *type = argument.getType()->as<StringArgumentType>();
         Parameter parameter{.name = argument.getName()};
         if (argument.getCustomSuggestions()) {
             parameter.kind = Parameter::Kind::SoftEnum;
@@ -264,10 +264,10 @@ std::string clashIn(const Node &node, const std::string &path)
     std::vector<const Literal *> literals;
     std::vector<const Argument *> arguments;
     for (const auto &child : node.getChildren()) {
-        if (const auto *literal = dynamic_cast<const Literal *>(child.get())) {
+        if (const auto *literal = child->as<Literal>()) {
             literals.push_back(literal);
         }
-        else if (const auto *argument = dynamic_cast<const Argument *>(child.get())) {
+        else if (const auto *argument = child->as<Argument>()) {
             arguments.push_back(argument);
         }
     }
@@ -293,7 +293,7 @@ std::string clashIn(const Node &node, const std::string &path)
 
     const Argument &argument = *arguments.front();
     const std::string argument_path = path + " <" + argument.getName() + ">";
-    const auto *type = dynamic_cast<const StringArgumentType *>(argument.getType().get());
+    const auto *type = argument.getType()->as<StringArgumentType>();
     if (type == nullptr) {
         return std::format("'{}' takes {}, which has no counterpart", argument_path, argument.getType()->toString());
     }
@@ -436,7 +436,7 @@ std::vector<Plan> plansOf(brigadier::CommandDispatcher<Source> &dispatcher, std:
     std::set<std::string> done;
     const auto root = dispatcher.getRoot();
     for (const auto &child : root->getChildren()) {
-        if (!child->canUse(source) || dynamic_cast<const Literal *>(child.get()) == nullptr) {
+        if (!child->canUse(source) || !child->is<Literal>()) {
             continue;
         }
         std::vector<std::string> names{child->getName()};

@@ -38,6 +38,7 @@ Deviations from Brigadier:
 - `Dynamic` exception arguments (`Object`) are `std::string`. A nullable `String` or `Message` is `std::optional`.
 - `IllegalStateException` and `UnsupportedOperationException` are `std::logic_error`.
 - Alias templates cannot be forward declared, so `Command` lives in `context.h` beside `CommandContext`, and `Predicate` in `tree.h`.
+- Java's `instanceof` and casts on a node or an argument type are `is<T>()` and `as<T>()`, which `CommandNode` and `ArgumentType` carry themselves, since Brigadier stays standalone. A new subclass overrides `isInstanceOf`.
 - `register` and `requires` are C++ keywords: `CommandDispatcher::registerCommand` and `ArgumentBuilder::requires_`.
 - `ArgumentValue` replaces `T`, so `ParsedArgument`, `RequiredArgumentBuilder` and `ArgumentCommandNode` have no argument-type parameter, and `ParsedArgument` none for `S`. `ArgumentType` is not templated on `S`, so its `parse(reader, source)` and `listSuggestions(context, builder)` overloads wait for the first type that needs them, and an `ArgumentCommandNode` with no `SuggestionProvider` suggests nothing.
 - `ArgumentType` is held as `std::shared_ptr<const ArgumentType>`. `StringType` constants are `SingleWord`, `QuotablePhrase` and `GreedyPhrase`, as `.clang-tidy` names enum constants.

@@ -1,8 +1,10 @@
 #pragma once
 
+#include <concepts>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <typeinfo>
 #include <variant>
 #include <vector>
 
@@ -30,6 +32,29 @@ public:
     [[nodiscard]] virtual ArgumentValue parse(StringReader &reader) const = 0;
     [[nodiscard]] virtual std::vector<std::string> getExamples() const { return {}; }
     [[nodiscard]] virtual std::string toString() const = 0;
+
+    [[nodiscard]] virtual bool isInstanceOf(const std::type_info &target) const
+    {
+        return target == typeid(ArgumentType);
+    }
+
+    template <std::derived_from<ArgumentType> T>
+    [[nodiscard]] T *as()
+    {
+        return is<T>() ? static_cast<T *>(this) : nullptr;
+    }
+
+    template <std::derived_from<ArgumentType> T>
+    [[nodiscard]] const T *as() const
+    {
+        return is<T>() ? static_cast<const T *>(this) : nullptr;
+    }
+
+    template <std::derived_from<ArgumentType> T>
+    [[nodiscard]] bool is() const
+    {
+        return isInstanceOf(typeid(T));
+    }
 };
 
 /**
@@ -60,6 +85,11 @@ public:
     StringArgumentType(Passkey, StringType type) : type_(type) {}
 
     [[nodiscard]] StringType getType() const { return type_; }
+
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(StringArgumentType) || ArgumentType::isInstanceOf(target);
+    }
 
     [[nodiscard]] ArgumentValue parse(StringReader &reader) const override
     {

@@ -185,5 +185,34 @@ TEST_F(NodeParseTest, rootSuggestions)
     EXPECT_TRUE(node.listSuggestions(context_builder_.build(""), builder).isEmpty());
 }
 
+TEST(NarrowingTest, testNodeIsAndAs)
+{
+    const auto literal = Literal::literal("foo").build();
+    const auto argument = Required::argument("bar", StringArgumentType::word()).build();
+    const auto root = std::make_shared<RootCommandNode<int>>();
+
+    EXPECT_TRUE(literal->is<LiteralCommandNode<int>>());
+    EXPECT_FALSE(literal->is<ArgumentCommandNode<int>>());
+    EXPECT_FALSE(literal->is<RootCommandNode<int>>());
+    EXPECT_TRUE(argument->is<ArgumentCommandNode<int>>());
+    EXPECT_FALSE(argument->is<LiteralCommandNode<int>>());
+    EXPECT_TRUE(root->is<RootCommandNode<int>>());
+    EXPECT_TRUE(root->is<CommandNode<int>>());
+
+    EXPECT_EQ(literal->as<LiteralCommandNode<int>>(), literal.get());
+    EXPECT_EQ(literal->as<ArgumentCommandNode<int>>(), nullptr);
+    EXPECT_EQ(argument->as<ArgumentCommandNode<int>>(), argument.get());
+}
+
+TEST(NarrowingTest, testArgumentTypeIsAndAs)
+{
+    const std::shared_ptr<const ArgumentType> type = StringArgumentType::greedyString();
+
+    EXPECT_TRUE(type->is<StringArgumentType>());
+    EXPECT_TRUE(type->is<ArgumentType>());
+    ASSERT_NE(type->as<StringArgumentType>(), nullptr);
+    EXPECT_EQ(type->as<StringArgumentType>()->getType(), StringArgumentType::StringType::GreedyPhrase);
+}
+
 }  // namespace
 }  // namespace endgate::brigadier

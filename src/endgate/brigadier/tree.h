@@ -1,11 +1,13 @@
 #pragma once
 
 #include <algorithm>
+#include <concepts>
 #include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <typeinfo>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -64,7 +66,7 @@ public:
 
     void addChild(const std::shared_ptr<CommandNode> &node)
     {
-        if (dynamic_cast<RootCommandNode<S> *>(node.get()) != nullptr) {
+        if (node->template is<RootCommandNode<S>>()) {
             throw std::logic_error("Cannot add a RootCommandNode as a child to any other CommandNode");
         }
         if (const std::shared_ptr<CommandNode> child = getChild(node->getName())) {
@@ -78,10 +80,10 @@ public:
         else {
             children_.push_back(node);
             child_by_name_.emplace(node->getName(), node);
-            if (auto literal = std::dynamic_pointer_cast<LiteralCommandNode<S>>(node)) {
-                literals_.emplace(node->getName(), std::move(literal));
+            if (auto *literal = node->template as<LiteralCommandNode<S>>()) {
+                literals_.emplace(node->getName(), std::shared_ptr<LiteralCommandNode<S>>(node, literal));
             }
-            else if (dynamic_cast<ArgumentCommandNode<S> *>(node.get()) != nullptr) {
+            else if (node->template is<ArgumentCommandNode<S>>()) {
                 arguments_.push_back(node);
             }
         }
@@ -122,10 +124,33 @@ public:
         return arguments_;
     }
 
+    [[nodiscard]] virtual bool isInstanceOf(const std::type_info &target) const
+    {
+        return target == typeid(CommandNode);
+    }
+
+    template <std::derived_from<CommandNode> T>
+    [[nodiscard]] T *as()
+    {
+        return is<T>() ? static_cast<T *>(this) : nullptr;
+    }
+
+    template <std::derived_from<CommandNode> T>
+    [[nodiscard]] const T *as() const
+    {
+        return is<T>() ? static_cast<const T *>(this) : nullptr;
+    }
+
+    template <std::derived_from<CommandNode> T>
+    [[nodiscard]] bool is() const
+    {
+        return isInstanceOf(typeid(T));
+    }
+
     [[nodiscard]] int compareTo(const CommandNode &o) const
     {
-        const bool literal = dynamic_cast<const LiteralCommandNode<S> *>(this) != nullptr;
-        const bool other_literal = dynamic_cast<const LiteralCommandNode<S> *>(&o) != nullptr;
+        const bool literal = is<LiteralCommandNode<S>>();
+        const bool other_literal = o.template is<LiteralCommandNode<S>>();
         if (literal == other_literal) {
             return getSortedKey().compare(o.getSortedKey());
         }
@@ -163,6 +188,12 @@ public:
     RootCommandNode() : CommandNode<S>({}, [](const S &) { return true; }, nullptr, {}, false) {}
 
     [[nodiscard]] std::string getName() const override { return ""; }
+
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(RootCommandNode) || CommandNode<S>::isInstanceOf(target);
+    }
+
     [[nodiscard]] std::string getUsageText() const override { return ""; }
     void parse(StringReader &, CommandContextBuilder<S> &) override {}
     [[nodiscard]] Suggestions listSuggestions(const CommandContext<S> &, SuggestionsBuilder &) const override
@@ -192,6 +223,11 @@ public:
 
     [[nodiscard]] const std::string &getLiteral() const { return literal_; }
     [[nodiscard]] std::string getName() const override { return literal_; }
+
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(LiteralCommandNode) || CommandNode<S>::isInstanceOf(target);
+    }
 
     void parse(StringReader &reader, CommandContextBuilder<S> &context_builder) override
     {
@@ -273,6 +309,12 @@ public:
 
     [[nodiscard]] const std::shared_ptr<const ArgumentType> &getType() const { return type_; }
     [[nodiscard]] std::string getName() const override { return name_; }
+
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(ArgumentCommandNode) || CommandNode<S>::isInstanceOf(target);
+    }
+
     [[nodiscard]] std::string getUsageText() const override
     {
         return USAGE_ARGUMENT_OPEN + name_ + USAGE_ARGUMENT_CLOSE;
