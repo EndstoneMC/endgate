@@ -117,8 +117,8 @@ def test_a_login_with_no_backend_on_its_protocol_is_told_so(make_proxy, old, con
     assert first.wait_disconnect() == (NO_REASON, NO_SERVER), proxy.lines[-20:]
     second = connect(proxy)
 
-    assert second.wait_login(), proxy.lines[-20:]
     assert second.wait_disconnect() == (NO_REASON, NO_SERVER), proxy.lines[-20:]
+    assert second.peer.pending("play-status") == []
     assert old.sessions.empty()
 
 
