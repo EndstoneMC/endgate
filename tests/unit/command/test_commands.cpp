@@ -117,13 +117,13 @@ TEST_F(BuiltinTest, ShutdownTakesAGreedyReason)
 TEST_F(BuiltinTest, GlistCountsPlayers)
 {
     EXPECT_TRUE(run(source_, "glist"));
-    EXPECT_EQ(source_->messages, (std::vector<std::string>{"0 players are currently connected to the proxy.",
-                                                           "To view all players on servers, use /glist all."}));
+    EXPECT_EQ(source_->messages, (std::vector<std::string>{"§e§a0§e players are currently connected to the proxy.",
+                                                           "§eTo view all players on servers, use /glist all."}));
 
     source_->messages.clear();
     const auto steve = join("Steve", "lobby");
     EXPECT_TRUE(run(source_, "glist"));
-    EXPECT_EQ(source_->messages.front(), "1 player is currently connected to the proxy.");
+    EXPECT_EQ(source_->messages.front(), "§e§a1§e player is currently connected to the proxy.");
 }
 
 TEST_F(BuiltinTest, GlistAllListsEachServerWithPlayersInOrder)
@@ -135,10 +135,10 @@ TEST_F(BuiltinTest, GlistAllListsEachServerWithPlayersInOrder)
     EXPECT_TRUE(run(source_, "glist all"));
 
     ASSERT_EQ(source_->messages.size(), 3U);
-    EXPECT_EQ(source_->messages[0], "[lobby] (1): Kai");
-    EXPECT_TRUE(source_->messages[1] == "[survival] (2): Steve, Alex" ||
-                source_->messages[1] == "[survival] (2): Alex, Steve");
-    EXPECT_EQ(source_->messages[2], "3 players are currently connected to the proxy.");
+    EXPECT_EQ(source_->messages[0], "§3[lobby] §7(1)§r: Kai");
+    EXPECT_TRUE(source_->messages[1] == "§3[survival] §7(2)§r: Steve, Alex" ||
+                source_->messages[1] == "§3[survival] §7(2)§r: Alex, Steve");
+    EXPECT_EQ(source_->messages[2], "§e§a3§e players are currently connected to the proxy.");
 }
 
 TEST_F(BuiltinTest, GlistOfOneServerListsItEvenWhenEmpty)
@@ -150,8 +150,8 @@ TEST_F(BuiltinTest, GlistOfOneServerListsItEvenWhenEmpty)
     EXPECT_TRUE(run(source_, "glist nowhere"));
 
     EXPECT_EQ(source_->messages,
-              (std::vector<std::string>{"[creative] (0): ", "The specified server LOBBY does not exist.",
-                                        "The specified server nowhere does not exist."}));
+              (std::vector<std::string>{"§3[creative] §7(0)§r: ", "§cThe specified server LOBBY does not exist.",
+                                        "§cThe specified server nowhere does not exist."}));
 }
 
 TEST_F(BuiltinTest, GlistSuggestsServersAndAll)
@@ -165,7 +165,7 @@ TEST_F(BuiltinTest, SendNeedsAPlayerAndAServer)
 {
     EXPECT_TRUE(run(source_, "send"));
     EXPECT_TRUE(run(source_, "send Steve"));
-    EXPECT_EQ(source_->messages, (std::vector<std::string>{"/send <player> <server>", "/send <player> <server>"}));
+    EXPECT_EQ(source_->messages, (std::vector<std::string>{"§e/send <player> <server>", "§e/send <player> <server>"}));
 }
 
 TEST_F(BuiltinTest, SendReportsAMissingServerOrPlayer)
@@ -175,9 +175,9 @@ TEST_F(BuiltinTest, SendReportsAMissingServerOrPlayer)
     EXPECT_TRUE(run(source_, "send Nobody lobby"));
     EXPECT_TRUE(run(source_, "send current lobby"));
 
-    EXPECT_EQ(source_->messages, (std::vector<std::string>{"The specified server nowhere does not exist.",
-                                                           "The specified player Nobody does not exist.",
-                                                           "Only players can run this command."}));
+    EXPECT_EQ(source_->messages, (std::vector<std::string>{"§cThe specified server nowhere does not exist.",
+                                                           "§cThe specified player Nobody does not exist.",
+                                                           "§cOnly players can run this command."}));
 }
 
 TEST_F(BuiltinTest, SendSuggestsPlayersTargetsAndServers)
@@ -229,8 +229,9 @@ TEST_F(BuiltinTest, EndgateInfoPrintsTheVersionAndTheCopyright)
 {
     EXPECT_TRUE(run(source_, "endgate info"));
 
-    ASSERT_EQ(source_->messages.size(), 2U);
-    EXPECT_EQ(source_->messages[0], std::string("Endgate ") + ENDGATE_VERSION);
+    ASSERT_EQ(source_->messages.size(), 3U);
+    EXPECT_EQ(source_->messages[0], std::string("§3§lEndgate §r§3") + ENDGATE_VERSION);
+    EXPECT_EQ(source_->messages[2], "§ahttps://endstone.dev§r - §ahttps://github.com/EndstoneMC/endgate");
     EXPECT_NE(source_->messages[1].find("Endgate is licensed under the terms of"), std::string::npos);
 }
 
@@ -242,7 +243,7 @@ TEST_F(BuiltinTest, EndgateAloneListsWhatTheSourceMayRun)
     source_->permissions["endgate.command.info"] = Tristate::False;
     EXPECT_FALSE(run(source_, "endgate"));
 
-    EXPECT_EQ(source_->messages, (std::vector<std::string>{"/endgate <info|reload>", "/endgate <info>"}));
+    EXPECT_EQ(source_->messages, (std::vector<std::string>{"§c/endgate <info|reload>", "§c/endgate <info>"}));
 }
 
 TEST_F(BuiltinTest, EndgateSuggestsItsSubcommands)

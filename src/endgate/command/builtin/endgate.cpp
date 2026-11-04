@@ -22,23 +22,27 @@ using Context = brigadier::CommandContext<BrigadierCommand::Source>;
 
 BrigadierCommand EndgateCommand::create(ProxyServer &server)
 {
-    const auto info = BrigadierCommand::literalArgumentBuilder("info")
-                          .requires_([](const BrigadierCommand::Source &source) {
-                              return source->getPermissionValue("endgate.command.info") == Tristate::True;
-                          })
-                          .executes([](const Context &context) {
-                              const ProxyVersion version = ProxyServer::getVersion();
-                              const auto year = static_cast<int>(std::chrono::year_month_day{
-                                  std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())}
-                                                                     .year());
-                              context.getSource()->sendMessage(version.getName() + " " + version.getVersion());
-                              context.getSource()->sendMessage(
-                                  std::format("Copyright 2026-{} {}. {} is licensed under the terms of the GNU "
-                                              "Affero General Public License v3.",
-                                              year, version.getVendor(), version.getName()));
-                              return SINGLE_SUCCESS;
-                          })
-                          .build();
+    const auto info =
+        BrigadierCommand::literalArgumentBuilder("info")
+            .requires_([](const BrigadierCommand::Source &source) {
+                return source->getPermissionValue("endgate.command.info") == Tristate::True;
+            })
+            .executes([](const Context &context) {
+                const ProxyVersion version = ProxyServer::getVersion();
+                const auto year = static_cast<int>(
+                    std::chrono::year_month_day{std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())}
+                        .year());
+                const BrigadierCommand::Source &source = context.getSource();
+                source->sendMessage(std::format("§3§l{} §r§3{}", version.getName(), version.getVersion()));
+                source->sendMessage(std::format("Copyright 2026-{} {}. {} is licensed under the terms of the GNU "
+                                                "Affero General Public License v3.",
+                                                year, version.getVendor(), version.getName()));
+                if (version.getName() == "Endgate") {
+                    source->sendMessage("§ahttps://endstone.dev§r - §ahttps://github.com/EndstoneMC/endgate");
+                }
+                return SINGLE_SUCCESS;
+            })
+            .build();
     const auto reload = BrigadierCommand::literalArgumentBuilder("reload")
                             .requires_([](const BrigadierCommand::Source &source) {
                                 return source->getPermissionValue("endgate.command.reload") == Tristate::True;
@@ -47,15 +51,15 @@ BrigadierCommand EndgateCommand::create(ProxyServer &server)
                                 CommandSource &source = *context.getSource();
                                 try {
                                     if (server.reloadConfiguration()) {
-                                        source.sendMessage("Endgate configuration successfully reloaded.");
+                                        source.sendMessage("§aEndgate configuration successfully reloaded.");
                                     }
                                     else {
-                                        source.sendMessage("Unable to reload your Endgate configuration. Check the "
+                                        source.sendMessage("§cUnable to reload your Endgate configuration. Check the "
                                                            "console for more details.");
                                     }
                                 }
                                 catch (const std::exception &) {
-                                    source.sendMessage("Unable to reload your Endgate configuration. Check the "
+                                    source.sendMessage("§cUnable to reload your Endgate configuration. Check the "
                                                        "console for more details.");
                                 }
                                 return SINGLE_SUCCESS;
@@ -76,7 +80,7 @@ BrigadierCommand EndgateCommand::create(ProxyServer &server)
                 }
                 available_commands += command->getName();
             }
-            source->sendMessage(std::format("/endgate <{}>", available_commands));
+            source->sendMessage(std::format("§c/endgate <{}>", available_commands));
             return SINGLE_SUCCESS;
         })
         .requires_([commands](const BrigadierCommand::Source &source) {

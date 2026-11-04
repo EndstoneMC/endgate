@@ -154,6 +154,9 @@ def test_endgate_info_prints_the_version(make_proxy, lobby, second):
 
     run(proxy, "endgate info", r"INFO Endgate \S+")
     assert proxy.events(r"licensed under the terms of the GNU Affero General Public License v3\.")
+    assert proxy.events(r"https://endstone\.dev - https://github\.com/EndstoneMC/endgate")
+    assert not proxy.events(chr(27))
+    assert not proxy.events(chr(0xA7))
 
 
 def test_endgate_alone_lists_its_subcommands(make_proxy, lobby, second):

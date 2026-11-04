@@ -34,20 +34,21 @@ BrigadierCommand ServerCommand::create(ProxyServer &server)
                 const BackendServer *current = player.getCurrentServer();
                 const std::string current_server =
                     current != nullptr ? current->getServerInfo().getName() : "<unknown>";
-                player.sendMessage(std::format("You are currently connected to {}.", current_server));
+                player.sendMessage(std::format("§eYou are currently connected to {}.", current_server));
 
                 const auto servers = BuiltinCommandUtil::sortedServerList(server);
                 if (servers.size() > MAX_SERVERS_TO_LIST) {
-                    player.sendMessage("There are too many servers set up. Use tab completion to view all servers "
+                    player.sendMessage("§cThere are too many servers set up. Use tab completion to view all servers "
                                        "available.");
                     return SINGLE_SUCCESS;
                 }
 
-                std::string list = "Available servers: ";
+                std::string list = "§eAvailable servers: ";
                 for (std::size_t i = 0; i < servers.size(); i++) {
+                    list += servers[i] == current ? "§a" : "§7";
                     list += servers[i]->getServerInfo().getName();
                     if (i != servers.size() - 1) {
-                        list += ", ";
+                        list += "§7, ";
                     }
                 }
                 player.sendMessage(list);

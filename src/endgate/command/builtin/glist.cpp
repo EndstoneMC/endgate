@@ -28,8 +28,8 @@ void GlistCommand::registerCommand() const
 
     const auto send_total_proxy_count = [&proxy](CommandSource &target) {
         const std::size_t online = proxy.getAllPlayers().size();
-        target.sendMessage(
-            std::format("{} {} currently connected to the proxy.", online, online == 1 ? "player is" : "players are"));
+        target.sendMessage(std::format("§e§a{}§e {} currently connected to the proxy.", online,
+                                       online == 1 ? "player is" : "players are"));
     };
 
     const auto send_server_players = [&proxy](CommandSource &target, const BackendServer &backend, bool from_all) {
@@ -38,7 +38,7 @@ void GlistCommand::registerCommand() const
             return;
         }
 
-        std::string message = std::format("[{}] ({}): ", backend.getServerInfo().getName(), on_server.size());
+        std::string message = std::format("§3[{}] §7({})§r: ", backend.getServerInfo().getName(), on_server.size());
         for (std::size_t i = 0; i < on_server.size(); i++) {
             message += on_server[i]->getUsername();
             if (i + 1 < on_server.size()) {
@@ -56,7 +56,7 @@ void GlistCommand::registerCommand() const
         .executes([send_total_proxy_count](const Context &context) {
             CommandSource &source = *context.getSource();
             send_total_proxy_count(source);
-            source.sendMessage("To view all players on servers, use /glist all.");
+            source.sendMessage("§eTo view all players on servers, use /glist all.");
             return 1;
         });
 

@@ -11,6 +11,7 @@ Log what Velocity logs, when it logs it, at the same level and in the same words
 - The layout is Velocity's `log4j2.xml`:
   - console: `[HH:mm:ss LEVEL]: message`, as Velocity prints its own loggers;
   - file: `logs/latest.log` as `[HH:mm:ss] [thread/LEVEL] [logger]: message`, rolled to `logs/yyyy-MM-dd-N.log.gz` daily and at startup.
+- Messages carry Bedrock `§` codes, and `MinecraftFormattingConverter` (the `%v` flag, after `TerminalConsoleAppender`'s converter) renders them. The console gets ANSI when it is a terminal, with a reset appended to a line that was coloured, and the codes are stripped when it is not. The file log strips the codes and any ANSI colour sequences, as `%stripAnsi{%msg}` does. A code the converter doesn't know and a trailing `§` stay as written. `main` turns on virtual terminal processing for stdout and stderr on Windows so Windows Terminal and conhost show the colours.
 - Name each thread: `main`, and each event loop `IO Worker #N`. Set it with `Thread::setName`, which keeps the whole name for the log.
 - Startup and shutdown use Velocity's lines: `Starting {} {}...`, `Connections will use {} channels, {} compression, {} ciphers`, `Listening on {}`, `Done ({}s)!`, `Stopping the proxy...`.
 - Where a Velocity word reads oddly, take BDS's: *start* and *stop*, never *boot up* or *shut down*. A server *uses* or *supports* a transport; it never *speaks* or *answers* one.

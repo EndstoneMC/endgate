@@ -132,7 +132,7 @@ void Console::runCommand(const std::string &command)
 {
     try {
         if (!server_.getCommandManager().executeImmediatelyAsync(shared_from_this(), command)) {
-            sendMessage("This command does not exist.");
+            sendMessage("§cThis command does not exist.");
             return;
         }
         if (server_.getConfiguration().isLogCommandExecutions()) {

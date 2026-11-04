@@ -28,7 +28,7 @@ void SendCommand::registerCommand() const
     ProxyServer &proxy = server_;
 
     const auto usage = [](const Context &context) {
-        context.getSource()->sendMessage("/send <player> <server>");
+        context.getSource()->sendMessage("§e/send <player> <server>");
         return SINGLE_SUCCESS;
     };
 

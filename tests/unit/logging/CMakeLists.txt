@@ -1,6 +1,7 @@
 include(GoogleTest)
 
 add_executable(endgate_logging_tests
+        test_formatter.cpp
         test_manager.cpp
 )
 

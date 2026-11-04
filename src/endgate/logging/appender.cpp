@@ -96,8 +96,6 @@ TerminalConsoleAppender::TerminalConsoleAppender(std::FILE *target_file, spdlog:
     constexpr auto yellow = "\033[33m";
 
     setColorMode(mode);
-    formatter_.add_flag<LevelFormatter>('L');
-    formatter_.set_pattern("%^[%H:%M:%S %L]: %v%$");
     colors_.at(spdlog::level::warn) = yellow;
     colors_.at(spdlog::level::err) = red;
     colors_.at(spdlog::level::critical) = red;
@@ -108,14 +106,16 @@ void TerminalConsoleAppender::setColorMode(spdlog::color_mode mode)
     switch (mode) {
     case spdlog::color_mode::always:
         should_do_colors_ = true;
-        return;
+        break;
     case spdlog::color_mode::automatic:
         should_do_colors_ = spdlog::details::os::in_terminal(target_file_) && spdlog::details::os::is_color_terminal();
-        return;
+        break;
     case spdlog::color_mode::never:
     default:
         should_do_colors_ = false;
     }
+    formatter_.add_flag<MinecraftFormattingConverter>('v', !should_do_colors_).add_flag<LevelFormatter>('L');
+    formatter_.set_pattern("%^[%H:%M:%S %L]: %v%$");
 }
 
 void TerminalConsoleAppender::setReader(Console *console)
@@ -171,6 +171,7 @@ RollingRandomAccessFileAppender::RollingRandomAccessFileAppender(std::filesystem
     }
     rotation_tp_ = nextRotation();
 
+    formatter_.add_flag<MinecraftFormattingConverter>('v', true);
     formatter_.add_flag<LevelFormatter>('L');
     formatter_.add_flag<ThreadFormatter>('t');
     formatter_.set_pattern("[%H:%M:%S] [%t/%L] [%n]: %v");
