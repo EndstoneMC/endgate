@@ -10,7 +10,7 @@ Phases 1 to 4 run in order; 5 and 7 can start once login works, and 6 once switc
 
 ## Where endgate is today
 
-Endgate logs a player in on both legs, rewrites the player's actor IDs per backend, switches a real client between two backends under a camera fade, and sends each player only to backends on its own version. Phase 6's commands and proxy features are next.
+Endgate logs a player in on both legs, rewrites the player's actor IDs per backend, switches a real client between two backends under a camera fade, sends each player only to backends on its own version, and has Velocity's commands and proxy features. Phase 7's identity forwarding is next.
 
 | Area | State |
 | --- | --- |
@@ -20,9 +20,11 @@ Endgate logs a player in on both legs, rewrites the player's actor IDs per backe
 | Console, endgate.toml, Velocity's log lines | Built |
 | Online mode: MCS keys, token validation, the NetherNet offer identity | Built |
 | Login and encryption on both legs, entity ID rewriting, the client's state per backend | Built |
-| Switching, failover, the guard and transfers | Built; a player-facing /server waits for commands |
+| Switching, failover, the guard and transfers | Built |
 | Version routing: each backend's protocol from its ping, try and failover among backends on the player's version | Built |
-| Commands, forced hosts, ping passthrough and the rest of Phase 6 | Not started |
+| Velocity's commands on Brigadier, on the console and injected into the client's AvailableCommands, with the command rate limit | Built |
+| Forced hosts, ping passthrough, GameSpy4 query, address logging, config reload, the shutdown kick, bStats metrics | Built |
+| PROXY protocol | Researched; waits for decisions |
 
 Endgate supports protocols 2168, 2169, 2193 and 2225 (1.26.40 to 1.26.60). bedrock-protocol models 729 to 2225, so adding a release is a bump and a line in version.h.
 
@@ -112,7 +114,7 @@ Built: each backend's protocol read from its RakNet pong or NetherNet /v1/join a
 | --- | --- | --- |
 | /server, /glist, /send, /velocity (info, reload, dump), shutdown | Merged into the backend's AvailableCommands; endgate intercepts their CommandRequest. /endgate replaces /velocity | 6 |
 | Forced hosts | Chosen from the ServerAddress in the client data | 6 |
-| Ping passthrough (default, motd, description, all) | Taken from the backend's pong or NetherNet ping | 6 |
+| Ping passthrough (disabled, description, all) | Taken from the backend's pong or NetherNet ping | 6 |
 | Modern player info forwarding | A signed login token Endstone trusts | 7 |
 | online-mode-kick-existing-players | Same key, checked at login | 2 |
 | Tab list cleared on each switch | PlayerList entries from the state model | 3, 4 |
@@ -125,7 +127,9 @@ Built: each backend's protocol read from its RakNet pong or NetherNet /v1/join a
 | proxy-protocol | HAProxy PROXY v2, which carries UDP | 6 |
 | enable-player-address-logging, config reload, shutdown kick message | Same behaviour | 6 |
 
-Left out: the plugin API (events, plugins, scheduler), bStats metrics and Java-only features such as Forge, legacy ping, signed chat and the BungeeCord channel.
+Left out: the plugin API (events, plugins, scheduler) and Java-only features such as Forge, legacy ping, signed chat and the BungeeCord channel.
+
+Built: Velocity's command layer on a 1:1 port of Brigadier. /server, /glist, /send, /shutdown and /endgate (info, reload) run on the console with tab completion. For players they are injected into each backend's AvailableCommands in BDS's own registry terms, with descriptions and soft enums kept current, and a player's CommandRequest runs on the proxy under Velocity's command rate limit. Replies take their colours from BDS and Endstone, red only for errors. Also built: forced hosts from the client data's ServerAddress; ping passthrough, without Velocity's MODS, which has no Bedrock form; GameSpy4 query on the game port, since BDS answers none; enable-player-address-logging; config reload; the shutdown kick; and bStats metrics. The default bind is dual-stack, since a Bedrock client tries IPv6 first. Real 1.26.60 and 1.26.51 clients have checked the commands, completion after a reload, a /server switch between a NetherNet and a RakNet backend, ping passthrough, forced hosts, query and the shutdown kick. Left: the PROXY protocol, researched but waiting for decisions; /endgate dump, left out because Velocity uploads it to a paste service; a packet limiter, which Velocity doesn't have; and why a client drops a Disconnect sent right after LoginSuccess, now avoided by refusing before it.
 
 ## Phase 7: identity forwarding to backends
 
