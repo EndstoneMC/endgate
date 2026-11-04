@@ -41,7 +41,7 @@ Deviations from Netty:
 
 ## Pipeline
 
-Netty's channel pipeline, 1:1: `ChannelPipeline`, `ChannelHandlerContext`, `ChannelInboundHandler` (`channelActive`, `channelInactive`, `channelRead`, `channelReadComplete`, `exceptionCaught`, `userEventTriggered`), `ChannelOutboundHandler` (`write`, `flush`, `close`), `fireChannelRead` and the other `fire` methods, `writeAndFlush`, and the codec bases `ByteToMessageDecoder`, `MessageToMessageDecoder` and `MessageToByteEncoder`.
+Netty's channel pipeline, 1:1: `ChannelPipeline`, `ChannelHandlerContext`, `ChannelInboundHandler` (`channelActive`, `channelInactive`, `channelRead`, `channelReadComplete`, `exceptionCaught`, `userEventTriggered`), `ChannelOutboundHandler` (`write`, `flush`, `close`), `fireChannelRead` and the other `fire` methods, `writeAndFlush`, `ChannelFuture` and `ChannelPromise` with `addListener` and `ChannelFutureListener::CLOSE`, and the codec bases `ByteToMessageDecoder`, `MessageToMessageDecoder` and `MessageToByteEncoder`.
 
 - Handlers are Velocity's, in Bedrock's order. Inbound: strip `0xFE` (RakNet only), `MinecraftCipherDecoder`, `MinecraftCompressDecoder`, `MinecraftVarintFrameDecoder`, `ReadTimeoutHandler`, `EntityRewriteHandler`, `MinecraftDecoder`, then `MinecraftConnection`, which hands packets to the `MinecraftSessionHandler`. Outbound: `MinecraftEncoder`, `EntityRewriteHandler`, `MinecraftVarintLengthEncoder`, then on `flush` a compression encoder and `MinecraftCipherEncoder`.
 - Bedrock compresses the whole batch, so compression sits outside framing, the reverse of Java Edition.
@@ -58,7 +58,7 @@ Deviations from Netty, all for performance:
 - The pipeline is statically typed. Each handler declares the message types it reads and writes, so a chain wired wrong fails to build, and no message is erased to `Object` or dispatched through a virtual call.
 - Handlers are never added or removed at runtime. One that Netty would add later (a cipher, a compressor) is present from the start and gated on a flag, the way BDS gates compression and encryption.
 - A decoder calls `fireChannelRead` for each message it produces, instead of filling an `out` list.
-- `write` returns nothing, as if every write passed Netty's `voidPromise()`. Errors go to `exceptionCaught`.
+- `write` returns nothing, as if every write passed Netty's `voidPromise()`. Errors go to `exceptionCaught`. Only `MinecraftConnection::writeAndFlush` returns a `ChannelFuture`.
 - Every chain ends in a typed sink, so an unterminated chain is a compile error rather than Netty's "discarded inbound message" warning.
 - `MinecraftDecoder` fires a `DecodedPacket` that keeps the bytes the packet arrived in, so a packet no handler changes is handed on as those bytes instead of being encoded again.
 - `MinecraftEncoder` has no state: a Bedrock packet's id is the same in every state, so it encodes any packet of the connection's version and refuses one of another.
@@ -67,6 +67,8 @@ Deviations from Netty, all for performance:
 
 - One UDP port carries RakNet and NetherNet. NetherNet's HTTP signalling listens on TCP at the same port number.
 - `0xFE` is added and stripped only at the RakNet edge.
+- Closing after a message is Velocity's `closeWith`: `writeAndFlush(message).addListener(ChannelFutureListener::CLOSE)`. Never close on a grace timer or a deadline.
+- The transport completes a write's `ChannelPromise` once a close can no longer lose the bytes, which a TCP socket's kernel guarantees for Netty. RakNet completes it on `send`, since its graceful close (`DisconnectAsap`) delivers queued reliable messages first. NetherNet has no kernel behind it, so it completes the promise once SCTP has every chunk acknowledged (`Sender::idle()`).
 - A backend's transport is detected: HTTP signalling first, then a RakNet ping. `nethernet://` and `raknet://` only pin it.
 - BDS fills `GET /v1/join` with the ping JSON (`name`, `protocol`, `version`, `level`, `players`, `maxPlayers`, `gameType`) only when `enable-lan-visibility=true`. With it `false`, the answer is `200 application/json` with `Content-Length: 0`. No header, query or method changes that. Checked on 1.26.60 (`getMetadata` is empty when its callback source is null, `sub_141119D00`).
 - A backend that answers an empty `/v1/join` still speaks NetherNet but has no protocol. The protocol is not available without a login then, since BDS binds no UDP 7551 either.

@@ -8,6 +8,7 @@
 - Don't take wangle's or folly's design unless it buys performance that Netty's design can't.
 - No api/core split. One class is both the interface and the implementation.
 - Keep Velocity's class and method names wherever we reasonably can, so every piece of endgate traces back to its Velocity counterpart and to Velocity's own dependencies.
+- Never coin a name for something Netty, Velocity or Bedrock already names. Look the counterpart up before naming a type, method or concept; invent one only when none of them has the concept, and say it is new when proposing it.
 - Where Bedrock has its own name for a concept, use Bedrock's and keep Velocity's in the `@see`: `PlayerList`, not `TabList`.
 - Server switching is seamless: fade the screen out and back in with camera packets, so the player feels they stay in the game. Never switch with the transfer packet or the dimension change; both show a loading screen that feels like going back to the menu.
 - The dimension change is banned only as a switching trick. Use it wherever the player really changes dimension.
