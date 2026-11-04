@@ -207,11 +207,15 @@ Awaitable<std::expected<HttpResponse, std::string>> send(HttpRequest request, Ht
     if (!uri) {
         co_return std::unexpected("invalid URI " + request.uri);
     }
-    auto message = std::format("GET {} HTTP/1.1\r\nHost: {}\r\n", uri->target, uri->host);
+    auto message = std::format("{} {} HTTP/1.1\r\nHost: {}\r\n", request.method, uri->target, uri->host);
     for (const auto &[name, value] : request.headers) {
         message += std::format("{}: {}\r\n", name, value);
     }
+    if (!request.body.empty() || request.method != "GET") {
+        message += std::format("Content-Length: {}\r\n", request.body.size());
+    }
     message += "Connection: close\r\n\r\n";
+    message += request.body;
 
     const auto executor = co_await asio::this_coro::executor;
     asio::ip::tcp::resolver resolver(executor);

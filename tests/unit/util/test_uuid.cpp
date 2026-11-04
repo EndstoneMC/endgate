@@ -16,6 +16,14 @@ TEST(Uuid, NameUuidFromBytesIsVersion3)
     EXPECT_EQ(uuid.toString(), "d41d8cd9-8f00-3204-a980-0998ecf8427e");
 }
 
+TEST(Uuid, RandomUuidIsVersion4)
+{
+    const auto uuid = UUID::randomUUID();
+    EXPECT_EQ(uuid.bytes[6] >> 4, 4);
+    EXPECT_EQ(uuid.bytes[8] >> 6, 2);
+    EXPECT_NE(uuid, UUID::randomUUID());
+}
+
 TEST(Uuid, OfflinePlayerMatchesJava)
 {
     EXPECT_EQ(UuidUtils::generateOfflinePlayerUuid("Notch").toString(), "b50ad385-829d-3141-a216-7e7d7539ba7f");

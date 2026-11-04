@@ -25,6 +25,13 @@ struct UUID {
     [[nodiscard]] static UUID nameUUIDFromBytes(std::span<const std::byte> name);
 
     /**
+     * Static factory to retrieve a type 4 (pseudo randomly generated) UUID.
+     *
+     * @see java.util.UUID#randomUUID
+     */
+    [[nodiscard]] static UUID randomUUID();
+
+    /**
      * @see java.util.UUID#toString
      */
     [[nodiscard]] std::string toString() const;

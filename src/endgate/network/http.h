@@ -23,6 +23,8 @@ namespace endgate {
 struct HttpRequest {
     std::string uri;
     std::vector<std::pair<std::string, std::string>> headers;
+    std::string method = "GET";
+    std::string body;
 };
 
 /**
@@ -58,7 +60,7 @@ private:
 };
 
 /**
- * Sends HTTP/1.1 GET requests on its event loop, over TLS for an https URI, checking the server's
+ * Sends HTTP/1.1 requests on its event loop, over TLS for an https URI, checking the server's
  * certificate against the system's trust store and its name against the host.
  *
  * @see java.net.http.HttpClient

@@ -42,6 +42,17 @@ add_library(endgate::eventloop ALIAS endgate_eventloop)
 target_include_directories(endgate_eventloop PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(endgate_eventloop PUBLIC asio::asio)
 
+add_library(endgate_http STATIC src/endgate/network/http.cpp)
+add_library(endgate::http ALIAS endgate_http)
+target_include_directories(endgate_http PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(endgate_http PUBLIC endgate::eventloop OpenSSL::SSL OpenSSL::Crypto)
+
+add_library(endgate_uuid STATIC src/endgate/util/uuid.cpp)
+add_library(endgate::uuid ALIAS endgate_uuid)
+target_include_directories(endgate_uuid PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(endgate_uuid PUBLIC OpenSSL::Crypto)
+
+add_subdirectory(src/endgate/bstats)
 add_subdirectory(src/endgate/brigadier)
 add_subdirectory(src/endgate/buffer)
 add_subdirectory(src/endgate/crypto)
@@ -83,7 +94,6 @@ add_library(endgate_proxy STATIC
         src/endgate/logging/formatter.cpp
         src/endgate/logging/manager.cpp
         src/endgate/network/endpoint.cpp
-        src/endgate/network/http.cpp
         src/endgate/network/manager.cpp
         src/endgate/network/offline.cpp
         src/endgate/network/ping.cpp
@@ -93,7 +103,6 @@ add_library(endgate_proxy STATIC
         src/endgate/protocol/entity.cpp
         src/endgate/server.cpp
         src/endgate/playerlist/playerlist.cpp
-        src/endgate/util/uuid.cpp
 )
 add_library(endgate::proxy ALIAS endgate_proxy)
 
@@ -102,11 +111,14 @@ target_compile_definitions(endgate_proxy PUBLIC ENDGATE_VERSION="${PROJECT_VERSI
 
 target_link_libraries(endgate_proxy PUBLIC
         bedrock::protocol
+        endgate::bstats
         endgate::brigadier
         endgate::crypto
         endgate::eventloop
+        endgate::http
         endgate::nethernet
         endgate::raknet
+        endgate::uuid
         asio::asio
         date::date
         glaze::glaze
@@ -123,6 +135,7 @@ add_executable(endgate src/main.cpp)
 target_link_libraries(endgate PRIVATE endgate::proxy)
 
 add_subdirectory(tests/unit/auth)
+add_subdirectory(tests/unit/bstats)
 add_subdirectory(tests/unit/command)
 add_subdirectory(tests/unit/connection)
 add_subdirectory(tests/unit/logging)

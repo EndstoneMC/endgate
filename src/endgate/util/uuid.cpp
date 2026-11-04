@@ -5,6 +5,7 @@
 #include <string>
 
 #include <openssl/evp.h>
+#include <openssl/rand.h>
 
 namespace endgate {
 
@@ -14,6 +15,15 @@ UUID UUID::nameUUIDFromBytes(std::span<const std::byte> name)
     unsigned int length = 0;
     EVP_Digest(name.data(), name.size(), uuid.bytes.data(), &length, EVP_md5(), nullptr);
     uuid.bytes[6] = static_cast<std::uint8_t>((uuid.bytes[6] & 0x0f) | 0x30);
+    uuid.bytes[8] = static_cast<std::uint8_t>((uuid.bytes[8] & 0x3f) | 0x80);
+    return uuid;
+}
+
+UUID UUID::randomUUID()
+{
+    UUID uuid;
+    RAND_bytes(uuid.bytes.data(), static_cast<int>(uuid.bytes.size()));
+    uuid.bytes[6] = static_cast<std::uint8_t>((uuid.bytes[6] & 0x0f) | 0x40);
     uuid.bytes[8] = static_cast<std::uint8_t>((uuid.bytes[8] & 0x3f) | 0x80);
     return uuid;
 }
