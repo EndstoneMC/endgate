@@ -278,11 +278,6 @@ void AuthSessionHandler::activated()
         return;
     }
 
-    connection_->write(bp::PlayStatusPacket{.status = bp::PlayStatus::LoginSuccess});
-    if (server_.getConfiguration().isLogPlayerConnections()) {
-        logger_.info("[connected player] {} ({}) has connected", player->getUsername(), connection_->getAssociation());
-    }
-    connection_->setState(StateRegistry::Play);
     connection_->setSessionHandler(std::make_shared<InitialConnectSessionHandler>(player));
     auto *const target = player->getNextServerToTry();
     if (target == nullptr) {
@@ -291,6 +286,11 @@ void AuthSessionHandler::activated()
                                                                    "Try again later or contact an admin."));
         return;
     }
+    connection_->write(bp::PlayStatusPacket{.status = bp::PlayStatus::LoginSuccess});
+    if (server_.getConfiguration().isLogPlayerConnections()) {
+        logger_.info("[connected player] {} ({}) has connected", player->getUsername(), connection_->getAssociation());
+    }
+    connection_->setState(StateRegistry::Play);
     player->createConnectionRequest(*target).fireAndForget();
 }
 

@@ -3,7 +3,11 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <variant>
 
+#include <bedrock/protocol/serializer.hpp>
+#include <bedrock/protocol/stream.hpp>
 #include <gtest/gtest.h>
 #include <openssl/evp.h>
 #include <openssl/x509.h>
@@ -97,9 +101,19 @@ TEST_F(LoginTest, OfflineModeLogsInASelfSignedClientWithoutServiceKeys)
         return 0;
     });
 
-    EXPECT_EQ(connection->sent(), 2U);
+    using Disconnect = PacketOf<MINIMUM_VERSION.getProtocol(), bp::MinecraftPacketIds::Disconnect>;
+    ASSERT_EQ(connection->sent(), 1U);
+    auto view = connection->batches()[0].slice();
+    std::ignore = view.readUnsignedVarInt();
+    const auto body = view.nioBuffer();
+    bp::BinaryReader reader{std::string_view{reinterpret_cast<const char *>(body.data()), body.size()}};
+    const auto disconnect = bp::deserialize<Disconnect>(reader).value();
+    const auto *const messages = std::get_if<bp::DisconnectPacketMessages>(&disconnect.messages);
+    ASSERT_NE(messages, nullptr);
+    EXPECT_EQ(messages->message,
+              "There are no available servers to connect you to. Try again later or contact an admin.");
     EXPECT_TRUE(connection->closed());
-    EXPECT_EQ(connection->getState(), StateRegistry::Play);
+    EXPECT_EQ(connection->getState(), StateRegistry::Login);
 }
 
 TEST_F(LoginTest, OfflineModeRejectsClientDataSignedByAnotherKey)
