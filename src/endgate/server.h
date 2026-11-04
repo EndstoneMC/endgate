@@ -1,12 +1,14 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include <asio/ip/address.hpp>
@@ -38,7 +40,12 @@ public:
     ProxyServer();
 
     bool start();
-    void shutdown(bool explicit_exit);
+    /**
+     * Shuts down the proxy, kicking players with the reason.
+     *
+     * @see com.velocitypowered.proxy.VelocityServer#shutdown(boolean, Component)
+     */
+    void shutdown(bool explicit_exit, const std::string &reason = "Proxy shutting down.");
     void awaitProxyShutdown();
 
     [[nodiscard]] bool isShutdown() const;
@@ -122,10 +129,12 @@ private:
     std::shared_ptr<MinecraftServiceKeyManager> keys_;
     std::unique_ptr<Ratelimiter<asio::ip::address>> ip_attempt_limiter_;
     std::mutex connections_mutex_;
+    std::condition_variable connections_changed_;
     std::map<UUID, std::shared_ptr<Player>> connections_by_uuid_;
     std::map<std::string, std::shared_ptr<Player>, CaseInsensitiveLess> connections_by_name_;
     std::atomic<bool> shutdown_in_progress_{false};
     std::atomic<bool> shutdown_{false};
+    std::jthread shutdown_thread_;
 };
 
 }  // namespace endgate

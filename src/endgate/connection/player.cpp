@@ -182,7 +182,7 @@ void Player::handleConnectionException(BackendServer &server, const std::excepti
         return;
     }
     logger_.error("[connected player] {} ({}): unable to connect to server {}: {}", profile_.name,
-                  connection_->getRemoteAddress(), name, cause.what());
+                  connection_->getAssociation(), name, cause.what());
     handleKickEvent(server, std::format("Unable to connect you to {}. Please try again later.", name));
 }
 
@@ -194,12 +194,12 @@ void Player::handleConnectionException(BackendServer &server, std::string_view r
     const auto &name = server.getServerInfo().getName();
     if (connected_server_ && &connected_server_->getServer() == &server) {
         logger_.info("[connected player] {} ({}): kicked from server {}: {}", profile_.name,
-                     connection_->getRemoteAddress(), name, reason);
+                     connection_->getAssociation(), name, reason);
         handleKickEvent(server, std::format("You were kicked from {}: {}", name, reason));
         return;
     }
     logger_.error("[connected player] {} ({}): disconnected while connecting to {}: {}", profile_.name,
-                  connection_->getRemoteAddress(), name, reason);
+                  connection_->getAssociation(), name, reason);
     handleKickEvent(server, std::format("Unable to connect to {}: {}", name, reason));
 }
 
@@ -242,7 +242,7 @@ Awaitable<void> Player::redirect(std::shared_ptr<Player> self, BackendServer &se
     switch (result->getStatus()) {
     case ConnectionRequestBuilder::Status::AlreadyConnected:
         self->logger_.error("[connected player] {} ({}): already connected to {}", self->profile_.name,
-                            self->connection_->getRemoteAddress(), server.getServerInfo().getName());
+                            self->connection_->getAssociation(), server.getServerInfo().getName());
         break;
     case ConnectionRequestBuilder::Status::ConnectionInProgress:
     case ConnectionRequestBuilder::Status::ConnectionCancelled:
@@ -289,7 +289,7 @@ void Player::teardown()
 {
     active_ = false;
     if (server_.getConfiguration().isLogPlayerConnections()) {
-        logger_.info("[connected player] {} ({}) has disconnected", profile_.name, connection_->getRemoteAddress());
+        logger_.info("[connected player] {} ({}) has disconnected", profile_.name, connection_->getAssociation());
     }
     server_.unregisterConnection(*this);
     if (const auto in_flight = std::exchange(connection_in_flight_, nullptr)) {
@@ -329,7 +329,7 @@ void ClientPlaySessionHandler::handleUnknown(ByteBufView batch)
     const auto &server = player_->getConnectedServer();
     if (!server) {
         logger_.debug("[initial connection] {}: dropping {} bytes, no server connection",
-                      player_->getConnection().getRemoteAddress(), batch.readableBytes());
+                      player_->getConnection().getAssociation(), batch.readableBytes());
         return;
     }
     server->write(batch.copy());
@@ -437,7 +437,7 @@ void ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
 
     auto &backend = destination.ensureConnected();
     logger_.debug("[connected player] {} ({}): clearing {} chunks", player_->getGameProfile().name,
-                  player_->getConnection().getRemoteAddress(), server_chunks_.size());
+                  player_->getConnection().getAssociation(), server_chunks_.size());
     visitProtocolVersion(backend.getProtocolVersion().getProtocol(), [&]<int Version>() {
         PacketOf<Version, bp::MinecraftPacketIds::ServerboundLoadingScreenPacket> start;
         start.loading_screen_packet_type = decltype(start.loading_screen_packet_type)::StartLoadingScreen;

@@ -156,7 +156,7 @@ Awaitable<void> NetherNetConnection<Session>::dial(
         local = {route.local_endpoint(ec).address(), self->socket_->local_endpoint(ec).port()};
     }
     if (ec) {
-        self->logger_.error("{}: unable to connect: {}", self->getRemoteAddress(), ec.message());
+        self->logger_.error("{}: unable to connect: {}", self->getAssociation(), ec.message());
         self->finish();
         co_return;
     }
@@ -168,7 +168,7 @@ Awaitable<void> NetherNetConnection<Session>::dial(
     if (identity) {
         const auto assertion = nethernet::IdentityAssertion::create(*identity, offer, std::chrono::system_clock::now());
         if (!assertion) {
-            self->logger_.error("{}: unable to connect: can't sign the offer", self->getRemoteAddress());
+            self->logger_.error("{}: unable to connect: can't sign the offer", self->getAssociation());
             self->finish();
             co_return;
         }
@@ -181,14 +181,14 @@ Awaitable<void> NetherNetConnection<Session>::dial(
         co_return;
     }
     if (!answer) {
-        self->logger_.error("{}: unable to connect: NetherNet session error {}", self->getRemoteAddress(),
+        self->logger_.error("{}: unable to connect: NetherNet session error {}", self->getAssociation(),
                             static_cast<std::uint32_t>(answer.error()));
         self->finish();
         co_return;
     }
     const auto description = rtc::Description::parse(answer->sdp);
     if (!description) {
-        self->logger_.error("{}: unable to connect: unreadable SDP answer", self->getRemoteAddress());
+        self->logger_.error("{}: unable to connect: unreadable SDP answer", self->getAssociation());
         self->finish();
         co_return;
     }
@@ -235,7 +235,7 @@ template <typename Session>
 void NetherNetConnection<Session>::send(ByteBuf batch, ChannelPromise promise)
 {
     if (!active_ || !session_) {
-        logger_.debug("{}: dropping {} bytes, not connected", getRemoteAddress(), batch.readableBytes());
+        logger_.debug("{}: dropping {} bytes, not connected", getAssociation(), batch.readableBytes());
         promise.tryFailure(newClosedChannelException());
         return;
     }
@@ -319,7 +319,7 @@ void NetherNetConnection<Session>::onPacket(ByteBufView packet)
 template <typename Session>
 void NetherNetConnection<Session>::onClosed(nethernet::ESessionError reason)
 {
-    logger_.debug("{}: connection ended: NetherNet session error {}", getRemoteAddress(),
+    logger_.debug("{}: connection ended: NetherNet session error {}", getAssociation(),
                   static_cast<std::uint32_t>(reason));
     finish();
 }

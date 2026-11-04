@@ -323,6 +323,14 @@ public:
      */
     [[nodiscard]] const std::string &getRemoteAddress() const { return remote_address_; }
 
+    /**
+     * What log lines call this connection: its remote address, or "<ip address withheld>" for a player when
+     * enable-player-address-logging is off.
+     *
+     * @see com.velocitypowered.proxy.connection.MinecraftConnection#getAssociation
+     */
+    [[nodiscard]] std::string getAssociation() const;
+
     [[nodiscard]] const asio::ip::address &getRemoteIp() const { return remote_ip_; }
 
 protected:
@@ -409,6 +417,7 @@ private:
     Endpoint &endpoint_;
     EventLoop &event_loop_;
     spdlog::logger &logger_;
+    Direction direction_;
     std::string remote_address_;
     asio::ip::address remote_ip_;
     Sink sink_;

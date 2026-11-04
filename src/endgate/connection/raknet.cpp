@@ -78,7 +78,7 @@ void RakNetConnection::connect()
     }
     asio::error_code ec;
     if (socket_.open(address_.protocol(), ec) || socket_.connect(address_, ec) || socket_.non_blocking(true, ec)) {
-        logger_.error("{}: unable to connect: {}", getRemoteAddress(), ec.message());
+        logger_.error("{}: unable to connect: {}", getAssociation(), ec.message());
         connection_.close(false, raknet::Clock::now());
         return;
     }
@@ -117,7 +117,7 @@ void RakNetConnection::handleDatagram(std::span<const std::byte> datagram, const
 void RakNetConnection::send(ByteBuf batch, ChannelPromise promise)
 {
     if (!active_) {
-        logger_.debug("{}: dropping {} bytes, not connected", getRemoteAddress(), batch.readableBytes());
+        logger_.debug("{}: dropping {} bytes, not connected", getAssociation(), batch.readableBytes());
         promise.tryFailure(newClosedChannelException());
         return;
     }
@@ -173,7 +173,7 @@ void RakNetConnection::onMessage(ByteBufView message)
 {
     if (!message.isReadable() ||
         message.getUnsignedByte(message.readerIndex()) != std::to_integer<std::uint8_t>(BATCH_HEADER)) {
-        logger_.debug("{}: dropping {} bytes, not a batch", getRemoteAddress(), message.readableBytes());
+        logger_.debug("{}: dropping {} bytes, not a batch", getAssociation(), message.readableBytes());
         return;
     }
     message.skipBytes(1);
@@ -189,7 +189,7 @@ void RakNetConnection::onDisconnected(raknet::DisconnectReason reason)
         asio::error_code ignored;
         std::ignore = socket_.close(ignored);
     }
-    logger_.debug("{}: connection ended: {}", getRemoteAddress(), raknet::toString(reason));
+    logger_.debug("{}: connection ended: {}", getAssociation(), raknet::toString(reason));
     channelInactive();
 }
 
@@ -197,7 +197,7 @@ void RakNetConnection::onReliabilityLayerNotification(std::string_view message, 
 {
     if (is_error) {
         if (getEndpoint().getServer().getConfiguration().isPacketDecodeLogging()) {
-            logger_.error("{}: invalid packet received: {}", getRemoteAddress(), message);
+            logger_.error("{}: invalid packet received: {}", getAssociation(), message);
         }
         else {
             logger_.warn("Invalid packet received. Turn on packet-decode-logging under [debug] in endgate.toml to see "

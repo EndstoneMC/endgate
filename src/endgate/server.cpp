@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cstdlib>
 #include <format>
 #include <utility>
@@ -80,19 +81,39 @@ bool ProxyServer::start()
     return true;
 }
 
-void ProxyServer::shutdown([[maybe_unused]] bool explicit_exit)
+void ProxyServer::shutdown([[maybe_unused]] bool explicit_exit, const std::string &reason)
 {
     bool in_progress = false;
     if (!shutdown_in_progress_.compare_exchange_strong(in_progress, true)) {
         return;
     }
 
-    logger_.info("Stopping the proxy...");
-    if (keys_) {
-        keys_->shutdown();
-    }
-    cm_.shutdown();
-    shutdown_.store(true);
+    shutdown_thread_ = std::jthread([this, reason] {
+        logger_.info("Shutting down the proxy...");
+
+        const auto players = getAllPlayers();
+        for (const auto &player : players) {
+            player->disconnect(DisconnectFailReason::NoReason, reason);
+        }
+
+        std::unique_lock lock(connections_mutex_);
+        const auto torn_down = connections_changed_.wait_for(lock, std::chrono::seconds{10}, [&players, this] {
+            return std::ranges::none_of(players, [this](const auto &player) {
+                const auto found = connections_by_uuid_.find(player->getUniqueId());
+                return found != connections_by_uuid_.end() && found->second == player;
+            });
+        });
+        lock.unlock();
+        if (!torn_down) {
+            logger_.error("Some players took over 10 seconds to disconnect.");
+        }
+
+        if (keys_) {
+            keys_->shutdown();
+        }
+        cm_.shutdown();
+        shutdown_.store(true);
+    });
 }
 
 void ProxyServer::awaitProxyShutdown()
@@ -232,6 +253,7 @@ void ProxyServer::unregisterConnection(const Player &connection)
         by_uuid != connections_by_uuid_.end() && by_uuid->second.get() == &connection) {
         connections_by_uuid_.erase(by_uuid);
     }
+    connections_changed_.notify_all();
 }
 
 }  // namespace endgate

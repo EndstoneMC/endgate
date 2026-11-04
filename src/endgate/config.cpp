@@ -82,6 +82,7 @@ struct Document {
     int show_max_players = 0;
     bool online_mode = false;
     bool kick_existing_players = false;
+    bool enable_player_address_logging = false;
     std::map<std::string, std::variant<std::string, std::vector<std::string>>> servers;
     std::optional<std::map<std::string, std::variant<std::string, std::vector<std::string>>>> forced_hosts;
     Advanced advanced;
@@ -90,19 +91,20 @@ struct Document {
 
     struct glaze {
         using T = Document;
-        static constexpr auto value = glz::object(               //
-            "config-version", &T::config_version,                //
-            "bind", &T::bind,                                    //
-            "tls-certificate", &T::tls_certificate,              //
-            "tls-certificate-key", &T::tls_certificate_key,      //
-            "motd", &T::motd,                                    //
-            "show-max-players", &T::show_max_players,            //
-            "online-mode", &T::online_mode,                      //
-            "kick-existing-players", &T::kick_existing_players,  //
-            "servers", &T::servers,                              //
-            "forced-hosts", &T::forced_hosts,                    //
-            "advanced", &T::advanced,                            //
-            "query", &T::query,                                  //
+        static constexpr auto value = glz::object(                               //
+            "config-version", &T::config_version,                                //
+            "bind", &T::bind,                                                    //
+            "tls-certificate", &T::tls_certificate,                              //
+            "tls-certificate-key", &T::tls_certificate_key,                      //
+            "motd", &T::motd,                                                    //
+            "show-max-players", &T::show_max_players,                            //
+            "online-mode", &T::online_mode,                                      //
+            "kick-existing-players", &T::kick_existing_players,                  //
+            "enable-player-address-logging", &T::enable_player_address_logging,  //
+            "servers", &T::servers,                                              //
+            "forced-hosts", &T::forced_hosts,                                    //
+            "advanced", &T::advanced,                                            //
+            "query", &T::query,                                                  //
             "debug", &T::debug);
     };
 };
@@ -151,6 +153,7 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
     config.show_max_players_ = document.show_max_players;
     config.online_mode_ = document.online_mode;
     config.kick_existing_players_ = document.kick_existing_players;
+    config.enable_player_address_logging_ = document.enable_player_address_logging;
     for (const auto &[name, entry] : document.servers) {
         if (const auto *address = std::get_if<std::string>(&entry)) {
             config.servers_.emplace(name, *address);
@@ -291,6 +294,11 @@ bool ProxyConfig::isOnlineMode() const
 bool ProxyConfig::isOnlineModeKickExistingPlayers() const
 {
     return kick_existing_players_;
+}
+
+bool ProxyConfig::isPlayerAddressLoggingEnabled() const
+{
+    return enable_player_address_logging_;
 }
 
 const std::map<std::string, std::string> &ProxyConfig::getServers() const

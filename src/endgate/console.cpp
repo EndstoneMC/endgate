@@ -110,7 +110,7 @@ void Console::printAbove(std::string_view message)
 
 bool Console::isRunning() const
 {
-    return !server_.isShutdown();
+    return !server_.isShuttingDown();
 }
 
 void Console::runCommand(const std::string &command)

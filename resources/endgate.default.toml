@@ -24,6 +24,9 @@ online-mode = true
 # any existing player who is online if a duplicate connection attempt is made.
 kick-existing-players = false
 
+# If not enabled (default is true) player IP addresses will be replaced by <ip address withheld> in logs
+enable-player-address-logging = true
+
 [servers]
 # Configure your servers here. Each key represents the server's name, and the value
 # represents the IP address of the server to connect to.

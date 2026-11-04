@@ -13,7 +13,7 @@ namespace endgate {
 
 MinecraftConnection::MinecraftConnection(Endpoint &endpoint, std::string remote_address, Direction direction)
     : endpoint_(endpoint), event_loop_(endpoint.getEventLoop()), logger_(LogManager::getLogger(*this)),
-      remote_address_(std::move(remote_address)), sink_(*this),
+      direction_(direction), remote_address_(std::move(remote_address)), sink_(*this),
       pipeline_(sink_, MinecraftCipherDecoder{}, MinecraftCipherEncoder{}, MinecraftCompressDecoder{},
                 MinecraftCompressEncoder{endpoint.getServer().getConfiguration().getCompressionLevel()},
                 MinecraftVarintFrameDecoder{},
@@ -21,6 +21,15 @@ MinecraftConnection::MinecraftConnection(Endpoint &endpoint, std::string remote_
                                    std::chrono::milliseconds{endpoint.getServer().getConfiguration().getReadTimeout()}},
                 MinecraftVarintLengthEncoder{}, EntityRewriteHandler{}, MinecraftDecoder{direction}, MinecraftEncoder{})
 {
+}
+
+std::string MinecraftConnection::getAssociation() const
+{
+    if (direction_ == Direction::Serverbound &&
+        !endpoint_.getServer().getConfiguration().isPlayerAddressLoggingEnabled()) {
+        return "<ip address withheld>";
+    }
+    return remote_address_;
 }
 
 void MinecraftConnection::flush()
@@ -168,16 +177,16 @@ void MinecraftConnection::Sink::channelInactive()
 void MinecraftConnection::Sink::exceptionCaught(const std::exception &cause)
 {
     if (dynamic_cast<const ReadTimeoutException *>(&cause) != nullptr) {
-        connection_.logger_.error("{}: read timed out", connection_.remote_address_);
+        connection_.logger_.error("{}: read timed out", connection_.getAssociation());
         return;
     }
     if (dynamic_cast<const DecoderException *>(&cause) == nullptr) {
-        connection_.logger_.error("{}: exception encountered: {}", connection_.remote_address_, cause.what());
+        connection_.logger_.error("{}: exception encountered: {}", connection_.getAssociation(), cause.what());
         connection_.disconnect(true);
         return;
     }
     if (connection_.endpoint_.getServer().getConfiguration().isPacketDecodeLogging()) {
-        connection_.logger_.error("{}: invalid packet received: {}", connection_.remote_address_, cause.what());
+        connection_.logger_.error("{}: invalid packet received: {}", connection_.getAssociation(), cause.what());
     }
     else {
         connection_.logger_.warn(

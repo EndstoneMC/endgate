@@ -27,6 +27,7 @@ public:
     [[nodiscard]] int getShowMaxPlayers() const;
     [[nodiscard]] bool isOnlineMode() const;
     [[nodiscard]] bool isOnlineModeKickExistingPlayers() const;
+    [[nodiscard]] bool isPlayerAddressLoggingEnabled() const;
     [[nodiscard]] const std::map<std::string, std::string> &getServers() const;
     [[nodiscard]] const std::vector<std::string> &getAttemptConnectionOrder() const;
     [[nodiscard]] const std::map<std::string, std::vector<std::string>> &getForcedHosts() const;
@@ -55,6 +56,7 @@ private:
     int show_max_players_ = 0;
     bool online_mode_ = false;
     bool kick_existing_players_ = false;
+    bool enable_player_address_logging_ = false;
     std::map<std::string, std::string> servers_;
     std::vector<std::string> attempt_connection_order_;
     std::map<std::string, std::vector<std::string>> forced_hosts_;

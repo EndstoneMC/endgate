@@ -395,7 +395,7 @@ public:
             const std::string_view what =
                 IsPacket<Packet, bp::MinecraftPacketIds::ItemRegistryPacket> ? "items" : "dimensions";
             logger_.error("[connected player] {} ({}): {} has other {} than the server they joined",
-                          player.getUsername(), player.getConnection().getRemoteAddress(), name, what);
+                          player.getUsername(), player.getConnection().getAssociation(), name, what);
             player.disconnect(DisconnectFailReason::NoReason,
                               std::format("{} has other {} than the server you joined.", name, what));
         }
