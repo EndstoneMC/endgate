@@ -114,10 +114,11 @@ void RakNetConnection::handleDatagram(std::span<const std::byte> datagram, const
     arm();
 }
 
-void RakNetConnection::send(ByteBuf batch)
+void RakNetConnection::send(ByteBuf batch, ChannelPromise promise)
 {
     if (!active_) {
         logger_.debug("{}: dropping {} bytes, not connected", getRemoteAddress(), batch.readableBytes());
+        promise.tryFailure(newClosedChannelException());
         return;
     }
     auto message = Unpooled::buffer(1 + batch.readableBytes());
@@ -125,6 +126,7 @@ void RakNetConnection::send(ByteBuf batch)
     message.writeBytes(batch.nioBuffer());
     connection_.send(std::move(message), raknet::PacketPriority::High, raknet::PacketReliability::ReliableOrdered, 0,
                      raknet::Clock::now());
+    promise.trySuccess();
     arm();
 }
 

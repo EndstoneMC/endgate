@@ -72,7 +72,7 @@ public:
     [[nodiscard]] bool isTransportEncrypted() const override { return true; }
 
 protected:
-    void send(ByteBuf batch) override;
+    void send(ByteBuf batch, ChannelPromise promise) override;
     void disconnect(bool wait_for_peer) override;
 
 private:
@@ -88,6 +88,7 @@ private:
         requires DIALING;
     static Awaitable<void> read(std::shared_ptr<NetherNetConnection> self)
         requires DIALING;
+    void completeWrites();
     void finish();
     void arm();
 
@@ -97,6 +98,7 @@ private:
     asio::ip::udp::endpoint address_;
     asio::steady_timer timer_;
     std::optional<Clock::time_point> armed_;
+    std::vector<ChannelPromise> promises_;
     bool active_{false};
     bool finished_{false};
     std::optional<Session> session_;
@@ -225,18 +227,40 @@ void NetherNetConnection<Session>::handleDatagram(std::span<const std::byte> dat
     }
     session_->handleDatagram(Clock::now(), sender, Unpooled::wrappedBuffer(datagram));
     channelReadComplete();
+    completeWrites();
     arm();
 }
 
 template <typename Session>
-void NetherNetConnection<Session>::send(ByteBuf batch)
+void NetherNetConnection<Session>::send(ByteBuf batch, ChannelPromise promise)
 {
     if (!active_ || !session_) {
         logger_.debug("{}: dropping {} bytes, not connected", getRemoteAddress(), batch.readableBytes());
+        promise.tryFailure(newClosedChannelException());
         return;
     }
-    session_->send(batch.slice(), nethernet::ESendType::Reliable, Clock::now());
+    if (!session_->send(batch.slice(), nethernet::ESendType::Reliable, Clock::now())) {
+        promise.tryFailure(newClosedChannelException());
+    }
+    else if (!promise.isVoid()) {
+        promises_.push_back(std::move(promise));
+    }
     arm();
+}
+
+template <typename Session>
+void NetherNetConnection<Session>::completeWrites()
+{
+    if (promises_.empty() || !session_) {
+        return;
+    }
+    if (const auto *sender = session_->getSctpTransport().association().sender();
+        sender != nullptr && !sender->idle()) {
+        return;
+    }
+    for (auto &promise : std::exchange(promises_, {})) {
+        promise.trySuccess();
+    }
 }
 
 template <typename Session>
@@ -314,6 +338,9 @@ void NetherNetConnection<Session>::finish()
         asio::error_code ignored;
         std::ignore = socket_->close(ignored);
     }
+    for (auto &promise : std::exchange(promises_, {})) {
+        promise.tryFailure(newClosedChannelException());
+    }
     channelInactive();
 }
 
@@ -342,6 +369,7 @@ void NetherNetConnection<Session>::arm()
         self->armed_.reset();
         self->session_->handleTimeout(Clock::now());
         self->channelReadComplete();
+        self->completeWrites();
         self->arm();
     });
 }

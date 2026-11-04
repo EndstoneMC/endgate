@@ -6,12 +6,14 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <system_error>
 #include <utility>
 
 #include <asio/ip/udp.hpp>
 #include <spdlog/logger.h>
 
 #include "endgate/buffer/bytebuf.h"
+#include "endgate/connection/future.h"
 #include "endgate/network/eventloop.h"
 #include "endgate/network/pipeline.h"
 #include "endgate/network/timeout.h"
@@ -174,6 +176,33 @@ public:
     }
 
     /**
+     * Writes and flushes. The future completes once the transport holds the message where a close
+     * cannot lose it. Call on the connection's event loop.
+     *
+     * @see io.netty.channel.ChannelOutboundInvoker#writeAndFlush
+     */
+    template <typename Message>
+    ChannelFuture writeAndFlush(Message message)
+    {
+        const auto self = shared_from_this();
+        auto promise = newPromise();
+        promise_ = promise;
+        pipeline_.writeAndFlush(std::move(message));
+        std::exchange(promise_, voidPromise()).tryFailure(newClosedChannelException());
+        return promise;
+    }
+
+    /**
+     * @see io.netty.channel.ChannelOutboundInvoker#newPromise
+     */
+    [[nodiscard]] ChannelPromise newPromise() { return ChannelPromise{shared_from_this()}; }
+
+    /**
+     * @see io.netty.channel.ChannelOutboundInvoker#voidPromise
+     */
+    [[nodiscard]] static ChannelPromise voidPromise() { return {}; }
+
+    /**
      * Writes without flushing.
      *
      * @see com.velocitypowered.proxy.connection.MinecraftConnection#delayedWrite
@@ -297,8 +326,21 @@ public:
     [[nodiscard]] const asio::ip::address &getRemoteIp() const { return remote_ip_; }
 
 protected:
-    virtual void send(ByteBuf batch) = 0;
+    /**
+     * Sends a batch and completes the promise once a close can no longer lose it.
+     *
+     * @see io.netty.channel.Channel.Unsafe#write
+     */
+    virtual void send(ByteBuf batch, ChannelPromise promise) = 0;
     virtual void disconnect(bool wait_for_peer) = 0;
+
+    /**
+     * @see io.netty.channel.AbstractChannel#newClosedChannelException
+     */
+    [[nodiscard]] static std::exception_ptr newClosedChannelException()
+    {
+        return std::make_exception_ptr(std::system_error(std::make_error_code(std::errc::not_connected)));
+    }
 
     void setRemoteAddress(const asio::ip::udp::endpoint &address)
     {
@@ -372,6 +414,7 @@ private:
     Sink sink_;
     Pipeline pipeline_;
     std::shared_ptr<MinecraftSessionHandler> handler_;
+    ChannelPromise promise_;
     StateRegistry state_{StateRegistry::Login};
     bool received_bad_packet_{false};
     ProtocolVersion protocol_version_{MINIMUM_VERSION};

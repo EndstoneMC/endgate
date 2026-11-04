@@ -133,11 +133,25 @@ public:
     [[nodiscard]] std::size_t sent() const { return sent_; }
     [[nodiscard]] bool closed() const { return closed_; }
 
+    void holdWrites() { holding_ = true; }
+
+    void completeWrites()
+    {
+        for (auto &promise : std::exchange(held_, {})) {
+            promise.trySuccess();
+        }
+    }
+
 protected:
-    void send(ByteBuf batch) override
+    void send(ByteBuf batch, ChannelPromise promise) override
     {
         batches_.push_back(std::move(batch));
         ++sent_;
+        if (holding_) {
+            held_.push_back(std::move(promise));
+            return;
+        }
+        promise.trySuccess();
     }
 
     void disconnect(bool) override
@@ -148,8 +162,10 @@ protected:
 
 private:
     std::vector<ByteBuf> batches_;
+    std::vector<ChannelPromise> held_;
     std::atomic<std::size_t> sent_{0};
     std::atomic<bool> closed_{false};
+    bool holding_ = false;
 };
 
 class Client {

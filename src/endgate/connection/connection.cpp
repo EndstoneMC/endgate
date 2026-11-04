@@ -101,10 +101,9 @@ void MinecraftConnection::closeWith(DisconnectFailReason reason, const std::stri
         else {
             packet.messages = bp::DisconnectPacketMessages{.message = message, .filtered_message = message};
         }
-        write(std::move(packet));
+        writeAndFlush(std::move(packet)).addListener(ChannelFutureListener::CLOSE);
         return true;
     });
-    close();
 }
 
 void MinecraftConnection::setCompressionThreshold(std::uint16_t threshold, PacketCompressionAlgorithm algorithm)
@@ -189,7 +188,7 @@ void MinecraftConnection::Sink::exceptionCaught(const std::exception &cause)
 
 void MinecraftConnection::Sink::write(ByteBuf batch)
 {
-    connection_.send(std::move(batch));
+    connection_.send(std::move(batch), std::exchange(connection_.promise_, voidPromise()));
 }
 
 void MinecraftConnection::Sink::close()

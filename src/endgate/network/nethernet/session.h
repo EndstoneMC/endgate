@@ -117,6 +117,7 @@ public:
     [[nodiscard]] bool isOpen() const { return open_ && !closed_; }
     [[nodiscard]] bool isClosed() const { return closed_.has_value(); }
     [[nodiscard]] const rtc::IceTransport &getIceTransport() const { return ice_; }
+    [[nodiscard]] const rtc::SctpTransport &getSctpTransport() const { return sctp_; }
 
 private:
     void sendIceDatagram(const asio::ip::udp::endpoint &remote, ByteBufView datagram) override;
@@ -205,6 +206,7 @@ public:
     [[nodiscard]] bool isOpen() const { return open_ && !closed_; }
     [[nodiscard]] bool isClosed() const { return closed_.has_value(); }
     [[nodiscard]] const rtc::IceController &getIceController() const { return ice_; }
+    [[nodiscard]] const rtc::SctpTransport &getSctpTransport() const { return sctp_; }
     [[nodiscard]] const std::vector<asio::ip::udp::endpoint> &getRemoteCandidates() const { return candidates_; }
 
 private:

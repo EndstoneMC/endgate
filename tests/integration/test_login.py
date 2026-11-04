@@ -97,6 +97,14 @@ def test_the_backend_finds_the_player_under_the_id_an_online_mode_join_uses(make
     assert json.loads(upstream.peer.wait("client-data"))["SelfSignedId"] == str(uuid.UUID(bytes=bytes(digest)))
 
 
+@pytest.mark.parametrize("transport", ["raknet", "nethernet"])
+def test_a_second_login_under_the_same_name_is_told_it_is_already_connected(proxy, backend, connect, transport):
+    identity = PlayerIdentity()
+    logged_in(connect(proxy, transport, identity=identity), backend, proxy)
+    duplicate = connect(proxy, transport, identity=identity)
+    assert duplicate.wait_disconnect() == (NO_REASON, "You are already connected to this proxy!")
+
+
 def test_a_login_from_an_older_protocol_is_refused(proxy, connect):
     player = connect(proxy, protocol=2000)
     assert player.peer.wait("play-status", 10) == str(LOGIN_FAILED_CLIENT_OLD)
