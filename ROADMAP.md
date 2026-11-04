@@ -93,19 +93,21 @@ Endgate:
 - [ ] `player-info-forwarding-mode`: none (today's self-signed login) and modern; modern refused in offline mode
 - [ ] Modern signs a login token: the player's Microsoft claims with new cpk, exp and iat, ES384 under endgate's P-384 key, kid = the key's base64 SPKI
 - [ ] The token carries `"endgate:player_info": {"version": 1, "address": "<ip>"}`
-- [ ] Key pair created on first run; the public half written as `keys/endgate_public_key.pem`
+- [ ] Sign with endgate's own `keys/server_identity_key.pem`, loaded even with NetherNet off; only the forwarding token carries `aud` and `kid`
+- [ ] Print the key's public half (base64 SPKI) at startup and in `/endgate info`, for each backend's `public-key`
 
 Endstone:
 
 - [ ] Hook `MinecraftServiceKeyManager::tryGetKey`: return endgate's key for its kid, else call the original
 - [ ] On player creation, read `endgate:player_info` from the raw token for endgate's kid only; refuse a version above the maximum; set the address
-- [ ] `[endgate]` in `endstone.toml`: `enabled = false` and `public-key-file = "keys/endgate_public_key.pem"`; enabled refuses every login not signed by endgate's key, self-signed included, with Paper's "This server requires you to connect with endgate."
-- [ ] Refuse to start when enabled and the key file is missing, saying to copy `keys/endgate_public_key.pem` from endgate, or isn't a P-384 key; log an unknown kid, an expired proxy token and a too-new version
+- [ ] `[proxies.endgate]` in `endstone.toml`: `enabled = false` and `public-key = ""`, as Paper's `proxies.velocity` `enabled` and `secret`; enabled refuses every login not signed by endgate's key, self-signed included, with Paper's "This server requires you to connect with endgate."
+- [ ] Refuse to start when enabled and `public-key` is empty, saying to paste the key endgate prints, or isn't a P-384 public key; log an unknown kid, an expired proxy token and a too-new version
 
 Facts the design rests on (1.26.60):
 
 - `tryGetKey` isn't virtual, and every key fetch replaces both key maps, so a hook beats inserting a key.
 - `getTrustedInfo` drops claims it doesn't know, hence the raw token re-parse.
+- BDS signs NetherNet identity and the login handshake with its one identity key. Neither JWT has `aud` or `kid`, which a login token needs, so the forwarding token can share the key.
 - A self-signed token never reaches `tryGetKey`, so `enabled` must also refuse self-signed logins.
 - A non-self-signed token is checked the same in online and offline mode.
 - Vanilla BDS never gets the xuid or pfid: it reads xid and mid only from a trusted token.
