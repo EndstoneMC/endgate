@@ -128,7 +128,8 @@ struct PacketRegistries<StateRegistry::Play> {
                        bp::MinecraftPacketIds::NetworkChunkPublisherUpdate, bp::MinecraftPacketIds::SetSpawnPosition,
                        bp::MinecraftPacketIds::Transfer, bp::MinecraftPacketIds::ChangeDimension,
                        bp::MinecraftPacketIds::ItemRegistryPacket, bp::MinecraftPacketIds::BiomeDefinitionList,
-                       bp::MinecraftPacketIds::AvailableActorIDList, bp::MinecraftPacketIds::DimensionDataPacket>;
+                       bp::MinecraftPacketIds::AvailableActorIDList, bp::MinecraftPacketIds::DimensionDataPacket,
+                       bp::MinecraftPacketIds::AvailableCommands>;
 };
 
 template <StateRegistry State, Direction D, int Version>

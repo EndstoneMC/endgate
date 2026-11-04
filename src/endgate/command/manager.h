@@ -12,6 +12,7 @@
 
 #include "endgate/brigadier/dispatcher.h"
 #include "endgate/command/brigadier.h"
+#include "endgate/command/injector.h"
 #include "endgate/command/meta.h"
 #include "endgate/command/source.h"
 
@@ -122,6 +123,11 @@ public:
      */
     [[nodiscard]] bool hasCommand(const std::string &alias, const Source &source) const;
 
+    /**
+     * @see com.velocitypowered.proxy.command.VelocityCommandManager#getInjector
+     */
+    [[nodiscard]] const CommandGraphInjector &getInjector() const { return injector_; }
+
 private:
     using Literal = brigadier::LiteralCommandNode<Source>;
 
@@ -144,6 +150,7 @@ private:
     mutable std::shared_mutex lock_;
     brigadier::CommandDispatcher<Source> dispatcher_;
     std::map<std::string, CommandMeta> command_metas_;
+    CommandGraphInjector injector_ = CommandGraphInjector(dispatcher_, lock_, command_metas_);
 };
 
 }  // namespace endgate

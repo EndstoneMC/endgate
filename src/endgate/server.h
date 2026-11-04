@@ -151,6 +151,8 @@ private:
         bool operator()(std::string_view left, std::string_view right) const;
     };
 
+    void updateSoftEnums();
+
     [[nodiscard]] static std::optional<asio::ip::udp::endpoint> parseBind(const std::string &bind);
     static Awaitable<void> evacuate(std::shared_ptr<Player> player, std::vector<const BackendServer *> replaced,
                                     std::latch *moved);

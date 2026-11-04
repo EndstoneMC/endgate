@@ -23,6 +23,7 @@ import threading
 import time
 from pathlib import Path
 
+import commandwire
 import nethernet
 import raknet
 from cryptography.hazmat.primitives import hashes, serialization
@@ -363,6 +364,23 @@ class Session:
     def wait_command(self, timeout: float = 10.0) -> str | None:
         received = self.peer.wait("command", timeout)
         return None if received is None else bytes.fromhex(received).decode()
+
+    def send_available_commands(self, packet: dict) -> None:
+        """Sends an AvailableCommandsPacket carrying `packet`, in commandwire's shape."""
+        self.peer.command("available-commands " + commandwire.encode(packet).hex())
+
+    def wait_available_commands(self, timeout: float = 10.0) -> dict | None:
+        received = self.peer.wait("available-commands", timeout)
+        return None if received is None else commandwire.decode(bytes.fromhex(received))
+
+    def wait_soft_enum(self, timeout: float = 10.0) -> tuple[str, int, list[str]] | None:
+        """The next UpdateSoftEnumPacket as its enum name, update type (0 Add, 1 Remove, 2 Replace) and values."""
+        received = self.peer.wait("soft-enum", timeout)
+        if received is None:
+            return None
+        name, kind, values = received.split(" ")
+        decoded = [] if values == "-" else [bytes.fromhex(value).decode() for value in values.split(",")]
+        return bytes.fromhex(name).decode(), int(kind), decoded
 
     def say(self, message: str, **options) -> None:
         """Sends a chat line with the transport's own send options, and waits until it has left."""

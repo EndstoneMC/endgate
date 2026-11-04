@@ -151,6 +151,7 @@ bool ProxyServer::reloadConfiguration()
             }
         }
     }
+    updateSoftEnums();
 
     if (!replaced.empty()) {
         const auto players = getAllPlayers();
@@ -304,10 +305,19 @@ const ProxyConfig &ProxyServer::getConfiguration() const
 
 BackendServer &ProxyServer::registerServer(ServerInfo info)
 {
-    const std::scoped_lock lock(servers_mutex_);
-    std::string name = info.getName();
-    const auto registered = servers_.try_emplace(std::move(name), std::make_unique<BackendServer>(std::move(info)));
-    return *registered.first->second;
+    BackendServer *server = nullptr;
+    bool inserted = false;
+    {
+        const std::scoped_lock lock(servers_mutex_);
+        std::string name = info.getName();
+        const auto registered = servers_.try_emplace(std::move(name), std::make_unique<BackendServer>(std::move(info)));
+        server = registered.first->second.get();
+        inserted = registered.second;
+    }
+    if (inserted) {
+        updateSoftEnums();
+    }
+    return *server;
 }
 
 BackendServer *ProxyServer::getServer(std::string_view name)
@@ -400,21 +410,32 @@ bool ProxyServer::registerConnection(const std::shared_ptr<Player> &connection)
     if (existing) {
         existing->disconnect(DisconnectFailReason::LoggedInOtherLocation);
     }
+    updateSoftEnums();
     return true;
 }
 
 void ProxyServer::unregisterConnection(const Player &connection)
 {
-    const std::scoped_lock lock(connections_mutex_);
-    if (const auto by_name = connections_by_name_.find(connection.getUsername());
-        by_name != connections_by_name_.end() && by_name->second.get() == &connection) {
-        connections_by_name_.erase(by_name);
+    {
+        const std::scoped_lock lock(connections_mutex_);
+        if (const auto by_name = connections_by_name_.find(connection.getUsername());
+            by_name != connections_by_name_.end() && by_name->second.get() == &connection) {
+            connections_by_name_.erase(by_name);
+        }
+        if (const auto by_uuid = connections_by_uuid_.find(connection.getUniqueId());
+            by_uuid != connections_by_uuid_.end() && by_uuid->second.get() == &connection) {
+            connections_by_uuid_.erase(by_uuid);
+        }
+        connections_changed_.notify_all();
     }
-    if (const auto by_uuid = connections_by_uuid_.find(connection.getUniqueId());
-        by_uuid != connections_by_uuid_.end() && by_uuid->second.get() == &connection) {
-        connections_by_uuid_.erase(by_uuid);
+    updateSoftEnums();
+}
+
+void ProxyServer::updateSoftEnums()
+{
+    for (const auto &player : getAllPlayers()) {
+        player->getConnection().eventLoop().execute([player] { player->updateSoftEnums(); });
     }
-    connections_changed_.notify_all();
 }
 
 }  // namespace endgate

@@ -47,6 +47,7 @@ public:
     [[nodiscard]] int getLoginRatelimit() const;
     [[nodiscard]] int getConnectTimeout() const;
     [[nodiscard]] int getReadTimeout() const;
+    [[nodiscard]] bool isAnnounceProxyCommands() const;
     [[nodiscard]] bool isLogCommandExecutions() const;
     [[nodiscard]] int getCommandRatelimit() const;
     [[nodiscard]] bool isForwardCommandsIfRateLimited() const;
@@ -82,6 +83,7 @@ private:
     int login_ratelimit_ = 0;
     int connection_timeout_ = 0;
     int read_timeout_ = 0;
+    bool announce_proxy_commands_ = true;
     bool log_command_executions_ = false;
     int command_rate_limit_ = 0;
     bool forward_commands_if_rate_limited_ = true;

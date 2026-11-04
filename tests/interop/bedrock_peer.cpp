@@ -6,7 +6,8 @@
  *   wire <hex>           a message that arrived from the transport
  *   text <hex>           send a TextPacket whose message is the hex-decoded bytes
  *   command <hex>        send a CommandRequestPacket whose command is the hex-decoded bytes
- *   disconnect <hex>     send a DisconnectPacket carrying the hex-decoded message
+ *   available-commands <hex>  send an AvailableCommandsPacket whose body is the hex-decoded bytes
+ *   disconnect <hex>    send a DisconnectPacket carrying the hex-decoded message
  *   kick <reason> <hex>  send a DisconnectPacket with this reason and the hex-decoded message
  *   transfer <host> <port>
  *   chunk <x> <z>        send a LevelChunk with no subchunks
@@ -20,6 +21,8 @@
  *   client-data <json>   the claims of the login's client data
  *   text <hex>
  *   command <hex>        a CommandRequestPacket arrived
+ *   available-commands <hex>  an AvailableCommandsPacket arrived, its body
+ *   soft-enum <name hex> <type> <value hex>,...  an UpdateSoftEnumPacket arrived, "-" for no values
  *   disconnect <reason> <hex>
  *   start-game <runtime id> <unique id> <client-side generation> <seed>
  *   camera <fade|clear> [<in> <hold> <out>]
@@ -307,6 +310,7 @@ public:
     virtual void start() = 0;
     virtual void sendText(std::string message) = 0;
     virtual void sendCommand(std::string command) = 0;
+    virtual void sendAvailableCommands(std::string body) = 0;
     virtual void sendDisconnect(const std::string &message) = 0;
     virtual void sendKick(int reason, const std::string &message) = 0;
     virtual void sendTransfer(std::string host, std::uint16_t port) = 0;
@@ -349,6 +353,8 @@ public:
         packet.version = decltype(packet.version)::Latest;
         send(packet);
     }
+
+    void sendAvailableCommands(std::string body) override { send(decode<bp::AvailableCommandsPacket>(body)); }
 
     void sendDisconnect(const std::string &message) override
     {
@@ -648,6 +654,18 @@ private:
             const auto transfer = decode<bp::TransferPacket_<V>>(packet);
             std::cout << "transfer " << transfer.destination << ' ' << transfer.destination_port << '\n';
         }
+        else if (id == bp::AvailableCommandsPacket::Id) {
+            std::cout << "available-commands " << toHex(std::string{packet}) << '\n';
+        }
+        else if (id == bp::UpdateSoftEnumPacket::Id) {
+            const auto update = decode<bp::UpdateSoftEnumPacket>(packet);
+            std::string values;
+            for (const auto &value : update.values) {
+                values += (values.empty() ? "" : ",") + toHex(value);
+            }
+            std::cout << "soft-enum " << toHex(update.enum_name) << ' ' << static_cast<int>(update.type) << ' '
+                      << (values.empty() ? "-" : values) << '\n';
+        }
         else if (id == bp::DisconnectPacket_<V>::Id) {
             const auto disconnect = decode<bp::DisconnectPacket_<V>>(packet);
             const auto *const messages = std::get_if<bp::DisconnectPacketMessages>(&disconnect.messages);
@@ -804,6 +822,9 @@ int main(int argc, char **argv)
             }
             else if (command == "command") {
                 peer.sendCommand(fromHex(argument));
+            }
+            else if (command == "available-commands") {
+                peer.sendAvailableCommands(fromHex(argument));
             }
             else if (command == "disconnect") {
                 peer.sendDisconnect(fromHex(argument));

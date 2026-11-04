@@ -68,6 +68,7 @@ add_library(endgate_proxy STATIC
         src/endgate/command/builtin/send.cpp
         src/endgate/command/builtin/server.cpp
         src/endgate/command/builtin/shutdown.cpp
+        src/endgate/command/injector.cpp
         src/endgate/command/manager.cpp
         src/endgate/config.cpp
         src/endgate/connection/backend.cpp

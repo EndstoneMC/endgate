@@ -234,6 +234,20 @@ bool BackendPlaySessionHandler::handleTransfer(std::string_view host, std::uint1
     return false;
 }
 
+bool BackendPlaySessionHandler::handleAvailableCommands(const bp::AvailableCommandsPacket &packet)
+{
+    auto &player = server_connection_->getPlayer();
+    auto &proxy = player.getConnection().getEndpoint().getServer();
+    if (!proxy.getConfiguration().isAnnounceProxyCommands()) {
+        return false;
+    }
+    bp::AvailableCommandsPacket injected = packet;
+    player.setSoftEnums(proxy.getCommandManager().getInjector().inject(
+        injected, player.shared_from_this(), player.getConnection().getProtocolVersion().getProtocol()));
+    player.getConnection().delayedWrite(std::move(injected));
+    return true;
+}
+
 void BackendPlaySessionHandler::disconnected()
 {
     auto &player = server_connection_->getPlayer().getConnection();

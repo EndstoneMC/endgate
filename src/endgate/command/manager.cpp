@@ -40,6 +40,10 @@ void CommandManager::registerCommand(const CommandMeta &meta, const BrigadierCom
 {
     const std::shared_ptr<Literal> &literal = command.getNode();
     const std::string &primary_alias = literal->getName();
+    if (const auto clash = CommandGraphInjector::findClash(*literal)) {
+        logger_.error("Command '{}' is not registered: {}", primary_alias, *clash);
+        return;
+    }
     if (primary_alias == SuggestionsBuilder::toLowerCase(primary_alias)) {
         registerNode(literal);
     }

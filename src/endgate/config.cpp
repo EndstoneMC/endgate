@@ -27,6 +27,7 @@ struct Advanced {
     int login_ratelimit = 0;
     int connection_timeout = 0;
     int read_timeout = 0;
+    bool announce_proxy_commands = true;
     bool log_command_executions = false;
     int command_rate_limit = 0;
     bool forward_commands_if_rate_limited = true;
@@ -43,6 +44,7 @@ struct Advanced {
             "login-ratelimit", &T::login_ratelimit,                                                    //
             "connection-timeout", &T::connection_timeout,                                              //
             "read-timeout", &T::read_timeout,                                                          //
+            "announce-proxy-commands", &T::announce_proxy_commands,                                    //
             "log-command-executions", &T::log_command_executions,                                      //
             "command-rate-limit", &T::command_rate_limit,                                              //
             "forward-commands-if-rate-limited", &T::forward_commands_if_rate_limited,                  //
@@ -201,6 +203,7 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
     config.login_ratelimit_ = document.advanced.login_ratelimit;
     config.connection_timeout_ = document.advanced.connection_timeout;
     config.read_timeout_ = document.advanced.read_timeout;
+    config.announce_proxy_commands_ = document.advanced.announce_proxy_commands;
     config.log_command_executions_ = document.advanced.log_command_executions;
     config.command_rate_limit_ = document.advanced.command_rate_limit;
     config.forward_commands_if_rate_limited_ = document.advanced.forward_commands_if_rate_limited;
@@ -406,6 +409,11 @@ int ProxyConfig::getKickAfterRateLimitedCommands() const
 bool ProxyConfig::isKickOnCommandRateLimit() const
 {
     return kick_after_rate_limited_commands_ > 0;
+}
+
+bool ProxyConfig::isAnnounceProxyCommands() const
+{
+    return announce_proxy_commands_;
 }
 
 bool ProxyConfig::isLogPlayerConnections() const

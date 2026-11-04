@@ -412,6 +412,18 @@ public:
         return false;
     }
 
+    /**
+     * Injects the proxy's commands into the commands the backend announced.
+     *
+     * @see com.velocitypowered.proxy.connection.backend.BackendPlaySessionHandler#handle(AvailableCommandsPacket)
+     */
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::AvailableCommands>
+    bool handleEach(const Packet &packet)
+    {
+        return handleAvailableCommands(packet);
+    }
+
     bool beforeHandle() override;
     void connected() override {}
     void handleUnknown(ByteBufView batch) override;
@@ -420,6 +432,7 @@ public:
 
 private:
     [[nodiscard]] bool handleTransfer(std::string_view host, std::uint16_t port);
+    [[nodiscard]] bool handleAvailableCommands(const bp::AvailableCommandsPacket &packet);
 
     spdlog::logger &logger_;
     std::shared_ptr<ServerConnection> server_connection_;

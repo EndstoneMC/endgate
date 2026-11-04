@@ -338,6 +338,21 @@ public:
      */
     [[nodiscard]] PlayerList &getPlayerList() { return player_list_; }
 
+    /**
+     * Records the soft enums the player holds with the proxy's commands, by name.
+     */
+    void setSoftEnums(std::map<std::string, std::vector<std::string>> soft_enums)
+    {
+        soft_enums_ = std::move(soft_enums);
+    }
+
+    /**
+     * Tells the player how the values of the soft enums it holds changed. Runs on the player's event loop.
+     *
+     * @see CommandRegistry::addSoftEnumValues
+     */
+    void updateSoftEnums();
+
 private:
     friend class ConnectionRequestBuilder;
 
@@ -364,6 +379,7 @@ private:
     std::optional<std::vector<std::string>> applied_resource_packs_;
     ClientSettings settings_;
     PlayerList player_list_;
+    std::map<std::string, std::vector<std::string>> soft_enums_;
     bool active_{true};
 };
 

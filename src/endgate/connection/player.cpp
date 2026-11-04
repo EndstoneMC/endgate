@@ -273,6 +273,42 @@ void Player::sendMessage(std::string_view message)
     });
 }
 
+void Player::updateSoftEnums()
+{
+    if (!active_ || soft_enums_.empty()) {
+        return;
+    }
+    const auto current = server_.getCommandManager().getInjector().getSoftEnums(shared_from_this());
+    for (auto &[name, held] : soft_enums_) {
+        const auto found = current.find(name);
+        const std::vector<std::string> values = found == current.end() ? std::vector<std::string>{} : found->second;
+        std::vector<std::string> added;
+        std::ranges::copy_if(values, std::back_inserter(added),
+                             [&held](const std::string &value) { return !std::ranges::contains(held, value); });
+        std::vector<std::string> removed;
+        std::ranges::copy_if(held, std::back_inserter(removed),
+                             [&values](const std::string &value) { return !std::ranges::contains(values, value); });
+        if (added.empty() && removed.empty()) {
+            continue;
+        }
+        bp::UpdateSoftEnumPacket packet{.enum_name = name};
+        if (removed.empty()) {
+            packet.values = std::move(added);
+            packet.type = bp::SoftEnumUpdateType::Add;
+        }
+        else if (added.empty()) {
+            packet.values = std::move(removed);
+            packet.type = bp::SoftEnumUpdateType::Remove;
+        }
+        else {
+            packet.values = values;
+            packet.type = bp::SoftEnumUpdateType::Replace;
+        }
+        connection_->write(std::move(packet));
+        held = values;
+    }
+}
+
 void Player::disconnect()
 {
     connection_->close();
