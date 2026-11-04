@@ -5,7 +5,7 @@ from bedrock import Backend
 
 OLD_PROTOCOL = 2193
 NO_REASON = 40
-REFUSED = "Unable to connect to old: it runs Minecraft 1.26.50, not 1.26.60"
+REFUSED = "§cUnable to connect to old: it runs Minecraft 1.26.50, not 1.26.60"
 NO_SERVER = "No server here runs Minecraft 1.26.60. Try again later or contact an admin."
 
 
@@ -104,7 +104,7 @@ def test_failover_skips_a_backend_on_another_protocol(make_proxy, lobby, old, th
     upstream.close()
 
     third.accept()
-    assert player.wait_text() == "You were kicked from lobby: An internal server connection error occurred."
+    assert player.wait_text() == "§cYou were kicked from lobby: An internal server connection error occurred."
     assert old.sessions.empty()
     assert len(refusals(proxy)) == 1
 

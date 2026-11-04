@@ -104,7 +104,7 @@ def test_a_kick_moves_the_player_to_the_next_server(make_proxy, lobby, second, c
     upstream.peer.command("kick 0 " + b"go away".hex())
 
     assert spawned(second.accept(), proxy)
-    assert player.wait_text() == "You were kicked from lobby: go away"
+    assert player.wait_text() == "§cYou were kicked from lobby: go away"
     assert player.peer.pending("disconnect") == []
 
 
@@ -116,7 +116,7 @@ def test_a_server_that_drops_the_player_hands_them_on(make_proxy, lobby, second,
     upstream.close()
 
     assert spawned(second.accept(), proxy)
-    assert player.wait_text() == "You were kicked from lobby: An internal server connection error occurred."
+    assert player.wait_text() == "§cYou were kicked from lobby: An internal server connection error occurred."
 
 
 def test_a_server_with_other_blocks_is_refused(make_proxy, lobby, different_blocks, connect):
@@ -127,7 +127,7 @@ def test_a_server_with_other_blocks_is_refused(make_proxy, lobby, different_bloc
     proxy.command(f"send {player.identity.name} second")
 
     refused = different_blocks.accept()
-    assert player.wait_text() == "Unable to connect to second: it has other blocks than the server you joined", (
+    assert player.wait_text() == "§cUnable to connect to second: it has other blocks than the server you joined", (
         proxy.lines[-20:]
     )
     assert refused.wait_closed(3)

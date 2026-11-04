@@ -90,10 +90,10 @@ Awaitable<bool> ConnectionRequestBuilder::connectWithIndication(ConnectionReques
     }
     switch (result->getStatus()) {
     case Status::AlreadyConnected:
-        player.sendMessage(ConnectionMessages::ALREADY_CONNECTED);
+        player.sendErrorMessage(ConnectionMessages::ALREADY_CONNECTED);
         break;
     case Status::ConnectionInProgress:
-        player.sendMessage(ConnectionMessages::IN_PROGRESS);
+        player.sendErrorMessage(ConnectionMessages::IN_PROGRESS);
         break;
     case Status::ServerDisconnected:
         player.handleConnectionException(*self.to_connect_, result->getReason().value_or(std::string{
@@ -225,7 +225,7 @@ void Player::handleKickEvent(BackendServer &server, const std::string &friendly_
         return;
     }
     if (!kicked_from_current && previous_connection) {
-        sendMessage(friendly_reason);
+        sendErrorMessage(friendly_reason);
         return;
     }
     disconnect(DisconnectFailReason::NoReason,
@@ -256,7 +256,7 @@ Awaitable<void> Player::redirect(std::shared_ptr<Player> self, BackendServer &se
             server, result->getReason().value_or(std::string{ConnectionMessages::INTERNAL_SERVER_CONNECTION_ERROR}));
         break;
     case ConnectionRequestBuilder::Status::Success:
-        self->sendMessage(friendly_reason);
+        self->sendErrorMessage(friendly_reason);
         break;
     }
 }
