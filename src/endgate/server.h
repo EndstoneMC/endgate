@@ -20,6 +20,7 @@
 #include "endgate/auth/keys.h"
 #include "endgate/awaitable.h"
 #include "endgate/backend.h"
+#include "endgate/command/manager.h"
 #include "endgate/config.h"
 #include "endgate/console.h"
 #include "endgate/network/http.h"
@@ -65,6 +66,11 @@ public:
     [[nodiscard]] bool isShuttingDown() const;
     [[nodiscard]] static ProxyVersion getVersion();
     [[nodiscard]] Console &getConsoleCommandSource();
+
+    /**
+     * @see com.velocitypowered.api.proxy.ProxyServer#getCommandManager
+     */
+    [[nodiscard]] CommandManager &getCommandManager();
     [[nodiscard]] const ServerListPingHandler &getServerListPingHandler() const;
     [[nodiscard]] const ProxyConfig &getConfiguration() const;
 
@@ -77,6 +83,13 @@ public:
      * The keys online mode checks player tokens against, or nullptr in offline mode.
      */
     [[nodiscard]] MinecraftServiceKeyManager *getMinecraftServiceKeyManager() const { return keys_.get(); }
+
+    /**
+     * Registers a server, or returns the one already registered under its name.
+     *
+     * @see com.velocitypowered.api.proxy.ProxyServer#registerServer
+     */
+    BackendServer &registerServer(ServerInfo info);
 
     /**
      * @see com.velocitypowered.api.proxy.ProxyServer#getServer
@@ -147,7 +160,8 @@ private:
     std::map<std::string, std::unique_ptr<BackendServer>, std::less<>> servers_;
     std::vector<std::unique_ptr<BackendServer>> retired_servers_;
     ConnectionManager cm_;
-    Console console_;
+    CommandManager command_manager_;
+    std::shared_ptr<Console> console_;
     ServerListPingHandler ping_handler_;
     std::shared_ptr<MinecraftServiceKeyManager> keys_;
     std::mutex connections_mutex_;

@@ -63,6 +63,12 @@ add_library(endgate_proxy STATIC
         src/endgate/auth/keys.cpp
         src/endgate/auth/token.cpp
         src/endgate/backend.cpp
+        src/endgate/command/builtin/endgate.cpp
+        src/endgate/command/builtin/glist.cpp
+        src/endgate/command/builtin/send.cpp
+        src/endgate/command/builtin/server.cpp
+        src/endgate/command/builtin/shutdown.cpp
+        src/endgate/command/manager.cpp
         src/endgate/config.cpp
         src/endgate/connection/backend.cpp
         src/endgate/connection/connection.cpp
@@ -95,6 +101,7 @@ target_compile_definitions(endgate_proxy PUBLIC ENDGATE_VERSION="${PROJECT_VERSI
 
 target_link_libraries(endgate_proxy PUBLIC
         bedrock::protocol
+        endgate::brigadier
         endgate::crypto
         endgate::eventloop
         endgate::nethernet
@@ -115,6 +122,7 @@ add_executable(endgate src/main.cpp)
 target_link_libraries(endgate PRIVATE endgate::proxy)
 
 add_subdirectory(tests/unit/auth)
+add_subdirectory(tests/unit/command)
 add_subdirectory(tests/unit/connection)
 add_subdirectory(tests/unit/logging)
 add_subdirectory(tests/unit/network)

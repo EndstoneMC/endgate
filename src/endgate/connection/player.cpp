@@ -160,6 +160,7 @@ std::optional<std::string> Player::getNoServerForVersionMessage()
 void Player::setConnectedServer(std::shared_ptr<ServerConnection> server_connection)
 {
     connected_server_ = std::move(server_connection);
+    current_server_ = connected_server_ ? &connected_server_->getServer() : nullptr;
     try_index_ = 0;
     if (connected_server_ == connection_in_flight_) {
         connection_in_flight_ = nullptr;
@@ -212,6 +213,7 @@ void Player::handleKickEvent(BackendServer &server, const std::string &friendly_
     const auto previous_connection = connected_server_;
     if (kicked_from_current) {
         connected_server_ = nullptr;
+        current_server_ = nullptr;
     }
     if (!isActive()) {
         return;
@@ -295,6 +297,7 @@ void Player::teardown()
     if (const auto in_flight = std::exchange(connection_in_flight_, nullptr)) {
         in_flight->disconnect();
     }
+    current_server_ = nullptr;
     if (const auto server = std::exchange(connected_server_, nullptr)) {
         server->disconnect();
     }

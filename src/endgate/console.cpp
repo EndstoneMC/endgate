@@ -1,13 +1,12 @@
 #include "endgate/console.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
-#include <format>
+#include <exception>
 #include <iostream>
-#include <sstream>
 #include <string>
 
-#include "endgate/connection/player.h"
 #include "endgate/logging/appender.h"
 #include "endgate/logging/manager.h"
 #include "endgate/server.h"
@@ -38,6 +37,22 @@ Console::Console(ProxyServer &server) : server_(server), logger_(LogManager::get
         rx_->bind_key_internal(replxx::Replxx::KEY::control('J'), "commit_line");
         rx_->set_max_history_size(max_history_size);
         rx_->history_load(HISTORY_FILE);
+        rx_->set_completion_callback([this](const std::string &input, int &context_len) {
+            replxx::Replxx::completions_t completions;
+            try {
+                for (const std::string &offer :
+                     server_.getCommandManager().offerSuggestions(shared_from_this(), input)) {
+                    completions.emplace_back(offer);
+                }
+            }
+            catch (const std::exception &e) {
+                logger_.error("An error occurred while trying to perform tab completion: {}", e.what());
+            }
+            const auto word = input.substr(input.find_last_of(' ') + 1);
+            context_len =
+                static_cast<int>(std::ranges::count_if(word, [](unsigned char c) { return (c & 0xC0) != 0x80; }));
+            return completions;
+        });
     }
 }
 
@@ -115,52 +130,18 @@ bool Console::isRunning() const
 
 void Console::runCommand(const std::string &command)
 {
-    if (command == "reload") {
-        sendMessage(server_.reloadConfiguration()
-                        ? "Endgate configuration successfully reloaded."
-                        : "Unable to reload your Endgate configuration. Check the console for more details.");
-        return;
-    }
-    if (command == "shutdown" || command == "end" || command == "stop") {
+    try {
+        if (!server_.getCommandManager().executeImmediatelyAsync(shared_from_this(), command)) {
+            sendMessage("This command does not exist.");
+            return;
+        }
         if (server_.getConfiguration().isLogCommandExecutions()) {
             logger_.info("CONSOLE -> executed command /{}", command);
         }
-        shutdown();
-        return;
     }
-    std::istringstream arguments{command};
-    std::string alias;
-    arguments >> alias;
-    if (alias == "send") {
-        if (server_.getConfiguration().isLogCommandExecutions()) {
-            logger_.info("CONSOLE -> executed command /{}", command);
-        }
-        std::string player_name;
-        std::string server_name;
-        if (!(arguments >> player_name >> server_name)) {
-            sendMessage("/send <player> <server>");
-            return;
-        }
-        auto *const target = server_.getServer(server_name);
-        if (target == nullptr) {
-            sendMessage(std::format("The specified server {} does not exist.", server_name));
-            return;
-        }
-        if (player_name == "all") {
-            for (const auto &player : server_.getAllPlayers()) {
-                player->createConnectionRequest(*target).fireAndForget();
-            }
-            return;
-        }
-        const auto player = server_.getPlayer(player_name);
-        if (!player) {
-            sendMessage(std::format("The specified player {} does not exist.", player_name));
-            return;
-        }
-        player->createConnectionRequest(*target).fireAndForget();
-        return;
+    catch (const std::exception &e) {
+        logger_.error("An error occurred while running this command: {}", e.what());
     }
-    sendMessage("This command does not exist.");
 }
 
 void Console::shutdown()

@@ -33,7 +33,7 @@ def rewrite(proxy, *changes: tuple[str, str]) -> None:
 
 def reload(proxy, outcome: str = RELOADED) -> None:
     before = len(proxy.events(outcome))
-    proxy.command("reload")
+    proxy.command("endgate reload")
     assert proxy.wait_for(outcome, 10) and len(proxy.events(outcome)) > before, proxy.lines[-20:]
 
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -15,6 +16,7 @@
 #include <spdlog/logger.h>
 
 #include "endgate/awaitable.h"
+#include "endgate/command/source.h"
 #include "endgate/connection/connection.h"
 #include "endgate/connection/settings.h"
 #include "endgate/playerlist/playerlist.h"
@@ -168,7 +170,7 @@ private:
  * @see com.velocitypowered.api.proxy.Player
  * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer
  */
-class Player : public std::enable_shared_from_this<Player> {
+class Player : public CommandSource, public std::enable_shared_from_this<Player> {
 public:
     Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection, GameProfile profile = {},
            std::optional<std::string> virtual_host = std::nullopt);
@@ -259,7 +261,26 @@ public:
     /**
      * @see net.kyori.adventure.audience.Audience#sendMessage
      */
-    void sendMessage(std::string_view message);
+    void sendMessage(std::string_view message) override;
+
+    /**
+     * A player has no permission set until a permission provider exists.
+     *
+     * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer#getPermissionValue
+     */
+    [[nodiscard]] Tristate getPermissionValue(const std::string &) const override { return Tristate::Undefined; }
+
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(Player) || CommandSource::isInstanceOf(target);
+    }
+
+    /**
+     * The server the player is connected to, from any thread.
+     *
+     * @see com.velocitypowered.api.proxy.Player#getCurrentServer
+     */
+    [[nodiscard]] const BackendServer *getCurrentServer() const { return current_server_.load(); }
 
     /**
      * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer#disconnect
@@ -333,6 +354,7 @@ private:
     std::shared_ptr<MinecraftConnection> connection_;
     GameProfile profile_;
     std::shared_ptr<ServerConnection> connected_server_;
+    std::atomic<const BackendServer *> current_server_ = nullptr;
     std::shared_ptr<ServerConnection> connection_in_flight_;
     std::optional<std::string> virtual_host_;
     std::optional<std::vector<std::string>> servers_to_try_;

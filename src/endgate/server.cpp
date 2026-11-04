@@ -12,6 +12,11 @@
 #include <asio/detached.hpp>
 #include <asio/ip/address.hpp>
 
+#include "endgate/command/builtin/endgate.h"
+#include "endgate/command/builtin/glist.h"
+#include "endgate/command/builtin/send.h"
+#include "endgate/command/builtin/server.h"
+#include "endgate/command/builtin/shutdown.h"
 #include "endgate/connection/backend.h"
 #include "endgate/connection/player.h"
 #include "endgate/logging/manager.h"
@@ -23,7 +28,9 @@ namespace {
 constexpr auto CONFIG_PATH = "endgate.toml";
 }  // namespace
 
-ProxyServer::ProxyServer() : logger_(LogManager::getLogger(*this)), cm_(*this), console_(*this), ping_handler_(*this)
+ProxyServer::ProxyServer()
+    : logger_(LogManager::getLogger(*this)), cm_(*this), console_(std::make_shared<Console>(*this)),
+      ping_handler_(*this)
 {
     configuration_ = configurations_.emplace_back(std::make_unique<ProxyConfig>()).get();
 }
@@ -32,6 +39,16 @@ bool ProxyServer::start()
 {
     const auto version = getVersion();
     logger_.info("Starting {} {}...", version.getName(), version.getVersion());
+
+    const auto endgate_command = EndgateCommand::create(*this);
+    command_manager_.registerCommand(CommandManager::metaBuilder(endgate_command).build(), endgate_command);
+    const auto server_command = ServerCommand::create(*this);
+    command_manager_.registerCommand(CommandManager::metaBuilder(server_command).build(), server_command);
+    const auto shutdown_command = ShutdownCommand::command(*this);
+    command_manager_.registerCommand(CommandManager::metaBuilder(shutdown_command).aliases({"end", "stop"}).build(),
+                                     shutdown_command);
+    GlistCommand(*this).registerCommand();
+    SendCommand(*this).registerCommand();
 
     auto configuration = ProxyConfig::read(CONFIG_PATH);
     if (!configuration) {
@@ -257,9 +274,14 @@ ProxyVersion ProxyServer::getVersion()
     return {"Endgate", "EndstoneMC", ENDGATE_VERSION};
 }
 
+CommandManager &ProxyServer::getCommandManager()
+{
+    return command_manager_;
+}
+
 Console &ProxyServer::getConsoleCommandSource()
 {
-    return console_;
+    return *console_;
 }
 
 const ServerListPingHandler &ProxyServer::getServerListPingHandler() const
@@ -270,6 +292,14 @@ const ServerListPingHandler &ProxyServer::getServerListPingHandler() const
 const ProxyConfig &ProxyServer::getConfiguration() const
 {
     return *configuration_.load();
+}
+
+BackendServer &ProxyServer::registerServer(ServerInfo info)
+{
+    const std::scoped_lock lock(servers_mutex_);
+    std::string name = info.getName();
+    const auto registered = servers_.try_emplace(std::move(name), std::make_unique<BackendServer>(std::move(info)));
+    return *registered.first->second;
 }
 
 BackendServer *ProxyServer::getServer(std::string_view name)

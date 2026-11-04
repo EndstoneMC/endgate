@@ -1,11 +1,14 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <replxx.hxx>
 #include <string>
 #include <string_view>
 
 #include <spdlog/logger.h>
+
+#include "endgate/command/source.h"
 
 namespace endgate {
 
@@ -16,13 +19,25 @@ class ProxyServer;
  *
  * @see com.velocitypowered.proxy.console.VelocityConsole
  */
-class Console {
+class Console final : public CommandSource, public std::enable_shared_from_this<Console> {
 public:
     explicit Console(ProxyServer &server);
     ~Console();
 
     void start();
-    void sendMessage(std::string_view message);
+    void sendMessage(std::string_view message) override;
+
+    /**
+     * The console has every permission until a permission provider exists.
+     *
+     * @see com.velocitypowered.proxy.console.VelocityConsole#getPermissionValue
+     */
+    [[nodiscard]] Tristate getPermissionValue(const std::string &) const override { return Tristate::True; }
+
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(Console) || CommandSource::isInstanceOf(target);
+    }
     void printAbove(std::string_view message);
 
 private:

@@ -7,6 +7,7 @@ paths:
 
 - Target C++23. Reach for ranges, `std::expected`, `std::span`, `constexpr` and deducing `this` instead of older idioms or hand-rolled equivalents.
 - Value semantics and RAII: no raw owning pointers, no manual resource cleanup.
+- Never downcast one of endgate's own types with `dynamic_cast` or `static_cast`, even where a check before it makes the cast safe. The base of a hierarchy narrowed at runtime carries Endstone's `is<T>()` and `as<T>()`, simplified: a virtual `isInstanceOf(const std::type_info &)` each subclass answers, as `CommandSource` does. Lift them into a shared `Object` base only once a second hierarchy needs them. Exceptions are standard types and keep their `dynamic_cast`.
 - Create a shared object with `std::make_shared`, never `std::shared_ptr<T>(new T(...))`. When the constructor must stay private, use a passkey: a public constructor that takes a private tag type only the class can make.
 - A `constexpr` used by one function belongs inside it. Lift it to namespace scope once a second function needs it.
 - Resolve shared services once and hold them. A class that logs takes a `spdlog::logger &` member initialised in its constructor, mirroring Velocity's `private static final Logger logger`. A copyable value type, where a reference member would break assignment, resolves its logger once through a private static `logger()` instead. Never initialise a logger at namespace or static-member scope, which runs before `main`. Never look a logger, or anything else, up by name in a method that runs more than once.
