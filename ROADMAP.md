@@ -78,7 +78,6 @@ Gate: each item works on a real client.
 - [x] enable-player-address-logging, config reload, shutdown kick
 - [x] bStats
 - [x] Dual-stack default bind
-- [ ] Transport detection races the NetherNet and RakNet probes
 - [ ] PROXY protocol v2 (researched, waits for decisions)
 - [ ] Packet limiter (Velocity has none)
 - [ ] Find why a client drops a Disconnect sent right after LoginSuccess (avoided by refusing before it)
