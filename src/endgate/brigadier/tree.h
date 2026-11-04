@@ -1,0 +1,350 @@
+#pragma once
+
+#include <algorithm>
+#include <functional>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+#include "endgate/brigadier/arguments.h"
+#include "endgate/brigadier/context.h"
+#include "endgate/brigadier/exceptions.h"
+#include "endgate/brigadier/reader.h"
+#include "endgate/brigadier/suggestion.h"
+
+namespace endgate::brigadier {
+
+template <typename S>
+class LiteralArgumentBuilder;
+
+template <typename S>
+class RequiredArgumentBuilder;
+
+template <typename S>
+class RootCommandNode;
+
+template <typename S>
+class LiteralCommandNode;
+
+template <typename S>
+class ArgumentCommandNode;
+
+template <typename S>
+using Predicate = std::function<bool(const S &)>;
+
+/**
+ * A node of the command tree, which parses a part of the input and holds the command that runs at it.
+ *
+ * @see com.mojang.brigadier.tree.CommandNode
+ */
+template <typename S>
+class CommandNode : public std::enable_shared_from_this<CommandNode<S>> {
+public:
+    CommandNode(const CommandNode &) = delete;
+    CommandNode &operator=(const CommandNode &) = delete;
+    virtual ~CommandNode() = default;
+
+    [[nodiscard]] const Command<S> &getCommand() const { return command_; }
+    [[nodiscard]] const std::vector<std::shared_ptr<CommandNode>> &getChildren() const { return children_; }
+    [[nodiscard]] CommandNode *getRedirect() const { return redirect_; }
+    [[nodiscard]] const RedirectModifier<S> &getRedirectModifier() const { return modifier_; }
+    [[nodiscard]] bool isFork() const { return forks_; }
+
+    [[nodiscard]] std::shared_ptr<CommandNode> getChild(const std::string &name) const
+    {
+        const auto child = child_by_name_.find(name);
+        return child == child_by_name_.end() ? nullptr : child->second;
+    }
+
+    [[nodiscard]] bool canUse(const S &source) const { return requirement_(source); }
+
+    void addChild(const std::shared_ptr<CommandNode> &node)
+    {
+        if (dynamic_cast<RootCommandNode<S> *>(node.get()) != nullptr) {
+            throw std::logic_error("Cannot add a RootCommandNode as a child to any other CommandNode");
+        }
+        if (const std::shared_ptr<CommandNode> child = getChild(node->getName())) {
+            if (node->getCommand()) {
+                child->command_ = node->getCommand();
+            }
+            for (const std::shared_ptr<CommandNode> &grandchild : node->getChildren()) {
+                child->addChild(grandchild);
+            }
+        }
+        else {
+            children_.push_back(node);
+            child_by_name_.emplace(node->getName(), node);
+            if (auto literal = std::dynamic_pointer_cast<LiteralCommandNode<S>>(node)) {
+                literals_.emplace(node->getName(), std::move(literal));
+            }
+            else if (dynamic_cast<ArgumentCommandNode<S> *>(node.get()) != nullptr) {
+                arguments_.push_back(node);
+            }
+        }
+    }
+
+    void removeChildByName(const std::string &name)
+    {
+        std::erase_if(children_, [&](const std::shared_ptr<CommandNode> &child) { return child->getName() == name; });
+        child_by_name_.erase(name);
+        literals_.erase(name);
+        std::erase_if(arguments_, [&](const std::shared_ptr<CommandNode> &child) { return child->getName() == name; });
+    }
+
+    [[nodiscard]] virtual bool isValidInput(const std::string &input) const = 0;
+
+    [[nodiscard]] const Predicate<S> &getRequirement() const { return requirement_; }
+    [[nodiscard]] virtual std::string getName() const = 0;
+    [[nodiscard]] virtual std::string getUsageText() const = 0;
+    virtual void parse(StringReader &reader, CommandContextBuilder<S> &context_builder) = 0;
+    [[nodiscard]] virtual Suggestions listSuggestions(const CommandContext<S> &context,
+                                                      SuggestionsBuilder &builder) const = 0;
+    [[nodiscard]] virtual std::vector<std::string> getExamples() const = 0;
+
+    [[nodiscard]] std::vector<std::shared_ptr<CommandNode>> getRelevantNodes(StringReader &input) const
+    {
+        if (!literals_.empty()) {
+            const int cursor = input.getCursor();
+            while (input.canRead() && input.peek() != ' ') {
+                input.skip();
+            }
+            const std::string text = input.getString().substr(cursor, input.getCursor() - cursor);
+            input.setCursor(cursor);
+            const auto literal = literals_.find(text);
+            if (literal != literals_.end()) {
+                return {literal->second};
+            }
+        }
+        return arguments_;
+    }
+
+    [[nodiscard]] int compareTo(const CommandNode &o) const
+    {
+        const bool literal = dynamic_cast<const LiteralCommandNode<S> *>(this) != nullptr;
+        const bool other_literal = dynamic_cast<const LiteralCommandNode<S> *>(&o) != nullptr;
+        if (literal == other_literal) {
+            return getSortedKey().compare(o.getSortedKey());
+        }
+        return other_literal ? 1 : -1;
+    }
+
+protected:
+    CommandNode(Command<S> command, Predicate<S> requirement, CommandNode *redirect, RedirectModifier<S> modifier,
+                bool forks)
+        : requirement_(std::move(requirement)), redirect_(redirect), modifier_(std::move(modifier)), forks_(forks),
+          command_(std::move(command))
+    {
+    }
+
+    [[nodiscard]] virtual std::string getSortedKey() const = 0;
+
+private:
+    std::vector<std::shared_ptr<CommandNode>> children_;
+    std::unordered_map<std::string, std::shared_ptr<CommandNode>> child_by_name_;
+    std::unordered_map<std::string, std::shared_ptr<LiteralCommandNode<S>>> literals_;
+    std::vector<std::shared_ptr<CommandNode>> arguments_;
+    Predicate<S> requirement_;
+    CommandNode *redirect_;
+    RedirectModifier<S> modifier_;
+    bool forks_;
+    Command<S> command_;
+};
+
+/**
+ * @see com.mojang.brigadier.tree.RootCommandNode
+ */
+template <typename S>
+class RootCommandNode : public CommandNode<S> {
+public:
+    RootCommandNode() : CommandNode<S>({}, [](const S &) { return true; }, nullptr, {}, false) {}
+
+    [[nodiscard]] std::string getName() const override { return ""; }
+    [[nodiscard]] std::string getUsageText() const override { return ""; }
+    void parse(StringReader &, CommandContextBuilder<S> &) override {}
+    [[nodiscard]] Suggestions listSuggestions(const CommandContext<S> &, SuggestionsBuilder &) const override
+    {
+        return Suggestions::empty();
+    }
+    [[nodiscard]] bool isValidInput(const std::string &) const override { return false; }
+    [[nodiscard]] std::vector<std::string> getExamples() const override { return {}; }
+    [[nodiscard]] std::string toString() const { return "<root>"; }
+
+protected:
+    [[nodiscard]] std::string getSortedKey() const override { return ""; }
+};
+
+/**
+ * @see com.mojang.brigadier.tree.LiteralCommandNode
+ */
+template <typename S>
+class LiteralCommandNode : public CommandNode<S> {
+public:
+    LiteralCommandNode(std::string literal, Command<S> command, Predicate<S> requirement, CommandNode<S> *redirect,
+                       RedirectModifier<S> modifier, bool forks)
+        : CommandNode<S>(std::move(command), std::move(requirement), redirect, std::move(modifier), forks),
+          literal_(std::move(literal)), literal_lower_case_(SuggestionsBuilder::toLowerCase(literal_))
+    {
+    }
+
+    [[nodiscard]] const std::string &getLiteral() const { return literal_; }
+    [[nodiscard]] std::string getName() const override { return literal_; }
+
+    void parse(StringReader &reader, CommandContextBuilder<S> &context_builder) override
+    {
+        const int start = reader.getCursor();
+        if (const int end = parse(reader); end > -1) {
+            context_builder.withNode(this->shared_from_this(), StringRange::between(start, end));
+            return;
+        }
+        throw CommandSyntaxException::BUILT_IN_EXCEPTIONS.literalIncorrect().createWithContext(reader, literal_);
+    }
+
+    [[nodiscard]] Suggestions listSuggestions(const CommandContext<S> &, SuggestionsBuilder &builder) const override
+    {
+        if (literal_lower_case_.starts_with(builder.getRemainingLowerCase())) {
+            return builder.suggest(literal_).build();
+        }
+        return Suggestions::empty();
+    }
+
+    [[nodiscard]] bool isValidInput(const std::string &input) const override
+    {
+        StringReader reader(input);
+        return parse(reader) > -1;
+    }
+
+    [[nodiscard]] std::string getUsageText() const override { return literal_; }
+
+    [[nodiscard]] LiteralArgumentBuilder<S> createBuilder() const
+    {
+        LiteralArgumentBuilder<S> builder = LiteralArgumentBuilder<S>::literal(literal_);
+        builder.requires_(this->getRequirement());
+        builder.forward(this->getRedirect(), this->getRedirectModifier(), this->isFork());
+        if (this->getCommand()) {
+            builder.executes(this->getCommand());
+        }
+        return builder;
+    }
+
+    [[nodiscard]] std::vector<std::string> getExamples() const override { return {literal_}; }
+    [[nodiscard]] std::string toString() const { return "<literal " + literal_ + ">"; }
+
+protected:
+    [[nodiscard]] std::string getSortedKey() const override { return literal_; }
+
+private:
+    [[nodiscard]] int parse(StringReader &reader) const
+    {
+        const int start = reader.getCursor();
+        if (reader.canRead(static_cast<int>(literal_.length()))) {
+            const int end = start + static_cast<int>(literal_.length());
+            if (reader.getString().compare(start, literal_.length(), literal_) == 0) {
+                reader.setCursor(end);
+                if (!reader.canRead() || reader.peek() == ' ') {
+                    return end;
+                }
+                reader.setCursor(start);
+            }
+        }
+        return -1;
+    }
+
+    std::string literal_;
+    std::string literal_lower_case_;
+};
+
+/**
+ * @see com.mojang.brigadier.tree.ArgumentCommandNode
+ */
+template <typename S>
+class ArgumentCommandNode : public CommandNode<S> {
+public:
+    ArgumentCommandNode(std::string name, std::shared_ptr<const ArgumentType> type, Command<S> command,
+                        Predicate<S> requirement, CommandNode<S> *redirect, RedirectModifier<S> modifier, bool forks,
+                        SuggestionProvider<S> custom_suggestions)
+        : CommandNode<S>(std::move(command), std::move(requirement), redirect, std::move(modifier), forks),
+          name_(std::move(name)), type_(std::move(type)), custom_suggestions_(std::move(custom_suggestions))
+    {
+    }
+
+    [[nodiscard]] const std::shared_ptr<const ArgumentType> &getType() const { return type_; }
+    [[nodiscard]] std::string getName() const override { return name_; }
+    [[nodiscard]] std::string getUsageText() const override
+    {
+        return USAGE_ARGUMENT_OPEN + name_ + USAGE_ARGUMENT_CLOSE;
+    }
+    [[nodiscard]] const SuggestionProvider<S> &getCustomSuggestions() const { return custom_suggestions_; }
+
+    void parse(StringReader &reader, CommandContextBuilder<S> &context_builder) override
+    {
+        const int start = reader.getCursor();
+        ArgumentValue result = type_->parse(reader);
+        const ParsedArgument parsed(start, reader.getCursor(), std::move(result));
+        context_builder.withArgument(name_, parsed);
+        context_builder.withNode(this->shared_from_this(), parsed.getRange());
+    }
+
+    [[nodiscard]] Suggestions listSuggestions(const CommandContext<S> &context,
+                                              SuggestionsBuilder &builder) const override
+    {
+        if (!custom_suggestions_) {
+            return Suggestions::empty();
+        }
+        return custom_suggestions_(context, builder);
+    }
+
+    [[nodiscard]] RequiredArgumentBuilder<S> createBuilder() const
+    {
+        RequiredArgumentBuilder<S> builder = RequiredArgumentBuilder<S>::argument(name_, type_);
+        builder.requires_(this->getRequirement());
+        builder.forward(this->getRedirect(), this->getRedirectModifier(), this->isFork());
+        builder.suggests(custom_suggestions_);
+        if (this->getCommand()) {
+            builder.executes(this->getCommand());
+        }
+        return builder;
+    }
+
+    [[nodiscard]] bool isValidInput(const std::string &input) const override
+    {
+        try {
+            StringReader reader(input);
+            std::ignore = type_->parse(reader);
+            return !reader.canRead() || reader.peek() == ' ';
+        }
+        catch (const CommandSyntaxException &) {
+            return false;
+        }
+    }
+
+    [[nodiscard]] std::vector<std::string> getExamples() const override { return type_->getExamples(); }
+    [[nodiscard]] std::string toString() const { return "<argument " + name_ + ":" + type_->toString() + ">"; }
+
+protected:
+    [[nodiscard]] std::string getSortedKey() const override { return name_; }
+
+private:
+    static constexpr const char *USAGE_ARGUMENT_OPEN = "<";
+    static constexpr const char *USAGE_ARGUMENT_CLOSE = ">";
+
+    std::string name_;
+    std::shared_ptr<const ArgumentType> type_;
+    SuggestionProvider<S> custom_suggestions_;
+};
+
+template <typename S>
+CommandContextBuilder<S> &CommandContextBuilder<S>::withNode(const std::shared_ptr<CommandNode<S>> &node,
+                                                             const StringRange &range)
+{
+    nodes_.emplace_back(node, range);
+    range_ = StringRange::encompassing(range_, range);
+    modifier_ = node->getRedirectModifier();
+    forks_ = node->isFork();
+    return *this;
+}
+
+}  // namespace endgate::brigadier
