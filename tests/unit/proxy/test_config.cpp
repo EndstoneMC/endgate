@@ -30,6 +30,15 @@ protected:
         return *config;
     }
 
+    [[nodiscard]] ProxyConfig readDocument(const std::string &document) const
+    {
+        const auto path = directory_ / "endgate.toml";
+        std::ofstream{path} << document;
+        auto config = ProxyConfig::read(path);
+        EXPECT_TRUE(config.has_value());
+        return *config;
+    }
+
     std::filesystem::path directory_;
 };
 
@@ -60,6 +69,41 @@ TEST_F(ProxyConfigTest, AcceptsLoginRatelimitOfZero)
 TEST_F(ProxyConfigTest, RejectsNegativeLoginRatelimit)
 {
     EXPECT_FALSE(readAdvanced("login-ratelimit = -1\n").validate());
+}
+
+TEST_F(ProxyConfigTest, ForcedHostsDefaultToTheExampleHost)
+{
+    auto config = ProxyConfig::read(directory_ / "endgate.toml");
+    ASSERT_TRUE(config.has_value());
+    EXPECT_EQ(config->getForcedHosts().at("lobby.example.com"), std::vector<std::string>{"lobby"});
+    EXPECT_TRUE(config->validate());
+}
+
+TEST_F(ProxyConfigTest, ForcedHostsAreLowercasedAndTakeAStringOrAList)
+{
+    const auto config = readDocument(
+        "[servers]\nlobby = \"127.0.0.1:1\"\nfactions = \"127.0.0.1:2\"\ntry = [\"lobby\"]\n"
+        "[forced-hosts]\n\"Factions.Example.COM\" = \"factions\"\n\"play.example.com\" = [\"factions\", \"lobby\"]\n");
+    EXPECT_EQ(config.getForcedHosts().size(), 2U);
+    EXPECT_EQ(config.getForcedHosts().at("factions.example.com"), std::vector<std::string>{"factions"});
+    EXPECT_EQ(config.getForcedHosts().at("play.example.com"), (std::vector<std::string>{"factions", "lobby"}));
+    EXPECT_TRUE(config.validate());
+}
+
+TEST_F(ProxyConfigTest, AnEmptyForcedHostsSectionRemovesTheDefaults)
+{
+    const auto config = readDocument("[forced-hosts]\n");
+    EXPECT_TRUE(config.getForcedHosts().empty());
+}
+
+TEST_F(ProxyConfigTest, RejectsAForcedHostNamingAnUnknownServer)
+{
+    EXPECT_FALSE(readDocument("[forced-hosts]\n\"play.example.com\" = [\"nowhere\"]\n").validate());
+}
+
+TEST_F(ProxyConfigTest, RejectsAForcedHostWithoutServers)
+{
+    EXPECT_FALSE(readDocument("[forced-hosts]\n\"play.example.com\" = []\n").validate());
 }
 
 }  // namespace endgate

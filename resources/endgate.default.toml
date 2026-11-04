@@ -34,6 +34,13 @@ try = [
     "lobby"
 ]
 
+[forced-hosts]
+# Configure your forced hosts here. A player whose client data names one of these hosts as the
+# server address is sent to the first server in its list that runs their version, before try.
+"lobby.example.com" = [
+    "lobby"
+]
+
 [advanced]
 # How large a Minecraft packet has to be before we compress it. Setting this to zero will
 # compress all packets, and setting it to -1 will disable compression entirely.

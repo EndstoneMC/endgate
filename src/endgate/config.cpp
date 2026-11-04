@@ -1,8 +1,11 @@
 #include "endgate/config.h"
 
+#include <algorithm>
+#include <cctype>
 #include <format>
 #include <fstream>
 #include <limits>
+#include <optional>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -80,6 +83,7 @@ struct Document {
     bool online_mode = false;
     bool kick_existing_players = false;
     std::map<std::string, std::variant<std::string, std::vector<std::string>>> servers;
+    std::optional<std::map<std::string, std::variant<std::string, std::vector<std::string>>>> forced_hosts;
     Advanced advanced;
     Query query;
     Debug debug;
@@ -96,6 +100,7 @@ struct Document {
             "online-mode", &T::online_mode,                      //
             "kick-existing-players", &T::kick_existing_players,  //
             "servers", &T::servers,                              //
+            "forced-hosts", &T::forced_hosts,                    //
             "advanced", &T::advanced,                            //
             "query", &T::query,                                  //
             "debug", &T::debug);
@@ -126,6 +131,7 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
 
     Document document = defaults;
     document.servers.clear();
+    document.forced_hosts.reset();
     std::string buffer;
     if (size > 0) {
         if (const auto ec = glz::read_file_toml(document, path.string(), buffer)) {
@@ -134,6 +140,9 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
     }
     if (document.servers.empty()) {
         document.servers = defaults.servers;
+    }
+    if (!document.forced_hosts) {
+        document.forced_hosts = defaults.forced_hosts;
     }
 
     ProxyConfig config;
@@ -148,6 +157,16 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
         }
         else if (name == "try") {
             config.attempt_connection_order_ = std::get<std::vector<std::string>>(entry);
+        }
+    }
+    for (const auto &[host, entry] : *document.forced_hosts) {
+        std::string lowered = host;
+        std::ranges::transform(lowered, lowered.begin(), [](unsigned char c) { return std::tolower(c); });
+        if (const auto *server = std::get_if<std::string>(&entry)) {
+            config.forced_hosts_[lowered] = {*server};
+        }
+        else {
+            config.forced_hosts_[lowered] = std::get<std::vector<std::string>>(entry);
         }
     }
     config.compression_threshold_ = document.advanced.compression_threshold;
@@ -233,6 +252,19 @@ bool ProxyConfig::validate() const
             valid = false;
         }
     }
+    for (const auto &[host, servers] : forced_hosts_) {
+        if (servers.empty()) {
+            logger().error("Forced host '{}' does not contain any servers", host);
+            valid = false;
+            continue;
+        }
+        for (const auto &name : servers) {
+            if (!servers_.contains(name)) {
+                logger().error("Server '{}' for forced host '{}' does not exist", name, host);
+                valid = false;
+            }
+        }
+    }
     return valid;
 }
 
@@ -269,6 +301,11 @@ const std::map<std::string, std::string> &ProxyConfig::getServers() const
 const std::vector<std::string> &ProxyConfig::getAttemptConnectionOrder() const
 {
     return attempt_connection_order_;
+}
+
+const std::map<std::string, std::vector<std::string>> &ProxyConfig::getForcedHosts() const
+{
+    return forced_hosts_;
 }
 
 int ProxyConfig::getCompressionThreshold() const

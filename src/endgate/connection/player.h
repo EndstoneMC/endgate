@@ -170,12 +170,20 @@ private:
  */
 class Player : public std::enable_shared_from_this<Player> {
 public:
-    Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection, GameProfile profile = {});
+    Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection, GameProfile profile = {},
+           std::optional<std::string> virtual_host = std::nullopt);
 
     /**
      * @see com.velocitypowered.api.proxy.Player#getGameProfile
      */
     [[nodiscard]] const GameProfile &getGameProfile() const { return profile_; }
+
+    /**
+     * The host the player connected through, lowercased and without its port.
+     *
+     * @see com.velocitypowered.api.proxy.InboundConnection#getVirtualHost
+     */
+    [[nodiscard]] const std::optional<std::string> &getVirtualHost() const { return virtual_host_; }
 
     /**
      * @see com.velocitypowered.api.proxy.Player#getUsername
@@ -310,6 +318,8 @@ public:
 private:
     friend class ConnectionRequestBuilder;
 
+    [[nodiscard]] const std::vector<std::string> &getServersToTry();
+
     /**
      * @see com.velocitypowered.proxy.connection.client.ConnectedPlayer#handleConnectionException(RegisteredServer,
      * Component, Component, boolean)
@@ -324,6 +334,8 @@ private:
     GameProfile profile_;
     std::shared_ptr<ServerConnection> connected_server_;
     std::shared_ptr<ServerConnection> connection_in_flight_;
+    std::optional<std::string> virtual_host_;
+    std::optional<std::vector<std::string>> servers_to_try_;
     std::size_t try_index_ = 0;
     std::optional<std::vector<std::string>> applied_resource_packs_;
     ClientSettings settings_;

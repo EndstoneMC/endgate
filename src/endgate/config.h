@@ -29,6 +29,7 @@ public:
     [[nodiscard]] bool isOnlineModeKickExistingPlayers() const;
     [[nodiscard]] const std::map<std::string, std::string> &getServers() const;
     [[nodiscard]] const std::vector<std::string> &getAttemptConnectionOrder() const;
+    [[nodiscard]] const std::map<std::string, std::vector<std::string>> &getForcedHosts() const;
     [[nodiscard]] int getCompressionThreshold() const;
     [[nodiscard]] int getCompressionLevel() const;
     [[nodiscard]] int getLoginRatelimit() const;
@@ -56,6 +57,7 @@ private:
     bool kick_existing_players_ = false;
     std::map<std::string, std::string> servers_;
     std::vector<std::string> attempt_connection_order_;
+    std::map<std::string, std::vector<std::string>> forced_hosts_;
     int compression_threshold_ = 0;
     int compression_level_ = 0;
     int login_ratelimit_ = 0;

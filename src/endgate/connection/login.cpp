@@ -1,6 +1,8 @@
 #include "endgate/connection/login.h"
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstddef>
 #include <memory>
 #include <span>
@@ -35,10 +37,12 @@ struct AuthenticationInfo {
 
 struct ClientDataName {
     std::optional<std::string> third_party_name;
+    std::optional<std::string> server_address;
 
     struct glaze {
         using T = ClientDataName;
-        static constexpr auto value = glz::object("ThirdPartyName", &T::third_party_name);
+        static constexpr auto value =
+            glz::object("ThirdPartyName", &T::third_party_name, "ServerAddress", &T::server_address);
     };
 };
 
@@ -176,6 +180,7 @@ bool InitialLoginSessionHandler::handle(const bp::LoginPacket &packet)
                                                 : UuidUtils::generateXuidPlayerUuid(identity->getXuid());
     profile_ = GameProfile{
         .id = id, .xuid = identity->getXuid(), .name = std::move(name), .client_data = request->client_data.claims};
+    virtual_host_ = client_data.server_address.transform(cleanVhost);
 
     if (keys == nullptr || connection_->isTransportEncrypted()) {
         finishLogin(std::move(*profile_));
@@ -232,13 +237,34 @@ void InitialLoginSessionHandler::handleUnknown(ByteBufView)
 
 void InitialLoginSessionHandler::finishLogin(GameProfile profile)
 {
-    connection_->setSessionHandler(std::make_shared<AuthSessionHandler>(server_, connection_, std::move(profile)));
+    connection_->setSessionHandler(
+        std::make_shared<AuthSessionHandler>(server_, connection_, std::move(profile), std::move(virtual_host_)));
+}
+
+std::string InitialLoginSessionHandler::cleanVhost(std::string_view address)
+{
+    std::string cleaned{address.substr(0, address.find('\0'))};
+    if (const auto scheme = cleaned.find("://"); scheme != std::string::npos) {
+        cleaned.erase(0, scheme + 3);
+    }
+    if (cleaned.starts_with('[')) {
+        cleaned.erase(0, 1);
+        cleaned.erase(std::min(cleaned.find(']'), cleaned.size()));
+    }
+    else {
+        cleaned.erase(std::min(cleaned.find(':'), cleaned.size()));
+    }
+    if (!cleaned.empty() && cleaned.back() == '.') {
+        cleaned.pop_back();
+    }
+    std::ranges::transform(cleaned, cleaned.begin(), [](unsigned char c) { return std::tolower(c); });
+    return cleaned;
 }
 
 AuthSessionHandler::AuthSessionHandler(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection,
-                                       GameProfile profile)
+                                       GameProfile profile, std::optional<std::string> virtual_host)
     : server_(server), logger_(LogManager::getLogger(*this)), connection_(std::move(connection)),
-      profile_(std::move(profile))
+      profile_(std::move(profile)), virtual_host_(std::move(virtual_host))
 {
 }
 
@@ -246,7 +272,7 @@ void AuthSessionHandler::activated()
 {
     constexpr auto already_connected = "You are already connected to this proxy!";
 
-    const auto player = std::make_shared<Player>(server_, connection_, std::move(profile_));
+    const auto player = std::make_shared<Player>(server_, connection_, std::move(profile_), std::move(virtual_host_));
     if (!server_.canRegisterConnection(*player) || !server_.registerConnection(player)) {
         connection_->closeWith(DisconnectFailReason::NoReason, already_connected);
         return;

@@ -105,16 +105,30 @@ Awaitable<bool> ConnectionRequestBuilder::connectWithIndication(ConnectionReques
     co_return result->isSuccessful();
 }
 
-Player::Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection, GameProfile profile)
+Player::Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection, GameProfile profile,
+               std::optional<std::string> virtual_host)
     : server_(server), logger_(LogManager::getLogger(*this)), connection_(std::move(connection)),
-      profile_(std::move(profile)), player_list_(*connection_)
+      profile_(std::move(profile)), virtual_host_(std::move(virtual_host)), player_list_(*connection_)
 {
+}
+
+const std::vector<std::string> &Player::getServersToTry()
+{
+    if (!servers_to_try_) {
+        const auto &forced_hosts = server_.getConfiguration().getForcedHosts();
+        const auto forced = forced_hosts.find(virtual_host_.value_or(""));
+        servers_to_try_ = forced != forced_hosts.end() ? forced->second : std::vector<std::string>{};
+    }
+    if (servers_to_try_->empty()) {
+        servers_to_try_ = server_.getConfiguration().getAttemptConnectionOrder();
+    }
+    return *servers_to_try_;
 }
 
 BackendServer *Player::getNextServerToTry(const BackendServer *current)
 {
     const auto protocol = connection_->getProtocolVersion().getProtocol();
-    const auto &servers_to_try = server_.getConfiguration().getAttemptConnectionOrder();
+    const auto &servers_to_try = getServersToTry();
     for (auto i = try_index_; i < servers_to_try.size(); ++i) {
         auto *const to_try = server_.getServer(servers_to_try[i]);
         if ((connected_server_ && &connected_server_->getServer() == to_try) ||
@@ -130,7 +144,7 @@ BackendServer *Player::getNextServerToTry(const BackendServer *current)
 
 std::optional<std::string> Player::getNoServerForVersionMessage()
 {
-    const auto &servers_to_try = server_.getConfiguration().getAttemptConnectionOrder();
+    const auto &servers_to_try = getServersToTry();
     const auto protocol = connection_->getProtocolVersion().getProtocol();
     const auto refuses = [&](const std::string &name) {
         auto *const server = server_.getServer(name);

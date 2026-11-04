@@ -167,7 +167,9 @@ class PlayerIdentity:
         )
         return path
 
-    def connection_request(self, services: Services | None = None, token: str | None = None) -> bytes:
+    def connection_request(
+        self, services: Services | None = None, token: str | None = None, server_address: str | None = None
+    ) -> bytes:
         """The login's payload: its authentication info and its client data, each behind a 32-bit length."""
         if token is not None:
             authentication = {"AuthenticationType": 0, "Token": token}
@@ -180,7 +182,12 @@ class PlayerIdentity:
         client_data = sign_token(
             self.key,
             {"x5u": self.cpk},
-            {"ThirdPartyName": self.name, "GameVersion": "1.26.60", "DeviceModel": "EndgateTest"},
+            {
+                "ThirdPartyName": self.name,
+                "GameVersion": "1.26.60",
+                "DeviceModel": "EndgateTest",
+                **({"ServerAddress": server_address} if server_address is not None else {}),
+            },
         )
         parts = [json.dumps(authentication).encode(), client_data.encode()]
         return b"".join(struct.pack("<I", len(part)) + part for part in parts)
@@ -419,7 +426,8 @@ def make_player(
 ) -> Player:
     """Connects to the proxy and starts the login; wait_login says whether it succeeded."""
     identity = options.pop("identity", None) or PlayerIdentity()
-    request = options.pop("request", None) or identity.connection_request(services)
+    server_address = options.pop("server_address", None)
+    request = options.pop("request", None) or identity.connection_request(services, server_address=server_address)
     key_path = identity.write_key(tmp_path / f"{identity.name}-{id(identity)}.pem")
     link = connect_raknet(proxy) if transport == "raknet" else connect_nethernet(proxy)
     return Player(link, identity, request, key_path, **options)

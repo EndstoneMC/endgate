@@ -51,6 +51,14 @@ public:
 
     void connected() override {}
     bool handle(const bp::LoginPacket &packet) override;
+
+    /**
+     * Cleans the specified virtual host: the host of the client data's ServerAddress, lowercased and without its
+     * port or trailing period.
+     *
+     * @see com.velocitypowered.proxy.connection.client.HandshakeSessionHandler#cleanVhost
+     */
+    [[nodiscard]] static std::string cleanVhost(std::string_view address);
     bool handle(const bp::ClientToServerHandshakePacket &packet) override;
     void handleUnknown(ByteBufView packet) override;
     void disconnected() override {}
@@ -63,6 +71,7 @@ private:
     std::shared_ptr<MinecraftConnection> connection_;
     std::optional<GameServerToken> offer_identity_;
     std::optional<GameProfile> profile_;
+    std::optional<std::string> virtual_host_;
 };
 
 /**
@@ -73,7 +82,8 @@ private:
  */
 class AuthSessionHandler final : public MinecraftSessionHandler {
 public:
-    AuthSessionHandler(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection, GameProfile profile);
+    AuthSessionHandler(ProxyServer &server, std::shared_ptr<MinecraftConnection> connection, GameProfile profile,
+                       std::optional<std::string> virtual_host = std::nullopt);
 
     void activated() override;
     void connected() override {}
@@ -85,6 +95,7 @@ private:
     spdlog::logger &logger_;
     std::shared_ptr<MinecraftConnection> connection_;
     GameProfile profile_;
+    std::optional<std::string> virtual_host_;
 };
 
 }  // namespace endgate

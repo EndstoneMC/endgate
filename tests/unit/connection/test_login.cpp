@@ -69,6 +69,18 @@ protected:
     Node node_{server_, registry_};
 };
 
+TEST(CleanVhostTest, KeepsOnlyTheLowercasedHost)
+{
+    EXPECT_EQ(InitialLoginSessionHandler::cleanVhost("Play.Example.COM:19132"), "play.example.com");
+    EXPECT_EQ(InitialLoginSessionHandler::cleanVhost("play.example.com"), "play.example.com");
+    EXPECT_EQ(InitialLoginSessionHandler::cleanVhost("play.example.com.:19132"), "play.example.com");
+    EXPECT_EQ(InitialLoginSessionHandler::cleanVhost(std::string_view{"play.example.com\0FML:19132", 26}),
+              "play.example.com");
+    EXPECT_EQ(InitialLoginSessionHandler::cleanVhost("[::1]:19132"), "::1");
+    EXPECT_EQ(InitialLoginSessionHandler::cleanVhost("https://Play.Example.com:443:19132"), "play.example.com");
+    EXPECT_EQ(InitialLoginSessionHandler::cleanVhost(""), "");
+}
+
 TEST_F(LoginTest, OfflineModeLogsInASelfSignedClientWithoutServiceKeys)
 {
     const std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> key(EVP_EC_gen("P-384"), EVP_PKEY_free);
