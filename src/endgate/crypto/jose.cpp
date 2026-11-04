@@ -95,10 +95,11 @@ bool verify(EVP_PKEY *key, std::string_view algorithm, std::string_view input, s
             {"RS384", EVP_sha384},
             {"RS512", EVP_sha512},
         }};
+        const auto *const end = rsa_algorithms.data() + rsa_algorithms.size();
         const auto *const rsa =
-            std::ranges::find(rsa_algorithms, algorithm, &decltype(rsa_algorithms)::value_type::first);
+            std::ranges::find(rsa_algorithms.data(), end, algorithm, &decltype(rsa_algorithms)::value_type::first);
         const std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> context(EVP_MD_CTX_new(), EVP_MD_CTX_free);
-        return rsa != rsa_algorithms.end() && context &&
+        return rsa != end && context &&
                EVP_DigestVerifyInit(context.get(), nullptr, rsa->second(), nullptr, key) == 1 &&
                EVP_DigestVerify(context.get(), reinterpret_cast<const unsigned char *>(raw.data()), raw.size(),
                                 reinterpret_cast<const unsigned char *>(input.data()), input.size()) == 1;
@@ -153,11 +154,11 @@ PublicKey toPublicKey(const JsonWebKey &jwk)
         }
     }
     else if (jwk.kty == "EC") {
-        const auto *const curve = std::ranges::find(CURVES, jwk.crv.value_or(""), &EllipticCurve::jwk_name);
+        const auto *const end = CURVES.data() + CURVES.size();
+        const auto *const curve = std::ranges::find(CURVES.data(), end, jwk.crv.value_or(""), &EllipticCurve::jwk_name);
         const auto x = base64UrlDecode(jwk.x.value_or(""));
         const auto y = base64UrlDecode(jwk.y.value_or(""));
-        if (curve == CURVES.end() || !x || !y || x->size() != curve->coordinate_size ||
-            y->size() != curve->coordinate_size) {
+        if (curve == end || !x || !y || x->size() != curve->coordinate_size || y->size() != curve->coordinate_size) {
             return nullptr;
         }
         for (const auto byte : *x) {
@@ -249,8 +250,9 @@ const EllipticCurve *curveOf(EVP_PKEY *key)
         return nullptr;
     }
     const auto bits = EVP_PKEY_get_bits(key);
-    const auto *const curve = std::ranges::find(CURVES, bits, &EllipticCurve::bits);
-    return curve == CURVES.end() ? nullptr : curve;
+    const auto *const end = CURVES.data() + CURVES.size();
+    const auto *const curve = std::ranges::find(CURVES.data(), end, bits, &EllipticCurve::bits);
+    return curve == end ? nullptr : curve;
 }
 
 std::optional<std::string> signJws(EVP_PKEY *key, std::string_view input)
@@ -271,7 +273,7 @@ std::optional<std::string> signJws(EVP_PKEY *key, std::string_view input)
     }
     const unsigned char *cursor = der.data();
     const std::unique_ptr<ECDSA_SIG, decltype(&ECDSA_SIG_free)> signature(
-        d2i_ECDSA_SIG(nullptr, &cursor, static_cast<std::int64_t>(length)), ECDSA_SIG_free);
+        d2i_ECDSA_SIG(nullptr, &cursor, static_cast<int>(length)), ECDSA_SIG_free);
     if (!signature) {
         return std::nullopt;
     }
@@ -301,7 +303,7 @@ PublicKey decodeSubjectPublicKeyInfo(std::string_view base64)
         return nullptr;
     }
     const auto *cursor = reinterpret_cast<const unsigned char *>(der->data());
-    return {d2i_PUBKEY(nullptr, &cursor, static_cast<std::int64_t>(der->size())), EVP_PKEY_free};
+    return {d2i_PUBKEY(nullptr, &cursor, static_cast<int>(der->size())), EVP_PKEY_free};
 }
 
 std::optional<JsonWebToken> JsonWebToken::decode(std::string_view token, std::size_t max_size)

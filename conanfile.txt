@@ -1,5 +1,6 @@
 [requires]
 asio/1.38.2
+date/3.0.5
 glaze/8.3.0
 libdeflate/1.25
 openssl/3.6.4
@@ -9,6 +10,9 @@ spdlog/1.17.0
 
 [test_requires]
 gtest/1.17.0
+
+[options]
+date/*:header_only=True
 
 [generators]
 CMakeDeps

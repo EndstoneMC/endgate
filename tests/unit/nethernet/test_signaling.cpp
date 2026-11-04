@@ -1,11 +1,10 @@
-#include <unistd.h>
-
 #include <array>
 #include <chrono>
 #include <filesystem>
 #include <functional>
 #include <mutex>
 #include <optional>
+#include <random>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -344,13 +343,13 @@ class TlsSignalingServerTest : public HttpSignalingServerTest {
 protected:
     void SetUp() override
     {
-        directory_ = std::filesystem::temp_directory_path() / ("endgate-tls-" + std::to_string(::getpid()));
+        directory_ = std::filesystem::temp_directory_path() / ("endgate-tls-" + std::to_string(std::random_device{}()));
         std::filesystem::create_directories(directory_);
         const auto certificate = rtc::Certificate::generate();
-        const std::unique_ptr<BIO, decltype(&BIO_free)> chain(BIO_new_file((directory_ / "chain.pem").c_str(), "w"),
-                                                              BIO_free);
-        const std::unique_ptr<BIO, decltype(&BIO_free)> key(BIO_new_file((directory_ / "key.pem").c_str(), "w"),
-                                                            BIO_free);
+        const std::unique_ptr<BIO, decltype(&BIO_free)> chain(
+            BIO_new_file((directory_ / "chain.pem").string().c_str(), "w"), BIO_free);
+        const std::unique_ptr<BIO, decltype(&BIO_free)> key(
+            BIO_new_file((directory_ / "key.pem").string().c_str(), "w"), BIO_free);
         PEM_write_bio_X509(chain.get(), certificate->getX509());
         PEM_write_bio_PrivateKey(key.get(), certificate->getPrivateKey(), nullptr, nullptr, 0, nullptr, nullptr);
         BIO_flush(chain.get());

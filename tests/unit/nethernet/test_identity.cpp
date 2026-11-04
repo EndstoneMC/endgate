@@ -1,9 +1,8 @@
-#include <unistd.h>
-
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <random>
 #include <string>
 #include <string_view>
 
@@ -199,15 +198,18 @@ TEST(ClientIdentityAssertionVerifierTest, RefusesWhatBdsRefuses)
 
 TEST(ServerIdentityAssertionGeneratorTest, KeepsItsKeyAcrossRestarts)
 {
-    const auto directory = std::filesystem::temp_directory_path() / ("endgate-identity-" + std::to_string(::getpid()));
+    const auto directory =
+        std::filesystem::temp_directory_path() / ("endgate-identity-" + std::to_string(std::random_device{}()));
     std::filesystem::remove_all(directory);
     const auto path = directory / "keys" / "server_identity_key.pem";
 
     const auto created = ServerIdentityAssertionGenerator::loadOrCreateKey(path);
     ASSERT_TRUE(created);
     EXPECT_EQ(EVP_PKEY_get_bits(created.get()), 384);
+#ifndef _WIN32
     EXPECT_EQ(std::filesystem::status(path).permissions() & std::filesystem::perms::all,
               std::filesystem::perms::owner_read | std::filesystem::perms::owner_write);
+#endif
     EXPECT_FALSE(std::filesystem::exists(directory / "keys" / "server_identity_key.pem.tmp"));
     std::string first_line;
     std::getline(std::ifstream(path), first_line);
@@ -224,7 +226,7 @@ TEST(ServerIdentityAssertionGeneratorTest, KeepsItsKeyAcrossRestarts)
 TEST(ServerIdentityAssertionGeneratorTest, RefusesAKeyBdsWouldRefuse)
 {
     const auto directory =
-        std::filesystem::temp_directory_path() / ("endgate-identity-p256-" + std::to_string(::getpid()));
+        std::filesystem::temp_directory_path() / ("endgate-identity-p256-" + std::to_string(std::random_device{}()));
     std::filesystem::remove_all(directory);
     std::filesystem::create_directories(directory);
     const auto path = directory / "server_identity_key.pem";

@@ -33,11 +33,12 @@ std::optional<CertificateFingerprint> CertificateFingerprint::of(X509 *certifica
                                                                               {"sha-256", EVP_sha256()},
                                                                               {"sha-384", EVP_sha384()},
                                                                               {"sha-512", EVP_sha512()}}};
-    const auto *const digest =
-        std::ranges::find_if(digests, [&](const auto &entry) { return equalsIgnoreCase(entry.first, algorithm); });
+    const auto *const end = digests.data() + digests.size();
+    const auto *const digest = std::ranges::find_if(
+        digests.data(), end, [&](const auto &entry) { return equalsIgnoreCase(entry.first, algorithm); });
     std::array<unsigned char, EVP_MAX_MD_SIZE> bytes{};
     unsigned int length = 0;
-    if (certificate == nullptr || digest == digests.end() ||
+    if (certificate == nullptr || digest == end ||
         X509_digest(certificate, digest->second, bytes.data(), &length) != 1) {
         return std::nullopt;
     }

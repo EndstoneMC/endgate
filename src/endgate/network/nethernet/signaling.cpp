@@ -19,7 +19,11 @@
 #include <asio/use_awaitable.hpp>
 #include <asio/write.hpp>
 #include <glaze/json.hpp>
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <sys/socket.h>
+#endif
 
 #include "endgate/awaitable.h"
 
@@ -124,11 +128,18 @@ std::shared_ptr<asio::ssl::context> HttpSignalingServer::loadTls(const std::file
 
 void HttpSignalingServer::listen(const asio::ip::tcp::endpoint &endpoint)
 {
-    using ReusePort = asio::detail::socket_option::boolean<SOL_SOCKET, SO_REUSEPORT>;
+#ifdef _WIN32
+    using ListenerAddressOption = asio::detail::socket_option::boolean<SOL_SOCKET, SO_EXCLUSIVEADDRUSE>;
+#else
+    using ListenerAddressOption = asio::socket_base::reuse_address;
+#endif
 
     acceptor_.open(endpoint.protocol());
-    acceptor_.set_option(asio::socket_base::reuse_address(true));
+    acceptor_.set_option(ListenerAddressOption(true));
+#ifdef SO_REUSEPORT
+    using ReusePort = asio::detail::socket_option::boolean<SOL_SOCKET, SO_REUSEPORT>;
     acceptor_.set_option(ReusePort(true));
+#endif
     if (endpoint.address().is_v6() && endpoint.address().is_unspecified()) {
         acceptor_.set_option(asio::ip::v6_only(false));
     }

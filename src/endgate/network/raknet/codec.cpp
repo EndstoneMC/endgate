@@ -6,7 +6,11 @@
 
 #include <asio/ip/address_v4.hpp>
 #include <asio/ip/address_v6.hpp>
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <sys/socket.h>
+#endif
 
 namespace endgate::raknet {
 

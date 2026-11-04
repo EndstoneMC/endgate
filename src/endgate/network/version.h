@@ -42,8 +42,10 @@ inline constexpr ProtocolVersion MAXIMUM_VERSION = SUPPORTED_VERSIONS.back();
  */
 [[nodiscard]] constexpr std::optional<ProtocolVersion> getProtocolVersion(int protocol)
 {
-    const auto *const found = std::ranges::find(SUPPORTED_VERSIONS, protocol, &ProtocolVersion::getProtocol);
-    if (found == SUPPORTED_VERSIONS.end()) {
+    const auto *const end = SUPPORTED_VERSIONS.data() + SUPPORTED_VERSIONS.size();
+    const auto *const found =
+        std::ranges::find(SUPPORTED_VERSIONS.data(), end, protocol, &ProtocolVersion::getProtocol);
+    if (found == end) {
         return std::nullopt;
     }
     return *found;

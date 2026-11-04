@@ -1,13 +1,18 @@
 #include "endgate/network/endpoint.h"
 
+#ifndef _WIN32
 #include <ifaddrs.h>
+#endif
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <memory>
+#include <optional>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include <asio/as_tuple.hpp>
 #include <asio/buffer.hpp>
@@ -15,8 +20,14 @@
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/use_awaitable.hpp>
+#ifdef _WIN32
+#include <iphlpapi.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netinet/in.h>
 #include <sys/socket.h>
+#endif
 
 #include "endgate/auth/token.h"
 #include "endgate/awaitable.h"
@@ -30,6 +41,62 @@
 #include "endgate/server.h"
 
 namespace endgate {
+
+namespace {
+
+std::optional<asio::ip::address> toInterfaceAddress(const sockaddr *address, bool with_v6)
+{
+    const auto family = address == nullptr ? AF_UNSPEC : address->sa_family;
+    if (family != AF_INET && (family != AF_INET6 || !with_v6)) {
+        return std::nullopt;
+    }
+    asio::ip::udp::endpoint endpoint;
+    const auto size = family == AF_INET ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+    std::memcpy(endpoint.data(), address, size);
+    endpoint.resize(size);
+    return endpoint.address();
+}
+
+std::vector<asio::ip::address> getInterfaceAddresses(bool with_v6)
+{
+    std::vector<asio::ip::address> addresses;
+#ifdef _WIN32
+    constexpr ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    std::vector<std::byte> storage;
+    ULONG size = 0;
+    ULONG result = ERROR_BUFFER_OVERFLOW;
+    while (result == ERROR_BUFFER_OVERFLOW) {
+        storage.resize(size);
+        result = ::GetAdaptersAddresses(AF_UNSPEC, flags, nullptr,
+                                        reinterpret_cast<IP_ADAPTER_ADDRESSES *>(storage.data()), &size);
+    }
+    if (result != NO_ERROR) {
+        return addresses;
+    }
+    for (const auto *adapter = reinterpret_cast<const IP_ADAPTER_ADDRESSES *>(storage.data()); adapter != nullptr;
+         adapter = adapter->Next) {
+        for (const auto *unicast = adapter->FirstUnicastAddress; unicast != nullptr; unicast = unicast->Next) {
+            if (const auto address = toInterfaceAddress(unicast->Address.lpSockaddr, with_v6)) {
+                addresses.push_back(*address);
+            }
+        }
+    }
+#else
+    ifaddrs *list = nullptr;
+    if (::getifaddrs(&list) != 0) {
+        return addresses;
+    }
+    const std::unique_ptr<ifaddrs, decltype(&::freeifaddrs)> owned(list, ::freeifaddrs);
+    for (const auto *entry = list; entry != nullptr; entry = entry->ifa_next) {
+        if (const auto address = toInterfaceAddress(entry->ifa_addr, with_v6)) {
+            addresses.push_back(*address);
+        }
+    }
+#endif
+    return addresses;
+}
+
+}  // namespace
 
 Endpoint::Endpoint(ProxyServer &server, EventLoop &event_loop, Registry &registry,
                    std::shared_ptr<asio::ip::udp::socket> socket, std::uint64_t guid,
@@ -386,19 +453,8 @@ Awaitable<void> Endpoint::join(nethernet::JoinRequest request, nethernet::JoinRe
     if (!local.address().is_unspecified()) {
         interfaces.push_back(local.address());
     }
-    else if (ifaddrs *list = nullptr; ::getifaddrs(&list) == 0) {
-        const std::unique_ptr<ifaddrs, decltype(&::freeifaddrs)> owned(list, ::freeifaddrs);
-        for (const auto *entry = list; entry != nullptr; entry = entry->ifa_next) {
-            const auto family = entry->ifa_addr == nullptr ? AF_UNSPEC : entry->ifa_addr->sa_family;
-            if (family != AF_INET && (family != AF_INET6 || !local.address().is_v6())) {
-                continue;
-            }
-            asio::ip::udp::endpoint address;
-            const auto size = family == AF_INET ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
-            std::memcpy(address.data(), entry->ifa_addr, size);
-            address.resize(size);
-            interfaces.push_back(address.address());
-        }
+    else {
+        interfaces = getInterfaceAddresses(local.address().is_v6());
     }
 
     const auto port = local.port();

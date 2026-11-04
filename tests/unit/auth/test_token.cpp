@@ -1,9 +1,7 @@
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
-#include <ctime>
 #include <format>
 #include <memory>
 #include <span>
@@ -18,6 +16,7 @@
 #include <asio/use_awaitable.hpp>
 #include <asio/use_future.hpp>
 #include <asio/write.hpp>
+#include <date/date.h>
 #include <gtest/gtest.h>
 #include <openssl/bn.h>
 #include <openssl/core_names.h>
@@ -79,12 +78,7 @@ std::string signRs256(EVP_PKEY *key, std::string_view kid, std::string_view clai
 
 std::string httpDate(std::chrono::system_clock::time_point time)
 {
-    const auto seconds = std::chrono::system_clock::to_time_t(time);
-    std::tm parts{};
-    ::gmtime_r(&seconds, &parts);
-    std::array<char, 64> text{};
-    const auto length = std::strftime(text.data(), text.size(), "%a, %d %b %Y %H:%M:%S GMT", &parts);
-    return {text.data(), length};
+    return date::format("%a, %d %b %Y %H:%M:%S GMT", std::chrono::floor<std::chrono::seconds>(time));
 }
 
 class MinecraftServices {

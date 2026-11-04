@@ -9,8 +9,14 @@
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/use_awaitable.hpp>
+#ifdef _WIN32
+#include <ws2tcpip.h>
+
+#include <asio/detail/socket_option.hpp>
+#else
 #include <netinet/in.h>
 #include <sys/socket.h>
+#endif
 
 #include "endgate/awaitable.h"
 #include "endgate/logging/manager.h"
@@ -26,6 +32,15 @@ constexpr std::byte BATCH_HEADER{0xFE};
 void setDontFragment(asio::ip::udp::socket &socket, bool dont_fragment)
 {
     asio::error_code ec;
+#ifdef _WIN32
+    using DontFragment = asio::detail::socket_option::boolean<IPPROTO_IP, IP_DONTFRAGMENT>;
+    using DontFragmentV6 = asio::detail::socket_option::boolean<IPPROTO_IPV6, IPV6_DONTFRAG>;
+    if (socket.local_endpoint(ec).protocol() == asio::ip::udp::v4()) {
+        std::ignore = socket.set_option(DontFragment(dont_fragment), ec);
+        return;
+    }
+    std::ignore = socket.set_option(DontFragmentV6(dont_fragment), ec);
+#else
     if (socket.local_endpoint(ec).protocol() == asio::ip::udp::v4()) {
         const int value = dont_fragment ? IP_PMTUDISC_DO : IP_PMTUDISC_DONT;
         std::ignore = ::setsockopt(socket.native_handle(), IPPROTO_IP, IP_MTU_DISCOVER, &value, sizeof(value));
@@ -33,6 +48,7 @@ void setDontFragment(asio::ip::udp::socket &socket, bool dont_fragment)
     }
     const int value = dont_fragment ? IPV6_PMTUDISC_DO : IPV6_PMTUDISC_DONT;
     std::ignore = ::setsockopt(socket.native_handle(), IPPROTO_IPV6, IPV6_MTU_DISCOVER, &value, sizeof(value));
+#endif
 }
 
 }  // namespace

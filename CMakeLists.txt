@@ -6,11 +6,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if (WIN32)
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+endif ()
+
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS resources/endgate.toml)
 file(READ resources/endgate.toml ENDGATE_DEFAULT_CONFIG)
 configure_file(cmake/default_config.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/endgate/default_config.h @ONLY)
 
 find_package(asio REQUIRED)
+find_package(date REQUIRED)
 find_package(glaze REQUIRED)
 find_package(replxx REQUIRED)
 find_package(spdlog REQUIRED)
@@ -92,12 +97,16 @@ target_link_libraries(endgate_proxy PUBLIC
         endgate::nethernet
         endgate::raknet
         asio::asio
+        date::date
         glaze::glaze
         replxx::replxx
         spdlog::spdlog
         libdeflate::libdeflate
         Snappy::snappy
 )
+if (WIN32)
+    target_link_libraries(endgate_proxy PRIVATE iphlpapi)
+endif ()
 
 add_executable(endgate src/main.cpp)
 target_link_libraries(endgate PRIVATE endgate::proxy)

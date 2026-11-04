@@ -1,8 +1,11 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <stdexcept>
+#include <string>
 
+#include <asio/ip/udp.hpp>
 #include <gtest/gtest.h>
 
 #include "endgate/network/raknet/codec.h"
@@ -63,10 +66,11 @@ TEST(Codec, Ipv4AddressMatchesRakNetAndWirePy)
 
 TEST(Codec, Ipv6AddressMatchesRakNet)
 {
+    const auto family = std::format("{:02x}00", asio::ip::udp::v6().family());
     EXPECT_EQ(encodeAddress(endpoint("fe80::1234:5678", 19132)),
-              "060a004abc00000000fe80000000000000000000001234567800000000");
+              "06" + family + "4abc00000000fe80000000000000000000001234567800000000");
     EXPECT_EQ(encodeAddress(endpoint("2001:db8::1", 443)),
-              "060a0001bb0000000020010db800000000000000000000000100000000");
+              "06" + family + "01bb0000000020010db800000000000000000000000100000000");
 }
 
 TEST(Codec, AddressesRoundTrip)

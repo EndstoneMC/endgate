@@ -1,7 +1,7 @@
-#include <unistd.h>
-
 #include <filesystem>
+#include <random>
 #include <string>
+#include <system_error>
 
 #include <asio/ip/tcp.hpp>
 #include <asio/ip/udp.hpp>
@@ -17,7 +17,8 @@ class WorkingDirectory : public testing::Environment {
 public:
     void SetUp() override
     {
-        directory_ = std::filesystem::temp_directory_path() / ("endgate-tests-" + std::to_string(::getpid()));
+        directory_ =
+            std::filesystem::temp_directory_path() / ("endgate-tests-" + std::to_string(std::random_device{}()));
         std::filesystem::create_directories(directory_);
         std::filesystem::current_path(directory_);
     }
@@ -25,7 +26,8 @@ public:
     void TearDown() override
     {
         std::filesystem::current_path(std::filesystem::temp_directory_path());
-        std::filesystem::remove_all(directory_);
+        std::error_code ignored;
+        std::filesystem::remove_all(directory_, ignored);
     }
 
 private:

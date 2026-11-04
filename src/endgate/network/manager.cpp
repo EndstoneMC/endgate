@@ -5,6 +5,7 @@
 #include <exception>
 #include <latch>
 #include <memory>
+#include <ranges>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -14,7 +15,11 @@
 #include <asio/ip/udp.hpp>
 #include <asio/ip/v6_only.hpp>
 #include <asio/ssl/context.hpp>
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <sys/socket.h>
+#endif
 
 #include "endgate/config.h"
 #include "endgate/logging/manager.h"
@@ -47,7 +52,17 @@ HttpClient ConnectionManager::createHttpClient()
 
 bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t port)
 {
+#ifdef SO_REUSEPORT
     using ReusePort = asio::detail::socket_option::boolean<SOL_SOCKET, SO_REUSEPORT>;
+    const auto binds = group_.size();
+#else
+    const std::size_t binds = 1;
+#endif
+#ifdef _WIN32
+    using ListenerAddressOption = asio::detail::socket_option::boolean<SOL_SOCKET, SO_EXCLUSIVEADDRUSE>;
+#else
+    using ListenerAddressOption = asio::socket_base::reuse_address;
+#endif
 
     asio::error_code ec;
 
@@ -58,18 +73,21 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
         const asio::ip::udp::endpoint game{address, port};
         if (udp_probe.open(game.protocol(), ec) || (dual_stack && udp_probe.set_option(asio::ip::v6_only(false), ec)) ||
             udp_probe.bind(game, ec) || tcp_probe.open(asio::ip::tcp::endpoint{address, port}.protocol(), ec) ||
-            tcp_probe.set_option(asio::socket_base::reuse_address(true), ec) ||
+            tcp_probe.set_option(ListenerAddressOption(true), ec) ||
             (dual_stack && tcp_probe.set_option(asio::ip::v6_only(false), ec)) || tcp_probe.bind({address, port}, ec)) {
             logger_.error("Can't bind to {}:{}: {}", address.to_string(), port, ec.message());
             return false;
         }
     }
     std::vector<std::shared_ptr<asio::ip::udp::socket>> sockets;
-    for (auto &loop : group_) {
+    for (auto &loop : group_ | std::views::take(binds)) {
         auto &socket = sockets.emplace_back(std::make_shared<asio::ip::udp::socket>(loop.getExecutor()));
         const asio::ip::udp::endpoint game{address, port};
         if (socket->open(game.protocol(), ec) || (dual_stack && socket->set_option(asio::ip::v6_only(false), ec)) ||
-            socket->set_option(ReusePort(true), ec) || socket->bind(game, ec) || socket->non_blocking(true, ec)) {
+#ifdef SO_REUSEPORT
+            socket->set_option(ReusePort(true), ec) ||
+#endif
+            socket->bind(game, ec) || socket->non_blocking(true, ec)) {
             logger_.error("Can't bind to {}:{}: {}", address.to_string(), port, ec.message());
             return false;
         }
@@ -101,7 +119,7 @@ bool ConnectionManager::bind(const asio::ip::address &address, std::uint16_t por
 
     offline_.setPingResponder(port);
     auto socket = sockets.begin();
-    for (auto &loop : group_) {
+    for (auto &loop : group_ | std::views::take(sockets.size())) {
         endpoints_.emplace_back(server_, loop, registry_, *socket++, offline_.getGuid(),
                                 offline_.getOfflinePingResponse(), identity_, offer_identity_, tls);
     }

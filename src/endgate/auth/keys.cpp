@@ -1,16 +1,18 @@
 #include "endgate/auth/keys.h"
 
 #include <cstdlib>
-#include <ctime>
 #include <expected>
 #include <format>
 #include <optional>
+#include <sstream>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/use_future.hpp>
+#include <date/date.h>
 #include <glaze/json.hpp>
 
 #include "endgate/logging/manager.h"
@@ -102,13 +104,13 @@ struct Fetched {
 
 std::optional<std::chrono::system_clock::time_point> parseHttpDate(std::string_view text)
 {
-    const std::string date(text);
-    std::tm parsed{};
-    const char *const end = ::strptime(date.c_str(), "%a, %d %b %Y %H:%M:%S GMT", &parsed);
-    if (end == nullptr || *end != '\0') {
+    std::istringstream stream{std::string(text)};
+    date::sys_seconds parsed;
+    stream >> date::parse("%a, %d %b %Y %H:%M:%S GMT", parsed);
+    if (stream.fail() || stream.peek() != std::istringstream::traits_type::eof()) {
         return std::nullopt;
     }
-    return std::chrono::system_clock::from_time_t(::timegm(&parsed));
+    return parsed;
 }
 
 Awaitable<std::expected<Fetched, std::string>> download(const HttpClient &client, std::string discovery_uri,
