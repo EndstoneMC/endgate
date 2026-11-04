@@ -101,6 +101,7 @@ def make_proxy(binary: Path, tmp_path: Path):
         servers: dict[str, str] | None = None,
         try_order: list[str] | None = None,
         console: bool = False,
+        settings: dict[str, dict[str, str]] | None = None,
     ) -> Proxy:
         workdir = tmp_path / f"proxy{len(started)}"
         proxy = Proxy(
@@ -117,6 +118,7 @@ def make_proxy(binary: Path, tmp_path: Path):
             servers=servers,
             try_order=try_order,
             console=console,
+            settings=settings,
         ).start()
         started.append(proxy)
         return proxy

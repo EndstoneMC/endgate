@@ -76,7 +76,9 @@ class Proxy:
         servers: dict[str, str] | None = None,
         try_order: list[str] | None = None,
         console: bool = False,
+        settings: dict[str, dict[str, str]] | None = None,
     ) -> None:
+        """settings adds raw TOML values by section: "" for top-level keys, else the section's name."""
         self.binary = binary
         self.workdir = workdir
         self.port = free_port()
@@ -92,9 +94,13 @@ class Proxy:
         self.servers = servers or {}
         self.try_order = try_order or ["lobby"]
         self.console = console
+        self.settings = settings or {}
         self.lines: list[str] = []
         self._listening = threading.Event()
         self.process: subprocess.Popen | None = None
+
+    def _settings(self, section: str) -> list[str]:
+        return [f"{key} = {value}" for key, value in self.settings.get(section, {}).items()]
 
     @property
     def address(self) -> tuple[str, int]:
@@ -123,16 +129,26 @@ class Proxy:
                     f"online-mode = {str(self.services is not None).lower()}",
                     f'tls-certificate = "{self.tls[0].as_posix() if self.tls else ""}"',
                     f'tls-certificate-key = "{self.tls[1].as_posix() if self.tls else ""}"',
+                    *self._settings(""),
                     "[servers]",
                     f'lobby = "{self.backend}"',
                     *(f'{name} = "{address}"' for name, address in self.servers.items()),
                     "try = [" + ", ".join(f'"{name}"' for name in self.try_order) + "]",
+                    *self._settings("servers"),
                     "[advanced]",
                     "compression-level = -1",
                     f"login-ratelimit = {self.login_ratelimit}",
                     f"log-player-connections = {str(self.log_player_connections).lower()}",
+                    *self._settings("advanced"),
                     "[debug]",
                     f"packet-decode-logging = {str(self.packet_decode_logging).lower()}",
+                    *self._settings("debug"),
+                    *(
+                        line
+                        for section in self.settings
+                        if section not in ("", "servers", "advanced", "debug")
+                        for line in (f"[{section}]", *self._settings(section))
+                    ),
                     "",
                 ]
             )
