@@ -28,11 +28,11 @@ import raknet
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
-from harness import PLAYER_IDENTITY, REPOSITORY, free_port
+from harness import EXE, PLAYER_IDENTITY, REPOSITORY, free_port
 from nethernet import serve_http
 from nethernet.identity import IdentitySigner, generate_operator_key
 
-DEFAULT_PEER = REPOSITORY / "build" / "RelWithDebInfo" / "tests" / "interop" / "endgate_bedrock_peer"
+DEFAULT_PEER = REPOSITORY / "build" / "RelWithDebInfo" / "tests" / "interop" / f"endgate_bedrock_peer{EXE}"
 PROTOCOL = 2225
 LOGIN_SUCCESS = 0
 MULTIPLAYER_AUDIENCE = "api://auth-minecraft-services/multiplayer"

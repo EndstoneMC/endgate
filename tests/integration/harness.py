@@ -10,6 +10,7 @@ import threading
 import time
 from pathlib import Path
 
+import aioice.ice
 import nethernet
 from aiortc.rtcicetransport import RTCIceGatherer
 from nethernet import serve_http
@@ -20,9 +21,12 @@ REPOSITORY = Path(__file__).resolve().parents[2]
 # about five seconds and outlasts the proxy's connect deadline. nethernet-python's ice_servers=[] is
 # falsy, so it cannot say "none"; take the default away instead and keep gathering on the loopback.
 RTCIceGatherer.getDefaultIceServers = staticmethod(list)
+if os.name == "nt":
+    aioice.ice.get_host_addresses = lambda use_ipv4, use_ipv6: ["127.0.0.1"] if use_ipv4 else []
 
-DEFAULT_BINARY = REPOSITORY / "build" / "RelWithDebInfo" / "endgate"
-DEFAULT_ECHO = REPOSITORY / "build" / "RelWithDebInfo" / "tests" / "interop" / "endgate_nethernet_echo"
+EXE = ".exe" if os.name == "nt" else ""
+DEFAULT_BINARY = REPOSITORY / "build" / "RelWithDebInfo" / f"endgate{EXE}"
+DEFAULT_ECHO = REPOSITORY / "build" / "RelWithDebInfo" / "tests" / "interop" / f"endgate_nethernet_echo{EXE}"
 
 
 PLAYER_IDENTITY = IdentitySigner(generate_operator_key(), domain="self")
@@ -117,8 +121,8 @@ class Proxy:
                     'motd = "Endgate Test"',
                     f"show-max-players = {self.max_players}",
                     f"online-mode = {str(self.services is not None).lower()}",
-                    f'tls-certificate = "{self.tls[0] if self.tls else ""}"',
-                    f'tls-certificate-key = "{self.tls[1] if self.tls else ""}"',
+                    f'tls-certificate = "{self.tls[0].as_posix() if self.tls else ""}"',
+                    f'tls-certificate-key = "{self.tls[1].as_posix() if self.tls else ""}"',
                     "[servers]",
                     f'lobby = "{self.backend}"',
                     *(f'{name} = "{address}"' for name, address in self.servers.items()),
@@ -144,7 +148,7 @@ class Proxy:
             [str(self.binary)],
             cwd=self.workdir,
             env=environment,
-            stdin=subprocess.PIPE if self.console else subprocess.DEVNULL,
+            stdin=subprocess.PIPE if self.console or os.name == "nt" else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -203,10 +207,16 @@ class Proxy:
     def stop(self) -> int | None:
         if self.process is None:
             return None
+        if os.name == "nt" and self.process.poll() is None and self.process.stdin is not None:
+            try:
+                self.command("shutdown")
+            except OSError:
+                pass
         if self.process.stdin is not None:
             self.process.stdin.close()
         if self.process.poll() is None:
-            self.process.send_signal(signal.SIGTERM)
+            if os.name != "nt":
+                self.process.send_signal(signal.SIGTERM)
             try:
                 self.process.wait(10)
             except subprocess.TimeoutExpired:

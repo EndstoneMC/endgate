@@ -5,10 +5,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from harness import PythonServer
+from harness import EXE, PythonServer
 
 REPOSITORY = Path(__file__).resolve().parents[3]
-DEFAULT_DIAL = REPOSITORY / "build" / "RelWithDebInfo" / "tests" / "interop" / "endgate_nethernet_dial"
+DEFAULT_DIAL = REPOSITORY / "build" / "RelWithDebInfo" / "tests" / "interop" / f"endgate_nethernet_dial{EXE}"
 
 
 def dial(port: int, network_id: str = "endgate-dialer") -> subprocess.CompletedProcess[str]:

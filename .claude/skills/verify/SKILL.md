@@ -24,5 +24,6 @@ Run every step from the repository root, and report each command with its result
 | the NetherNet suite waits forever at start | the echo harness's `listening <port>` line is stuck in a pipe buffer; the harness must flush it |
 | a login test fails at `wait_login` | the Bedrock peer logs `error <what>` lines in `player.peer.log`; read them next to the proxy's last log lines in the failure |
 | online-mode tests print `Could not connect to Minecraft services` | the proxy did not get the `services` fixture's address through `ENDGATE_DISCOVERY_URI`; a proxy started by hand needs it set to the stand-in's `discovery_uri` |
+| `WinError 1214` or `NEGOTIATION_TIMEOUT_WAITING_FOR_ACCEPT` on Windows | aioice gathered on a LAN address; the harness patches it to the loopback, so check `harness.py` still does |
 | uv warns that `VIRTUAL_ENV` does not match | harmless; the suite runs in `tests/.venv` |
 | clang-tidy flags a name | rename it as `.clang-tidy` asks; don't add `NOLINT` |
