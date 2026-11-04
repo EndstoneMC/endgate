@@ -93,7 +93,7 @@ def test_the_payload_has_bstats_shape(make_proxy, backend, bstats):
     assert submission is not None, proxy.lines[-20:]
     payload = submission.payload
     assert list(payload) == ["osName", "osArch", "osVersion", "coreCount", "service", "serverUUID", "metricsVersion"]
-    assert re.fullmatch(r"Windows 1[01]|Linux", payload["osName"])
+    assert re.fullmatch(r"Windows .+|Linux", payload["osName"])
     assert payload["osArch"] in ("amd64", "aarch64")
     assert payload["osVersion"]
     assert payload["coreCount"] >= 1
@@ -115,7 +115,7 @@ def test_the_charts_are_velocitys(make_proxy, backend, bstats):
     assert data["online_mode"] == {"value": "offline"}
     assert re.fullmatch(r"\d+\.\d+\.\d+", data["endgate_version"]["value"])
     ((family, versions),) = data["operating_system"]["values"].items()
-    assert family in ("Windows", "Linux")
+    assert re.fullmatch(r"Windows .+|Linux", family)
     assert list(versions.values()) == [1]
 
 

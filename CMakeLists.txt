@@ -102,6 +102,7 @@ add_library(endgate_proxy STATIC
         src/endgate/protocol/cipher.cpp
         src/endgate/protocol/compress.cpp
         src/endgate/protocol/entity.cpp
+        src/endgate/os.cpp
         src/endgate/server.cpp
         src/endgate/playerlist/playerlist.cpp
 )
@@ -129,7 +130,7 @@ target_link_libraries(endgate_proxy PUBLIC
         Snappy::snappy
 )
 if (WIN32)
-    target_link_libraries(endgate_proxy PRIVATE iphlpapi)
+    target_link_libraries(endgate_proxy PRIVATE iphlpapi version)
 endif ()
 
 add_executable(endgate src/main.cpp)
@@ -141,6 +142,7 @@ add_subdirectory(tests/unit/command)
 add_subdirectory(tests/unit/connection)
 add_subdirectory(tests/unit/logging)
 add_subdirectory(tests/unit/network)
+add_subdirectory(tests/unit/os)
 add_subdirectory(tests/unit/proxy)
 add_subdirectory(tests/unit/playerlist)
 add_subdirectory(tests/unit/util)

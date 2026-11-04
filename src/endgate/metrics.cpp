@@ -4,90 +4,26 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
-#include <format>
 #include <map>
 #include <optional>
 #include <string>
-#include <thread>
 #include <utility>
-
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <sys/utsname.h>
-#endif
 
 #include "endgate/bstats/config.h"
 #include "endgate/logging/manager.h"
+#include "endgate/os.h"
 #include "endgate/server.h"
 
 namespace endgate {
 
 namespace {
 
-struct OperatingSystem {
-    std::string family;
-    std::string name;
-    std::string version;
-    std::string release;
-};
-
-OperatingSystem detectOperatingSystem()
-{
-#ifdef _WIN32
-    using RtlGetVersion = LONG(WINAPI *)(PRTL_OSVERSIONINFOW);
-
-    RTL_OSVERSIONINFOW info{};
-    info.dwOSVersionInfoSize = sizeof(info);
-    const auto function =
-        reinterpret_cast<RtlGetVersion>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion"));
-    if (function != nullptr) {
-        function(&info);
-    }
-    constexpr DWORD first_windows_11_build = 22000;
-    const auto *const name = info.dwBuildNumber >= first_windows_11_build ? "Windows 11" : "Windows 10";
-    return {
-        .family = "Windows",
-        .name = name,
-        .version = std::format("{}.{}", info.dwMajorVersion, info.dwMinorVersion),
-        .release = std::format("{} ({}.{}.{})", name, info.dwMajorVersion, info.dwMinorVersion, info.dwBuildNumber),
-    };
-#else
-    utsname info{};
-    uname(&info);
-    return {
-        .family = info.sysname,
-        .name = info.sysname,
-        .version = info.release,
-        .release = std::format("{} {}", info.sysname, info.release),
-    };
-#endif
-}
-
-const OperatingSystem &operatingSystem()
-{
-    static const OperatingSystem system = detectOperatingSystem();
-    return system;
-}
-
-std::string architecture()
-{
-#if defined(__x86_64__) || defined(_M_X64)
-    return "amd64";
-#elif defined(__aarch64__) || defined(_M_ARM64)
-    return "aarch64";
-#else
-    return "unknown";
-#endif
-}
-
 void appendPlatformData(JsonObject &builder)
 {
-    const auto &system = operatingSystem();
-    builder["osName"] = system.name;
-    builder["osArch"] = architecture();
-    builder["osVersion"] = system.version;
-    builder["coreCount"] = static_cast<int>(std::thread::hardware_concurrency());
+    builder["osName"] = os::name();
+    builder["osArch"] = os::arch();
+    builder["osVersion"] = os::version();
+    builder["coreCount"] = os::active_processor_count();
 }
 
 }  // namespace
@@ -160,8 +96,7 @@ std::unique_ptr<Metrics> Metrics::EndgateMetrics::startMetrics(ProxyServer &serv
     metrics->addCustomChart(
         std::make_unique<SimplePie>("endgate_version", [] { return ProxyServer::getVersion().getVersion(); }));
     metrics->addCustomChart(std::make_unique<DrilldownPie>("operating_system", [] {
-        const auto &system = operatingSystem();
-        return std::map<std::string, std::map<std::string, int>>{{system.family, {{system.release, 1}}}};
+        return std::map<std::string, std::map<std::string, int>>{{os::name(), {{os::version(), 1}}}};
     }));
     return metrics;
 }
