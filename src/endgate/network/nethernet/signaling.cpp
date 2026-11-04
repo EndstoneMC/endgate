@@ -338,7 +338,11 @@ Awaitable<void> HttpSignalingServer::exchange(Stream &stream, std::chrono::stead
                           .body = buffer.substr(header_end + 4, body_length)};
         asio::error_code remote_error;
         if (const auto remote = stream.lowest_layer().remote_endpoint(remote_error); !remote_error) {
-            request->remote_address = remote.address().to_string() + ":" + std::to_string(remote.port());
+            const auto ip =
+                remote.address().is_v6() && remote.address().to_v6().is_v4_mapped()
+                    ? asio::ip::address{asio::ip::make_address_v4(asio::ip::v4_mapped, remote.address().to_v6())}
+                    : remote.address();
+            request->remote_address = ip.to_string() + ":" + std::to_string(remote.port());
         }
     }
 

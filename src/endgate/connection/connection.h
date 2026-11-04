@@ -30,7 +30,12 @@ class Endpoint;
 
 [[nodiscard]] inline std::string toString(const asio::ip::udp::endpoint &address)
 {
-    return address.address().to_string() + ":" + std::to_string(address.port());
+    const auto ip = address.address();
+    if (ip.is_v6() && ip.to_v6().is_v4_mapped()) {
+        return asio::ip::make_address_v4(asio::ip::v4_mapped, ip.to_v6()).to_string() + ":" +
+               std::to_string(address.port());
+    }
+    return ip.to_string() + ":" + std::to_string(address.port());
 }
 
 template <typename List>
@@ -354,6 +359,9 @@ protected:
     {
         remote_address_ = toString(address);
         remote_ip_ = address.address();
+        if (remote_ip_.is_v6() && remote_ip_.to_v6().is_v4_mapped()) {
+            remote_ip_ = asio::ip::make_address_v4(asio::ip::v4_mapped, remote_ip_.to_v6());
+        }
     }
 
     /**
