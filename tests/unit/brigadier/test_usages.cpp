@@ -85,12 +85,12 @@ TEST_F(CommandDispatcherUsagesTest, testSmartUsageNoCommands)
 
 TEST_F(CommandDispatcherUsagesTest, testAllUsageRoot)
 {
-    EXPECT_EQ(subject_.getAllUsage(*subject_.getRoot(), source_, true),
-              (std::vector<std::string>{
-                  "a 1 i",  "a 1 ii", "a 2 i", "a 2 ii", "b 1",   "c",        "e",   "e 1", "e 1 i", "e 1 ii", "f 1 i",
-                  "f 2 ii", "g",      "g 1 i", "h",      "h 1 i", "h 2 i ii", "h 3", "i",   "i 1",   "i 2",
-                  "j ...",  "k -> h",
-              }));
+    EXPECT_EQ(
+        subject_.getAllUsage(*subject_.getRoot(), source_, true),
+        (std::vector<std::string>{
+            "a 1 i", "a 1 ii", "a 2 i", "a 2 ii", "b 1",      "c",   "e", "e 1", "e 1 i", "e 1 ii", "f 1 i",  "f 2 ii",
+            "g",     "g 1 i",  "h",     "h 1 i",  "h 2 i ii", "h 3", "i", "i 1", "i 2",   "j ...",  "k -> h",
+        }));
 }
 
 TEST_F(CommandDispatcherUsagesTest, testSmartUsageRoot)
