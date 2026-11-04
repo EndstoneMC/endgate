@@ -69,6 +69,19 @@ def test_a_bare_address_on_a_nethernet_server_is_detected_as_nethernet(make_prox
     assert proxy.events("DEBUG Server lobby uses NetherNet")
 
 
+def test_a_nethernet_backend_that_gives_no_protocol_is_warned_about_once(make_proxy, nethernet_backend, round_trip):
+    proxy = make_proxy(nethernet_backend.port)
+    assert round_trip(proxy, nethernet_backend) == "ping"
+    assert round_trip(proxy, nethernet_backend) == "ping"
+    assert len(proxy.events(r"WARN Server lobby doesn't say which Minecraft version it runs")) == 1
+
+
+def test_a_raknet_backend_that_announces_a_protocol_is_not_warned_about(make_proxy, backend, round_trip):
+    proxy = make_proxy(backend.port)
+    assert round_trip(proxy, backend) == "ping"
+    assert not proxy.events(r"WARN Server lobby doesn't say")
+
+
 def test_a_nethernet_pin_skips_detection(make_proxy, nethernet_backend, round_trip):
     backend = f"nethernet://127.0.0.1:{nethernet_backend.port}"
     proxy = make_proxy(nethernet_backend.port, backend=backend, debug=True)

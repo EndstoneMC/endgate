@@ -68,3 +68,6 @@ Deviations from Netty, all for performance:
 - One UDP port carries RakNet and NetherNet. NetherNet's HTTP signalling listens on TCP at the same port number.
 - `0xFE` is added and stripped only at the RakNet edge.
 - A backend's transport is detected: HTTP signalling first, then a RakNet ping. `nethernet://` and `raknet://` only pin it.
+- BDS fills `GET /v1/join` with the ping JSON (`name`, `protocol`, `version`, `level`, `players`, `maxPlayers`, `gameType`) only when `enable-lan-visibility=true`. With it `false`, the answer is `200 application/json` with `Content-Length: 0`. No header, query or method changes that. Checked on 1.26.60 (`getMetadata` is empty when its callback source is null, `sub_141119D00`).
+- A backend that answers an empty `/v1/join` still speaks NetherNet but has no protocol. The protocol is not available without a login then, since BDS binds no UDP 7551 either.
+- With `enable-lan-visibility=true`, UDP 7551 answers an encrypted LAN discovery request with the same data as `ServerData` hex (see `nethernet-python` `discovery/`). It is the same switch, so it is no fallback.

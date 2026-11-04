@@ -261,8 +261,9 @@ void AuthSessionHandler::activated()
     connection_->setSessionHandler(std::make_shared<InitialConnectSessionHandler>(player));
     auto *const target = player->getNextServerToTry();
     if (target == nullptr) {
-        connection_->closeWith(DisconnectFailReason::NoReason, "There are no available servers to connect you to. "
-                                                               "Try again later or contact an admin.");
+        connection_->closeWith(DisconnectFailReason::NoReason, player->getNoServerForVersionMessage().value_or(
+                                                                   "There are no available servers to connect you to. "
+                                                                   "Try again later or contact an admin."));
         return;
     }
     player->createConnectionRequest(*target).fireAndForget();

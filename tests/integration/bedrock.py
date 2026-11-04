@@ -443,7 +443,15 @@ class Backend:
     ) -> None:
         self.transport = transport
         self.protocol = protocol
-        self.arguments = ["server", "--threshold", str(threshold), "--delay", str(delay)]
+        self.arguments = [
+            "server",
+            "--protocol",
+            str(protocol or PROTOCOL),
+            "--threshold",
+            str(threshold),
+            "--delay",
+            str(delay),
+        ]
         self.arguments += ["--encrypt"] if encrypt else []
         if play:
             self.arguments += ["--play", "--runtime-id", str(runtime_id), "--unique-id", str(unique_id)]

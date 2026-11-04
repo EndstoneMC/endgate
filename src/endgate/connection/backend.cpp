@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <exception>
+#include <format>
 #include <map>
 #include <memory>
 #include <optional>
@@ -32,6 +33,7 @@
 #include "endgate/crypto/jose.h"
 #include "endgate/logging/manager.h"
 #include "endgate/network/endpoint.h"
+#include "endgate/network/version.h"
 #include "endgate/server.h"
 
 namespace endgate {
@@ -74,6 +76,14 @@ Awaitable<ConnectionRequestBuilder::Result> ServerConnection::open(std::shared_p
     }
     if (!address || !transport) {
         throw std::runtime_error(address ? "no NetherNet or RakNet response" : "can't resolve the address");
+    }
+    const auto player_protocol = player.getConnection().getProtocolVersion().getProtocol();
+    if (const auto backend_protocol = self->server_.getProtocol();
+        backend_protocol && *backend_protocol != player_protocol) {
+        co_return ConnectionRequestBuilder::Result::forDisconnect(std::format("it runs Minecraft {}, not {}",
+                                                                              describeProtocol(*backend_protocol),
+                                                                              describeProtocol(player_protocol)),
+                                                                  self->server_);
     }
     if (const auto connect_timeout = endpoint.getServer().getConfiguration().getConnectTimeout(); connect_timeout > 0) {
         self->connect_timeout_ = player.getConnection().eventLoop().schedule(

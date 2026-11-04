@@ -29,6 +29,7 @@
 #include "endgate/connection/backend.h"
 #include "endgate/logging/manager.h"
 #include "endgate/network/endpoint.h"
+#include "endgate/network/version.h"
 #include "endgate/server.h"
 
 namespace endgate {
@@ -112,17 +113,34 @@ Player::Player(ProxyServer &server, std::shared_ptr<MinecraftConnection> connect
 
 BackendServer *Player::getNextServerToTry(const BackendServer *current)
 {
+    const auto protocol = connection_->getProtocolVersion().getProtocol();
     const auto &servers_to_try = server_.getConfiguration().getAttemptConnectionOrder();
     for (auto i = try_index_; i < servers_to_try.size(); ++i) {
         auto *const to_try = server_.getServer(servers_to_try[i]);
         if ((connected_server_ && &connected_server_->getServer() == to_try) ||
-            (connection_in_flight_ && &connection_in_flight_->getServer() == to_try) || (current == to_try)) {
+            (connection_in_flight_ && &connection_in_flight_->getServer() == to_try) || (current == to_try) ||
+            (to_try != nullptr && to_try->isOnOtherProtocol(protocol))) {
             continue;
         }
         try_index_ = i;
         return to_try;
     }
     return nullptr;
+}
+
+std::optional<std::string> Player::getNoServerForVersionMessage()
+{
+    const auto &servers_to_try = server_.getConfiguration().getAttemptConnectionOrder();
+    const auto protocol = connection_->getProtocolVersion().getProtocol();
+    const auto refuses = [&](const std::string &name) {
+        auto *const server = server_.getServer(name);
+        return server != nullptr && server->isOnOtherProtocol(protocol);
+    };
+    if (servers_to_try.empty() || !std::ranges::all_of(servers_to_try, refuses)) {
+        return std::nullopt;
+    }
+    return std::format("No server here runs Minecraft {}. Try again later or contact an admin.",
+                       describeProtocol(protocol));
 }
 
 void Player::setConnectedServer(std::shared_ptr<ServerConnection> server_connection)
@@ -193,7 +211,8 @@ void Player::handleKickEvent(BackendServer &server, const std::string &friendly_
         sendMessage(friendly_reason);
         return;
     }
-    disconnect(DisconnectFailReason::NoReason, friendly_reason);
+    disconnect(DisconnectFailReason::NoReason,
+               kicked_from_current ? getNoServerForVersionMessage().value_or(friendly_reason) : friendly_reason);
 }
 
 Awaitable<void> Player::redirect(std::shared_ptr<Player> self, BackendServer &server, std::string friendly_reason)

@@ -77,12 +77,12 @@
 #include <openssl/x509.h>
 
 #include "endgate/crypto/jose.h"
+#include "endgate/network/version.h"
 
 namespace bp = bedrock::protocol;
 
 namespace {
 
-constexpr int PROTOCOL = 2225;
 constexpr std::uint8_t RAKNET_PREFIX = 0xFE;
 constexpr std::uint8_t NO_COMPRESSION = 0xFF;
 constexpr std::size_t CHECKSUM_SIZE = 8;
@@ -282,7 +282,7 @@ struct Options {
     bool server{false};
     bool prefix{false};
     bool encrypt{false};
-    int protocol{PROTOCOL};
+    int protocol = endgate::MAXIMUM_VERSION.getProtocol();
     std::string request;
     std::string key_path;
     std::uint16_t threshold{0};
@@ -294,7 +294,24 @@ struct Options {
     int dimension = 0;
 };
 
-class Peer {
+class Endpoint {
+public:
+    Endpoint() = default;
+    Endpoint(const Endpoint &) = delete;
+    Endpoint &operator=(const Endpoint &) = delete;
+    virtual ~Endpoint() = default;
+
+    virtual void start() = 0;
+    virtual void sendText(std::string message) = 0;
+    virtual void sendDisconnect(const std::string &message) = 0;
+    virtual void sendKick(int reason, const std::string &message) = 0;
+    virtual void sendTransfer(std::string host, std::uint16_t port) = 0;
+    virtual void sendChunk(std::int32_t x, std::int32_t z) = 0;
+    virtual void receive(std::string_view message) = 0;
+};
+
+template <int V>
+class Peer final : public Endpoint {
 public:
     explicit Peer(Options options) : options_(std::move(options))
     {
@@ -310,48 +327,49 @@ public:
         }
     }
 
-    void start() { send(bp::RequestNetworkSettingsPacket{.client_network_version = options_.protocol}); }
+    void start() override { send(bp::RequestNetworkSettingsPacket{.client_network_version = options_.protocol}); }
 
-    void sendText(std::string message)
+    void sendText(std::string message) override
     {
-        bp::TextPacket packet;
-        packet.body = bp::TextPacket::MessageOnly{.type = bp::TextPacketType::Raw, .message = std::move(message)};
+        bp::TextPacket_<V> packet;
+        packet.body =
+            typename bp::TextPacket_<V>::MessageOnly{.type = bp::TextPacketType::Raw, .message = std::move(message)};
         send(packet);
     }
 
-    void sendDisconnect(const std::string &message)
+    void sendDisconnect(const std::string &message) override
     {
-        bp::DisconnectPacket_<PROTOCOL> packet;
+        bp::DisconnectPacket_<V> packet;
         packet.reason = {};
         packet.messages = bp::DisconnectPacketMessages{.message = message, .filtered_message = message};
         send(packet);
     }
 
-    void sendKick(int reason, const std::string &message)
+    void sendKick(int reason, const std::string &message) override
     {
-        bp::DisconnectPacket_<PROTOCOL> packet;
+        bp::DisconnectPacket_<V> packet;
         packet.reason = static_cast<decltype(packet.reason)>(reason);
         packet.messages = bp::DisconnectPacketMessages{.message = message, .filtered_message = message};
         send(packet);
     }
 
-    void sendTransfer(std::string host, std::uint16_t port)
+    void sendTransfer(std::string host, std::uint16_t port) override
     {
-        bp::TransferPacket_<PROTOCOL> packet;
+        bp::TransferPacket_<V> packet;
         packet.destination = std::move(host);
         packet.destination_port = port;
         send(packet);
     }
 
-    void sendChunk(std::int32_t x, std::int32_t z)
+    void sendChunk(std::int32_t x, std::int32_t z) override
     {
-        bp::LevelChunkPacket_<PROTOCOL> packet;
+        bp::LevelChunkPacket_<V> packet;
         packet.pos = {.x = x, .z = z};
         packet.serialized_chunk = std::string(1, '\0');
         send(packet);
     }
 
-    void receive(std::string_view message)
+    void receive(std::string_view message) override
     {
         if (options_.prefix) {
             if (message.empty() || static_cast<std::uint8_t>(message.front()) != RAKNET_PREFIX) {
@@ -471,8 +489,8 @@ private:
     void dispatch(std::string_view packet)
     {
         const auto id = static_cast<int>(readVarInt(packet) & 0x3FF);
-        if (id == bp::TextPacket::Id) {
-            const auto text = decode<bp::TextPacket>(packet);
+        if (id == bp::TextPacket_<V>::Id) {
+            const auto text = decode<bp::TextPacket_<V>>(packet);
             std::cout << "text " << toHex(std::visit([](const auto &body) { return body.message; }, text.body)) << '\n';
         }
         else if (options_.server) {
@@ -502,15 +520,15 @@ private:
             std::cout << "handshake\n";
             loggedIn();
         }
-        else if (id == bp::ResourcePackClientResponsePacket_<PROTOCOL>::Id) {
-            const auto response = decode<bp::ResourcePackClientResponsePacket_<PROTOCOL>>(packet).response;
-            if (std::holds_alternative<bp::ResourcePackClientResponsePacket_<PROTOCOL>::DownloadingFinished>(
+        else if (id == bp::ResourcePackClientResponsePacket_<V>::Id) {
+            const auto response = decode<bp::ResourcePackClientResponsePacket_<V>>(packet).response;
+            if (std::holds_alternative<typename bp::ResourcePackClientResponsePacket_<V>::DownloadingFinished>(
                     response)) {
-                send(bp::ResourcePackStackPacket_<PROTOCOL>{});
+                send(bp::ResourcePackStackPacket_<V>{});
             }
-            else if (std::holds_alternative<bp::ResourcePackClientResponsePacket_<PROTOCOL>::ResourcePackStackFinished>(
-                         response)) {
-                bp::StartGamePacket_<PROTOCOL> start_game;
+            else if (std::holds_alternative<
+                         typename bp::ResourcePackClientResponsePacket_<V>::ResourcePackStackFinished>(response)) {
+                bp::StartGamePacket_<V> start_game;
                 start_game.runtime_id = bp::ActorRuntimeID{options_.runtime_id};
                 start_game.entity_id = bp::ActorUniqueID{options_.unique_id};
                 start_game.server_block_type_registry_checksum = options_.checksum;
@@ -574,16 +592,16 @@ private:
                 send(bp::SetLocalPlayerAsInitializedPacket{.player_id = *runtime_id_});
             }
         }
-        else if (id == bp::ResourcePacksInfoPacket_<PROTOCOL>::Id) {
-            send(bp::ResourcePackClientResponsePacket_<PROTOCOL>{
-                .response = bp::ResourcePackClientResponsePacket_<PROTOCOL>::DownloadingFinished{}});
+        else if (id == bp::ResourcePacksInfoPacket_<V>::Id) {
+            send(bp::ResourcePackClientResponsePacket_<V>{
+                .response = typename bp::ResourcePackClientResponsePacket_<V>::DownloadingFinished{}});
         }
-        else if (id == bp::ResourcePackStackPacket_<PROTOCOL>::Id) {
-            send(bp::ResourcePackClientResponsePacket_<PROTOCOL>{
-                .response = bp::ResourcePackClientResponsePacket_<PROTOCOL>::ResourcePackStackFinished{}});
+        else if (id == bp::ResourcePackStackPacket_<V>::Id) {
+            send(bp::ResourcePackClientResponsePacket_<V>{
+                .response = typename bp::ResourcePackClientResponsePacket_<V>::ResourcePackStackFinished{}});
         }
-        else if (id == bp::StartGamePacket_<PROTOCOL>::Id) {
-            const auto start_game = decode<bp::StartGamePacket_<PROTOCOL>>(packet);
+        else if (id == bp::StartGamePacket_<V>::Id) {
+            const auto start_game = decode<bp::StartGamePacket_<V>>(packet);
             std::cout << "start-game " << static_cast<std::uint64_t>(start_game.runtime_id) << ' '
                       << static_cast<std::int64_t>(start_game.entity_id) << ' '
                       << start_game.server_enabled_client_side_generation << ' ' << start_game.settings.seed << '\n';
@@ -592,8 +610,8 @@ private:
             send(bp::ServerboundLoadingScreenPacket{.loading_screen_packet_type =
                                                         bp::ServerboundLoadingScreenPacketType::StartLoadingScreen});
         }
-        else if (id == bp::CameraInstructionPacket_<PROTOCOL>::Id) {
-            const auto instruction = decode<bp::CameraInstructionPacket_<PROTOCOL>>(packet).camera_instruction;
+        else if (id == bp::CameraInstructionPacket_<V>::Id) {
+            const auto instruction = decode<bp::CameraInstructionPacket_<V>>(packet).camera_instruction;
             if (instruction.fade && instruction.fade->time) {
                 std::cout << "camera fade " << instruction.fade->time->fade_in_time << ' '
                           << instruction.fade->time->hold_time << ' ' << instruction.fade->time->fade_out_time << '\n';
@@ -606,16 +624,16 @@ private:
             std::cout << "change-dimension " << static_cast<int>(decode<bp::ChangeDimensionPacket>(packet).dimension_id)
                       << '\n';
         }
-        else if (id == bp::LevelChunkPacket_<PROTOCOL>::Id) {
-            const auto chunk = decode<bp::LevelChunkPacket_<PROTOCOL>>(packet);
+        else if (id == bp::LevelChunkPacket_<V>::Id) {
+            const auto chunk = decode<bp::LevelChunkPacket_<V>>(packet);
             std::cout << "chunk " << chunk.pos.x << ' ' << chunk.pos.z << '\n';
         }
-        else if (id == bp::TransferPacket_<PROTOCOL>::Id) {
-            const auto transfer = decode<bp::TransferPacket_<PROTOCOL>>(packet);
+        else if (id == bp::TransferPacket_<V>::Id) {
+            const auto transfer = decode<bp::TransferPacket_<V>>(packet);
             std::cout << "transfer " << transfer.destination << ' ' << transfer.destination_port << '\n';
         }
-        else if (id == bp::DisconnectPacket_<PROTOCOL>::Id) {
-            const auto disconnect = decode<bp::DisconnectPacket_<PROTOCOL>>(packet);
+        else if (id == bp::DisconnectPacket_<V>::Id) {
+            const auto disconnect = decode<bp::DisconnectPacket_<V>>(packet);
             const auto *const messages = std::get_if<bp::DisconnectPacketMessages>(&disconnect.messages);
             std::cout << "disconnect " << static_cast<int>(disconnect.reason) << ' '
                       << toHex(messages != nullptr ? messages->message : "") << '\n';
@@ -629,7 +647,7 @@ private:
     {
         send(bp::PlayStatusPacket{.status = bp::PlayStatus::LoginSuccess});
         if (options_.play) {
-            send(bp::ResourcePacksInfoPacket_<PROTOCOL>{});
+            send(bp::ResourcePacksInfoPacket_<V>{});
         }
     }
 
@@ -685,6 +703,19 @@ private:
     bool initialized_ = false;
 };
 
+std::unique_ptr<Endpoint> makePeer(const Options &options)
+{
+    std::unique_ptr<Endpoint> peer;
+    const auto supported = endgate::visitProtocolVersion(options.protocol, [&]<int V>() {
+        peer = std::make_unique<Peer<V>>(options);
+        return true;
+    });
+    if (!supported) {
+        peer = std::make_unique<Peer<endgate::MAXIMUM_VERSION.getProtocol()>>(options);
+    }
+    return peer;
+}
+
 }  // namespace
 
 int main(int argc, char **argv)
@@ -738,7 +769,8 @@ int main(int argc, char **argv)
         }
     }
 
-    Peer peer(options);
+    const auto peer_ptr = makePeer(options);
+    Endpoint &peer = *peer_ptr;
     std::string line;
     while (std::getline(std::cin, line)) {
         const auto space = line.find(' ');

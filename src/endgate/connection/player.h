@@ -222,6 +222,12 @@ public:
     [[nodiscard]] BackendServer *getNextServerToTry(const BackendServer *current = nullptr);
 
     /**
+     * The disconnect message for when every server in try is known to run another version than the player's,
+     * or nothing while one of them could still take the player.
+     */
+    [[nodiscard]] std::optional<std::string> getNoServerForVersionMessage();
+
+    /**
      * @see com.velocitypowered.api.proxy.Player#createConnectionRequest
      */
     [[nodiscard]] ConnectionRequestBuilder createConnectionRequest(BackendServer &server);

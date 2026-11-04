@@ -91,6 +91,23 @@ Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(a
     constexpr std::chrono::milliseconds ping_timeout{1000};
 
     if (const auto pinned = info_.getTransport()) {
+        if (getProtocol()) {
+            co_return pinned;
+        }
+        if (*pinned == ServerInfo::Transport::NetherNet) {
+            const auto probe =
+                co_await nethernet::SignalingClient::probeNetherNet(io_context, info_.getHost(), info_.getPort(),
+                                                                    {.connect_timeout = signaling_timeout,
+                                                                     .request_timeout = signaling_timeout,
+                                                                     .tls_handshake_timeout = signaling_timeout});
+            recordProtocol(probe.ping);
+            if (probe.supported) {
+                warnWithoutProtocol();
+            }
+        }
+        else {
+            recordProtocol((co_await ping(address, ping_timeout)).ping);
+        }
         co_return pinned;
     }
     std::optional<ServerInfo::Transport> detected;
@@ -121,13 +138,37 @@ Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(a
         co_return detected;
     }
     logger_.debug("Server {} uses {}", info_.getName(), toString(*detected));
-    const std::scoped_lock lock(mutex_);
-    detected_ = detected;
-    if (announcement && announcement->getVersion().getProtocol() > 0) {
-        detected_protocol_ = announcement->getVersion().getProtocol();
-        logger_.debug("Server {} speaks protocol {}", info_.getName(), *detected_protocol_);
+    {
+        const std::scoped_lock lock(mutex_);
+        detected_ = detected;
+    }
+    recordProtocol(announcement);
+    if (*detected == ServerInfo::Transport::NetherNet) {
+        warnWithoutProtocol();
     }
     co_return detected;
+}
+
+void BackendServer::recordProtocol(const std::optional<ServerPing> &announcement)
+{
+    if (!announcement || announcement->getVersion().getProtocol() <= 0) {
+        return;
+    }
+    const std::scoped_lock lock(mutex_);
+    detected_protocol_ = announcement->getVersion().getProtocol();
+    logger_.debug("Server {} speaks protocol {}", info_.getName(), *detected_protocol_);
+}
+
+void BackendServer::warnWithoutProtocol()
+{
+    const std::scoped_lock lock(mutex_);
+    if (detected_protocol_ || warned_) {
+        return;
+    }
+    warned_ = true;
+    logger_.warn("Server {} doesn't say which Minecraft version it runs, so players of every version are sent to "
+                 "it. Set enable-lan-visibility=true on it.",
+                 info_.getName());
 }
 
 void BackendServer::forgetTransport()
@@ -141,6 +182,12 @@ std::optional<int> BackendServer::getProtocol()
 {
     const std::scoped_lock lock(mutex_);
     return detected_protocol_;
+}
+
+bool BackendServer::isOnOtherProtocol(int protocol)
+{
+    const auto known = getProtocol();
+    return known && *known != protocol;
 }
 
 Awaitable<BackendServer::Pong> BackendServer::ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout)

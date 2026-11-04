@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <format>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -49,6 +51,17 @@ inline constexpr ProtocolVersion MAXIMUM_VERSION = SUPPORTED_VERSIONS.back();
         return std::nullopt;
     }
     return *found;
+}
+
+/**
+ * The version a protocol belongs to, or the protocol's number when endgate doesn't support it.
+ */
+[[nodiscard]] inline std::string describeProtocol(int protocol)
+{
+    if (const auto version = getProtocolVersion(protocol)) {
+        return std::string{version->getName()};
+    }
+    return std::format("protocol {}", protocol);
 }
 
 template <typename Visitor>

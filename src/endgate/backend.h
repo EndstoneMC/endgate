@@ -62,7 +62,7 @@ private:
 /**
  * A backend the proxy can send players to. Unless the configuration pins its transport, the first
  * connection to it finds out which one it supports, and every connection after uses that answer until a
- * connection to it fails.
+ * connection to it fails. Either way, the first ping it answers tells the protocol it speaks.
  *
  * @see com.velocitypowered.api.proxy.server.RegisteredServer
  * @see com.velocitypowered.proxy.server.VelocityRegisteredServer
@@ -85,6 +85,12 @@ public:
     [[nodiscard]] std::optional<int> getProtocol();
 
     /**
+     * Whether the backend is known to speak a protocol other than the given one. A backend whose
+     * protocol is still unknown is not.
+     */
+    [[nodiscard]] bool isOnOtherProtocol(int protocol);
+
+    /**
      * Whether the backend answered a ping, and what its announcement said when it could be read. An
      * answer is what names the transport; the announcement is only where the protocol comes from.
      *
@@ -104,11 +110,15 @@ public:
     [[nodiscard]] static Awaitable<Pong> ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout);
 
 private:
+    void recordProtocol(const std::optional<ServerPing> &announcement);
+    void warnWithoutProtocol();
+
     ServerInfo info_;
     spdlog::logger &logger_;
     std::mutex mutex_;
     std::optional<ServerInfo::Transport> detected_;
     std::optional<int> detected_protocol_;
+    bool warned_ = false;
 };
 
 }  // namespace endgate
