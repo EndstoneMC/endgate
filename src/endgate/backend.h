@@ -37,6 +37,8 @@ public:
     [[nodiscard]] std::uint16_t getPort() const { return port_; }
     [[nodiscard]] std::optional<Transport> getTransport() const { return transport_; }
 
+    bool operator==(const ServerInfo &other) const = default;
+
 private:
     ServerInfo(std::string name, std::string address, std::string host, std::uint16_t port,
                std::optional<Transport> transport);

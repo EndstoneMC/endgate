@@ -115,6 +115,12 @@ bool Console::isRunning() const
 
 void Console::runCommand(const std::string &command)
 {
+    if (command == "reload") {
+        sendMessage(server_.reloadConfiguration()
+                        ? "Endgate configuration successfully reloaded."
+                        : "Unable to reload your Endgate configuration. Check the console for more details.");
+        return;
+    }
     if (command == "shutdown" || command == "end" || command == "stop") {
         if (server_.getConfiguration().isLogCommandExecutions()) {
             logger_.info("CONSOLE -> executed command /{}", command);

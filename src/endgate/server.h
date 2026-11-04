@@ -3,18 +3,22 @@
 #include <atomic>
 #include <condition_variable>
 #include <functional>
+#include <latch>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
 
 #include <asio/ip/address.hpp>
+#include <asio/ip/udp.hpp>
 #include <spdlog/logger.h>
 
 #include "endgate/auth/keys.h"
+#include "endgate/awaitable.h"
 #include "endgate/backend.h"
 #include "endgate/config.h"
 #include "endgate/console.h"
@@ -47,6 +51,15 @@ public:
      */
     void shutdown(bool explicit_exit, const std::string &reason = "Proxy shutting down.");
     void awaitProxyShutdown();
+
+    /**
+     * Reads endgate.toml again and applies it, keeping the current configuration when it is invalid. Players on a
+     * server whose address changed are moved to the next server they can try, and kicked when there is none.
+     * Blocks until they are moved, so it must not run on an event loop.
+     *
+     * @see com.velocitypowered.proxy.VelocityServer#reloadConfiguration
+     */
+    [[nodiscard]] bool reloadConfiguration();
 
     [[nodiscard]] bool isShutdown() const;
     [[nodiscard]] bool isShuttingDown() const;
@@ -120,14 +133,23 @@ private:
         bool operator()(std::string_view left, std::string_view right) const;
     };
 
+    [[nodiscard]] static std::optional<asio::ip::udp::endpoint> parseBind(const std::string &bind);
+    static Awaitable<void> evacuate(std::shared_ptr<Player> player, std::vector<const BackendServer *> replaced,
+                                    std::latch *moved);
+
     spdlog::logger &logger_;
+    std::mutex reload_mutex_;
+    std::vector<std::unique_ptr<ProxyConfig>> configurations_;
+    std::atomic<const ProxyConfig *> configuration_ = nullptr;
+    std::vector<std::unique_ptr<Ratelimiter<asio::ip::address>>> ip_attempt_limiters_;
+    std::atomic<Ratelimiter<asio::ip::address> *> ip_attempt_limiter_ = nullptr;
+    std::mutex servers_mutex_;
+    std::map<std::string, std::unique_ptr<BackendServer>, std::less<>> servers_;
+    std::vector<std::unique_ptr<BackendServer>> retired_servers_;
     ConnectionManager cm_;
     Console console_;
-    ProxyConfig configuration_;
     ServerListPingHandler ping_handler_;
-    std::map<std::string, BackendServer, std::less<>> servers_;
     std::shared_ptr<MinecraftServiceKeyManager> keys_;
-    std::unique_ptr<Ratelimiter<asio::ip::address>> ip_attempt_limiter_;
     std::mutex connections_mutex_;
     std::condition_variable connections_changed_;
     std::map<UUID, std::shared_ptr<Player>> connections_by_uuid_;

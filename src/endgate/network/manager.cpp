@@ -166,6 +166,14 @@ void ConnectionManager::queryBind(const asio::ip::address &address, std::uint16_
     query_.queryBind(group_.next(), address, port);
 }
 
+void ConnectionManager::queryClose()
+{
+    for (auto &endpoint : endpoints_) {
+        endpoint.getEventLoop().execute([&endpoint] { endpoint.setQueryHandler(nullptr); });
+    }
+    query_.close();
+}
+
 void ConnectionManager::start()
 {
     group_.begin()->execute([this] {

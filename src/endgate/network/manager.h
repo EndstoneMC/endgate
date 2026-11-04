@@ -44,6 +44,7 @@ public:
      * @see com.velocitypowered.proxy.network.ConnectionManager#queryBind
      */
     void queryBind(const asio::ip::address &address, std::uint16_t port);
+    void queryClose();
     void start();
     void shutdown();
     void awaitTermination();
