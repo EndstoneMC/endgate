@@ -106,7 +106,11 @@ Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(a
             }
         }
         else {
-            recordProtocol((co_await ping(address, ping_timeout)).ping);
+            const auto pong = co_await ping(address, ping_timeout);
+            recordProtocol(pong.ping);
+            if (pong.answered) {
+                warnWithoutProtocol();
+            }
         }
         co_return pinned;
     }
@@ -143,9 +147,7 @@ Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(a
         detected_ = detected;
     }
     recordProtocol(announcement);
-    if (*detected == ServerInfo::Transport::NetherNet) {
-        warnWithoutProtocol();
-    }
+    warnWithoutProtocol();
     co_return detected;
 }
 

@@ -76,6 +76,17 @@ def test_a_nethernet_backend_that_gives_no_protocol_is_warned_about_once(make_pr
     assert len(proxy.events(r"WARN Server lobby doesn't say which Minecraft version it runs")) == 1
 
 
+def test_a_raknet_backend_that_gives_no_protocol_is_warned_about_once(make_proxy, round_trip):
+    quiet = Backend("raknet", protocol=0)
+    try:
+        proxy = make_proxy(quiet.port)
+        assert round_trip(proxy, quiet) == "ping"
+        assert round_trip(proxy, quiet) == "ping"
+        assert len(proxy.events(r"WARN Server lobby doesn't say which Minecraft version it runs")) == 1
+    finally:
+        quiet.close()
+
+
 def test_a_raknet_backend_that_announces_a_protocol_is_not_warned_about(make_proxy, backend, round_trip):
     proxy = make_proxy(backend.port)
     assert round_trip(proxy, backend) == "ping"
