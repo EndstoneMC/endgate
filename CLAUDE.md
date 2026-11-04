@@ -14,7 +14,7 @@ The rules live in `.claude/rules/`; some load only when matching files are touch
 - Format: `uvx clang-format@22.1.8 -i <files>`
 - Lint: `uvx clang-tidy@22.1.8 -p build/RelWithDebInfo --quiet <files>`
 
-Run `/verify` before committing a change to code or build files.
+Run `/verify` for every change to code or build files, in the background: builds and tests never block other work. Commit completed work as soon as it's done, one small commit per piece, and never leave it in the worktree waiting on a run. A check that fails afterwards gets a retrospective (what broke, why nothing caught it) and a fix-forward commit.
 
 ## Git
 
