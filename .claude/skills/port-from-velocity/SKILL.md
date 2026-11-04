@@ -22,6 +22,6 @@ Velocity is PaperMC/Velocity. Read the Java before writing any C++.
    | night-config | glaze |
 
 6. Write the docstring from Velocity's javadoc, adapted to endgate, with `@see` on the interface then the implementation (`docstring.md`).
-7. A setting goes in `resources/endgate.toml` under Velocity's key, with velocity.toml's comment adapted.
+7. A setting goes in `resources/endgate.default.toml` under Velocity's key, with velocity.toml's comment adapted.
 8. Velocity implements Java Edition. Its structure carries over; its packets and states do not. Take every packet, state and wire detail from the Bedrock sources in `bedrock.md`.
 9. Run `/verify`.

@@ -10,8 +10,8 @@ if (WIN32)
     add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
 endif ()
 
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS resources/endgate.toml)
-file(READ resources/endgate.toml ENDGATE_DEFAULT_CONFIG)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS resources/endgate.default.toml)
+file(READ resources/endgate.default.toml ENDGATE_DEFAULT_CONFIG)
 configure_file(cmake/default_config.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/endgate/default_config.h @ONLY)
 
 find_package(asio REQUIRED)
