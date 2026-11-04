@@ -372,11 +372,8 @@ std::optional<CgroupController> findCpuController()
     bool cpuset_mounted = false;
     bool cpuacct_mounted = false;
     for (const auto &mount : readMountInfo()) {
-        if (v2) {
-            if (mount.fs_type == "cgroup2") {
-                setControllerPaths(cpu_mount, mount);
-            }
-            continue;
+        if (v2 && mount.fs_type == "cgroup2") {
+            setControllerPaths(cpu_mount, mount);
         }
         if (mount.fs_type != "cgroup") {
             continue;
@@ -451,6 +448,12 @@ std::string arch()
     return "amd64";
 #elif defined(_M_ARM64) || defined(__aarch64__)
     return "aarch64";
+#elif defined(__riscv)
+    return "riscv64";
+#elif defined(__s390x__)
+    return "s390x";
+#elif defined(__loongarch64)
+    return "loongarch64";
 #else
     return "unknown";
 #endif

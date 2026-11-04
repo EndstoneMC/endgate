@@ -66,11 +66,53 @@ TEST(Os, WindowsNamesTheOlderVersions)
     EXPECT_EQ(os::windows_name(11, 0, 30000, true, true), "Windows NT (unknown)");
 }
 
+TEST(Os, WindowsNamesNtBeforeFiveAndTheUnknownMinors)
+{
+    EXPECT_EQ(os::windows_name(3, 51, 1057, true, true), "Windows NT");
+    EXPECT_EQ(os::windows_name(4, 0, 1381, true, false), "Windows NT");
+    EXPECT_EQ(os::windows_name(2, 0, 0, true, true), "Windows NT");
+    EXPECT_EQ(os::windows_name(5, 0, 2195, true, false), "Windows 2000");
+    EXPECT_EQ(os::windows_name(5, 1, 2600, true, false), "Windows XP");
+    EXPECT_EQ(os::windows_name(5, 2, 3790, true, false), "Windows 2003");
+    EXPECT_EQ(os::windows_name(5, 3, 0, true, true), "Windows NT (unknown)");
+    EXPECT_EQ(os::windows_name(6, 0, 6002, true, true), "Windows Vista");
+    EXPECT_EQ(os::windows_name(6, 2, 9200, true, true), "Windows 8");
+    EXPECT_EQ(os::windows_name(6, 4, 0, true, true), "Windows NT (unknown)");
+    EXPECT_EQ(os::windows_name(6, 0, 6002, false, true), "Windows Server 2008");
+    EXPECT_EQ(os::windows_name(6, 2, 9200, false, true), "Windows Server 2012");
+    EXPECT_EQ(os::windows_name(6, 3, 9600, false, true), "Windows Server 2012 R2");
+    EXPECT_EQ(os::windows_name(6, 4, 0, false, true), "Windows NT (unknown)");
+    EXPECT_EQ(os::windows_name(7, 0, 0, true, true), "Windows NT (unknown)");
+    EXPECT_EQ(os::windows_name(10, 1, 19045, true, true), "Windows NT (unknown)");
+    EXPECT_EQ(os::windows_name(10, 1, 19045, false, true), "Windows NT (unknown)");
+}
+
+TEST(Os, WindowsNamesServerBuildBoundaries)
+{
+    EXPECT_EQ(os::windows_name(10, 0, 20347, false, true), "Windows Server 2019");
+    EXPECT_EQ(os::windows_name(10, 0, 26039, false, true), "Windows Server 2022");
+    EXPECT_EQ(os::windows_name(10, 0, 22000, false, true), "Windows Server 2022");
+}
+
 TEST(Os, CgroupQuotaRoundsUpToWholeProcessors)
 {
     EXPECT_EQ(os::cgroup_processor_count(8, 150000, 100000), 2);
     EXPECT_EQ(os::cgroup_processor_count(8, 100000, 100000), 1);
     EXPECT_EQ(os::cgroup_processor_count(8, 50000, 100000), 1);
+}
+
+TEST(Os, CgroupQuotaRoundsTheFloatQuotientUp)
+{
+    EXPECT_EQ(os::cgroup_processor_count(8, 100001, 100000), 2);
+    EXPECT_EQ(os::cgroup_processor_count(8, 320000, 100000), 4);
+    EXPECT_EQ(os::cgroup_processor_count(8, 1, 100000), 1);
+    EXPECT_EQ(os::cgroup_processor_count(8, 201000, 100000), 3);
+    EXPECT_EQ(os::cgroup_processor_count(28, 150000, 100000), 2);
+}
+
+TEST(Os, CgroupQuotaOfZeroLeavesTheHostCount)
+{
+    EXPECT_EQ(os::cgroup_processor_count(8, 0, 100000), 8);
 }
 
 TEST(Os, CgroupQuotaNeverExceedsTheHost)
