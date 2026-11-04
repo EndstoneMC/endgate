@@ -36,7 +36,15 @@ struct Wire {
     std::vector<std::string> errors;
 
     void channelRead(ByteBufView packet) { read.push_back(packet.copy()); }
-    void exceptionCaught(const std::exception &cause) { errors.emplace_back(cause.what()); }
+    void exceptionCaught(const std::exception_ptr &cause)
+    {
+        try {
+            std::rethrow_exception(cause);
+        }
+        catch (const std::exception &error) {
+            errors.emplace_back(error.what());
+        }
+    }
     void write(ByteBuf packet) { sent.push_back(std::move(packet)); }
     void flush() {}
 };

@@ -28,9 +28,14 @@ struct RecordingSink {
     void channelRead(const std::string &message) { recorder.events.push_back("sink:read " + message); }
     void channelReadComplete() { recorder.events.emplace_back("sink:complete"); }
     void userEventTriggered(int event) { recorder.events.push_back("sink:event " + std::to_string(event)); }
-    void exceptionCaught(const std::exception &cause)
+    void exceptionCaught(const std::exception_ptr &cause)
     {
-        recorder.events.push_back(std::string{"sink:exception "} + cause.what());
+        try {
+            std::rethrow_exception(cause);
+        }
+        catch (const std::exception &error) {
+            recorder.events.push_back(std::string{"sink:exception "} + error.what());
+        }
     }
     void write(const std::string &message) { recorder.events.push_back("head:write " + message); }
     void flush() { recorder.events.emplace_back("head:flush"); }
@@ -110,9 +115,14 @@ public:
     explicit Swallowing(Recorder &recorder) : recorder_(recorder) {}
 
     template <typename Context>
-    void exceptionCaught(Context &, const std::exception &cause)
+    void exceptionCaught(Context &, const std::exception_ptr &cause)
     {
-        recorder_.events.push_back(std::string{"swallowed "} + cause.what());
+        try {
+            std::rethrow_exception(cause);
+        }
+        catch (const std::exception &error) {
+            recorder_.events.push_back(std::string{"swallowed "} + error.what());
+        }
     }
 
 private:
@@ -233,7 +243,15 @@ struct BytesSink {
         const auto bytes = message.nioBuffer();
         messages.emplace_back(reinterpret_cast<const char *>(bytes.data()), bytes.size());
     }
-    void exceptionCaught(const std::exception &cause) { errors.emplace_back(cause.what()); }
+    void exceptionCaught(const std::exception_ptr &cause)
+    {
+        try {
+            std::rethrow_exception(cause);
+        }
+        catch (const std::exception &error) {
+            errors.emplace_back(error.what());
+        }
+    }
 };
 
 ByteBuf copyOf(std::string_view text)
@@ -331,7 +349,15 @@ struct BufferSink {
     std::vector<std::string> errors;
 
     void write(ByteBuf buf) { written.push_back(ByteBufUtil::hexDump(buf)); }
-    void exceptionCaught(const std::exception &cause) { errors.emplace_back(cause.what()); }
+    void exceptionCaught(const std::exception_ptr &cause)
+    {
+        try {
+            std::rethrow_exception(cause);
+        }
+        catch (const std::exception &error) {
+            errors.emplace_back(error.what());
+        }
+    }
 };
 
 TEST(MessageToByteEncoder, EncodesIntoAFreshBufferAndPassesOnWhatEncodeDoesNotTake)

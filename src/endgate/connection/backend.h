@@ -130,6 +130,11 @@ public:
 
     using HandleEach::handle;
 
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(LoginSessionHandler) || MinecraftSessionHandler::isInstanceOf(target);
+    }
+
     void connected() override;
     bool handleEach(const bp::NetworkSettingsPacket &packet);
     bool handleEach(const bp::ServerToClientHandshakePacket &packet);
@@ -425,6 +430,11 @@ public:
     }
 
     bool beforeHandle() override;
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(BackendPlaySessionHandler) || MinecraftSessionHandler::isInstanceOf(target);
+    }
+
     void connected() override {}
     void handleUnknown(ByteBufView batch) override;
     void readCompleted() override;
@@ -469,8 +479,9 @@ public:
     {
         auto &backend = server_connection_->ensureConnected();
         auto &player = server_connection_->getPlayer();
-        auto play_handler =
-            std::dynamic_pointer_cast<ClientPlaySessionHandler>(player.getConnection().getActiveSessionHandler());
+        const auto &active_handler = player.getConnection().getActiveSessionHandler();
+        auto play_handler = std::shared_ptr<ClientPlaySessionHandler>(
+            active_handler, active_handler ? active_handler->as<ClientPlaySessionHandler>() : nullptr);
         const auto switching = play_handler != nullptr;
         if (const auto incompatibility = switching ? play_handler->findIncompatibility(packet) : std::nullopt) {
             server_connection_->disconnect();
@@ -573,6 +584,11 @@ public:
 
     bool beforeHandle() override;
     void activated() override;
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(TransitionSessionHandler) || MinecraftSessionHandler::isInstanceOf(target);
+    }
+
     void connected() override {}
     void handleUnknown(ByteBufView batch) override;
     void readCompleted() override;

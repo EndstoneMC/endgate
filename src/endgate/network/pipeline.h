@@ -62,7 +62,7 @@ public:
     }
 
     template <typename Context>
-    void exceptionCaught(Context &ctx, const std::exception &cause)
+    void exceptionCaught(Context &ctx, const std::exception_ptr &cause)
     {
         ctx.fireExceptionCaught(cause);
     }
@@ -129,7 +129,7 @@ public:
         pipeline_.template invokeUserEventTriggered<Pipeline::nextInbound(Index + 1)>(std::forward<Event>(event));
     }
 
-    void fireExceptionCaught(const std::exception &cause)
+    void fireExceptionCaught(const std::exception_ptr &cause)
     {
         pipeline_.template invokeExceptionCaught<Pipeline::nextInbound(Index + 1)>(cause);
     }
@@ -211,7 +211,7 @@ public:
         invokeUserEventTriggered<nextInbound(0)>(std::forward<Event>(event));
     }
 
-    void fireExceptionCaught(const std::exception &cause) { invokeExceptionCaught<nextInbound(0)>(cause); }
+    void fireExceptionCaught(const std::exception_ptr &cause) { invokeExceptionCaught<nextInbound(0)>(cause); }
 
     template <typename Message>
     void write(Message &&message)
@@ -253,8 +253,8 @@ private:
             try {
                 std::get<Index>(handlers_).channelActive(ctx);
             }
-            catch (const std::exception &cause) {
-                invokeExceptionCaught<Index>(cause);
+            catch (const std::exception &) {
+                invokeExceptionCaught<Index>(std::current_exception());
             }
         }
         else {
@@ -270,8 +270,8 @@ private:
             try {
                 std::get<Index>(handlers_).channelInactive(ctx);
             }
-            catch (const std::exception &cause) {
-                invokeExceptionCaught<Index>(cause);
+            catch (const std::exception &) {
+                invokeExceptionCaught<Index>(std::current_exception());
             }
         }
         else {
@@ -287,8 +287,8 @@ private:
             try {
                 std::get<Index>(handlers_).channelRead(ctx, std::forward<Message>(message));
             }
-            catch (const std::exception &cause) {
-                invokeExceptionCaught<Index>(cause);
+            catch (const std::exception &) {
+                invokeExceptionCaught<Index>(std::current_exception());
             }
         }
         else {
@@ -304,8 +304,8 @@ private:
             try {
                 std::get<Index>(handlers_).channelReadComplete(ctx);
             }
-            catch (const std::exception &cause) {
-                invokeExceptionCaught<Index>(cause);
+            catch (const std::exception &) {
+                invokeExceptionCaught<Index>(std::current_exception());
             }
         }
         else {
@@ -321,8 +321,8 @@ private:
             try {
                 std::get<Index>(handlers_).userEventTriggered(ctx, std::forward<Event>(event));
             }
-            catch (const std::exception &cause) {
-                invokeExceptionCaught<Index>(cause);
+            catch (const std::exception &) {
+                invokeExceptionCaught<Index>(std::current_exception());
             }
         }
         else {
@@ -331,7 +331,7 @@ private:
     }
 
     template <std::size_t Index>
-    void invokeExceptionCaught(const std::exception &cause)
+    void invokeExceptionCaught(const std::exception_ptr &cause)
     {
         if constexpr (Index < SIZE) {
             auto ctx = context<Index>();
@@ -350,8 +350,8 @@ private:
             try {
                 std::get<Index>(handlers_).write(ctx, std::forward<Message>(message));
             }
-            catch (const std::exception &cause) {
-                fireExceptionCaught(cause);
+            catch (const std::exception &) {
+                fireExceptionCaught(std::current_exception());
             }
         }
         else {
@@ -367,8 +367,8 @@ private:
             try {
                 std::get<Index>(handlers_).flush(ctx);
             }
-            catch (const std::exception &cause) {
-                fireExceptionCaught(cause);
+            catch (const std::exception &) {
+                fireExceptionCaught(std::current_exception());
             }
         }
         else {
@@ -384,8 +384,8 @@ private:
             try {
                 std::get<Index>(handlers_).close(ctx);
             }
-            catch (const std::exception &cause) {
-                fireExceptionCaught(cause);
+            catch (const std::exception &) {
+                fireExceptionCaught(std::current_exception());
             }
         }
         else {

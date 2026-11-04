@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <exception>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -101,7 +102,7 @@ private:
             return;
         }
         task_.reset();
-        ctx.fireExceptionCaught(ReadTimeoutException{});
+        ctx.fireExceptionCaught(std::make_exception_ptr(ReadTimeoutException{}));
         ctx.close();
     }
 

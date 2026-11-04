@@ -49,6 +49,11 @@ public:
 
     using MinecraftSessionHandler::handle;
 
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(InitialLoginSessionHandler) || MinecraftSessionHandler::isInstanceOf(target);
+    }
+
     void connected() override {}
     bool handle(const bp::LoginPacket &packet) override;
 
@@ -86,6 +91,11 @@ public:
                        std::optional<std::string> virtual_host = std::nullopt);
 
     void activated() override;
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(AuthSessionHandler) || MinecraftSessionHandler::isInstanceOf(target);
+    }
+
     void connected() override {}
     void handleUnknown(ByteBufView packet) override;
     void disconnected() override {}

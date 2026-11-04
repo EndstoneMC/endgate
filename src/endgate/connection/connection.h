@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <system_error>
+#include <typeinfo>
 #include <utility>
 
 #include <asio/ip/udp.hpp>
@@ -17,6 +18,7 @@
 #include "endgate/network/eventloop.h"
 #include "endgate/network/pipeline.h"
 #include "endgate/network/timeout.h"
+#include "endgate/object.h"
 #include "endgate/protocol/cipher.h"
 #include "endgate/protocol/compress.h"
 #include "endgate/protocol/entity.h"
@@ -77,8 +79,13 @@ public:
  *
  * @see com.velocitypowered.proxy.connection.MinecraftSessionHandler
  */
-class MinecraftSessionHandler : public PacketHandlers<RegisteredPackets> {
+class MinecraftSessionHandler : public PacketHandlers<RegisteredPackets>, public Object {
 public:
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(MinecraftSessionHandler) || Object::isInstanceOf(target);
+    }
+
     /**
      * Called before each packet or unknown batch; true drops it.
      *
@@ -408,7 +415,7 @@ private:
             }
         }
         void channelReadComplete();
-        void exceptionCaught(const std::exception &cause);
+        void exceptionCaught(const std::exception_ptr &cause);
         void write(ByteBuf batch);
         void flush() {}
         void close();

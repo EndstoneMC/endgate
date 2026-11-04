@@ -24,6 +24,11 @@ public:
 
     using MinecraftSessionHandler::handle;
 
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(HandshakeSessionHandler) || MinecraftSessionHandler::isInstanceOf(target);
+    }
+
     void connected() override;
     bool handle(const bp::RequestNetworkSettingsPacket &packet) override;
     void handleUnknown(ByteBufView packet) override;

@@ -52,7 +52,15 @@ struct Wire {
     {
         other_packets.push_back(bp::struct_name<Packet>());
     }
-    void exceptionCaught(const std::exception &cause) { errors.emplace_back(cause.what()); }
+    void exceptionCaught(const std::exception_ptr &cause)
+    {
+        try {
+            std::rethrow_exception(cause);
+        }
+        catch (const std::exception &error) {
+            errors.emplace_back(error.what());
+        }
+    }
     void write(ByteBuf batch) { sent.push_back(std::move(batch)); }
     void flush() { ++flushes; }
 };

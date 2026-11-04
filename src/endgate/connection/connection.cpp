@@ -174,25 +174,29 @@ void MinecraftConnection::Sink::channelInactive()
     connection_.endpoint_.unregisterConnection(connection_.shared_from_this());
 }
 
-void MinecraftConnection::Sink::exceptionCaught(const std::exception &cause)
+void MinecraftConnection::Sink::exceptionCaught(const std::exception_ptr &cause)
 {
-    if (dynamic_cast<const ReadTimeoutException *>(&cause) != nullptr) {
+    try {
+        std::rethrow_exception(cause);
+    }
+    catch (const ReadTimeoutException &) {
         connection_.logger_.error("{}: read timed out", connection_.getAssociation());
-        return;
     }
-    if (dynamic_cast<const DecoderException *>(&cause) == nullptr) {
-        connection_.logger_.error("{}: exception encountered: {}", connection_.getAssociation(), cause.what());
+    catch (const DecoderException &decoder_cause) {
+        if (connection_.endpoint_.getServer().getConfiguration().isPacketDecodeLogging()) {
+            connection_.logger_.error("{}: invalid packet received: {}", connection_.getAssociation(),
+                                      decoder_cause.what());
+        }
+        else {
+            connection_.logger_.warn(
+                "Invalid packet received. Turn on packet-decode-logging under [debug] in endgate.toml to see more.");
+        }
+        connection_.received_bad_packet_ = true;
+    }
+    catch (const std::exception &other_cause) {
+        connection_.logger_.error("{}: exception encountered: {}", connection_.getAssociation(), other_cause.what());
         connection_.disconnect(true);
-        return;
     }
-    if (connection_.endpoint_.getServer().getConfiguration().isPacketDecodeLogging()) {
-        connection_.logger_.error("{}: invalid packet received: {}", connection_.getAssociation(), cause.what());
-    }
-    else {
-        connection_.logger_.warn(
-            "Invalid packet received. Turn on packet-decode-logging under [debug] in endgate.toml to see more.");
-    }
-    connection_.received_bad_packet_ = true;
 }
 
 void MinecraftConnection::Sink::write(ByteBuf batch)

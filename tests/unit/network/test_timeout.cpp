@@ -25,9 +25,17 @@ struct TimeoutSink {
     void channelInactive() {}
     void channelRead(int) {}
     void channelReadComplete() {}
-    void exceptionCaught(const std::exception &cause)
+    void exceptionCaught(const std::exception_ptr &cause)
     {
-        timed_out = dynamic_cast<const ReadTimeoutException *>(&cause) != nullptr;
+        try {
+            std::rethrow_exception(cause);
+        }
+        catch (const ReadTimeoutException &) {
+            timed_out = true;
+        }
+        catch (...) {
+            timed_out = false;
+        }
     }
     void write(int) {}
     void flush() {}

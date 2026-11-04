@@ -194,8 +194,11 @@ void ServerConnection::connected()
 
 BackendPlaySessionHandler::BackendPlaySessionHandler(std::shared_ptr<ServerConnection> server_connection)
     : logger_(LogManager::getLogger(*this)), server_connection_(std::move(server_connection)),
-      player_session_handler_(std::dynamic_pointer_cast<ClientPlaySessionHandler>(
-          server_connection_->getPlayer().getConnection().getActiveSessionHandler()))
+      player_session_handler_([this] {
+          const auto &active = server_connection_->getPlayer().getConnection().getActiveSessionHandler();
+          return std::shared_ptr<ClientPlaySessionHandler>(active,
+                                                           active ? active->as<ClientPlaySessionHandler>() : nullptr);
+      }())
 {
     if (!player_session_handler_) {
         throw std::logic_error("Initializing BackendPlaySessionHandler with no backing client play session handler!");
@@ -322,8 +325,8 @@ void TransitionSessionHandler::handleUnknown(ByteBufView batch)
 
 bool TransitionSessionHandler::isSwitching() const
 {
-    return std::dynamic_pointer_cast<ClientPlaySessionHandler>(
-               server_connection_->getPlayer().getConnection().getActiveSessionHandler()) != nullptr;
+    const auto &active = server_connection_->getPlayer().getConnection().getActiveSessionHandler();
+    return active && active->is<ClientPlaySessionHandler>();
 }
 
 void TransitionSessionHandler::readCompleted()

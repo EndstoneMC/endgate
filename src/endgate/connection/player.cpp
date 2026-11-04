@@ -60,7 +60,8 @@ Awaitable<ConnectionRequestBuilder::Result> ConnectionRequestBuilder::internalCo
     const auto connection = std::make_shared<ServerConnection>(*self.to_connect_, self.player_);
     player.connection_in_flight_ = connection;
 
-    if (std::dynamic_pointer_cast<ClientPlaySessionHandler>(player.getConnection().getActiveSessionHandler())) {
+    const auto &active_handler = player.getConnection().getActiveSessionHandler();
+    if (active_handler && active_handler->is<ClientPlaySessionHandler>()) {
         player.sendMessage(std::format("Connecting to {}…", self.to_connect_->getServerInfo().getName()));
     }
 

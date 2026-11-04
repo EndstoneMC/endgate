@@ -416,6 +416,11 @@ public:
         return false;
     }
 
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(InitialConnectSessionHandler) || MinecraftSessionHandler::isInstanceOf(target);
+    }
+
     void connected() override {}
     void handleUnknown(ByteBufView batch) override;
     void readCompleted() override;
@@ -470,6 +475,11 @@ public:
     bool handleEach(const Packet &packet)
     {
         return handlePlayerCommand(packet.command);
+    }
+
+    [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
+    {
+        return target == typeid(ClientPlaySessionHandler) || MinecraftSessionHandler::isInstanceOf(target);
     }
 
     void connected() override {}
