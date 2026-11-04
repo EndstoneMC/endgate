@@ -1,6 +1,8 @@
 """A player logging in through the proxy, over each transport and each way the proxy can authenticate it."""
 
+import hashlib
 import json
+import uuid
 
 import pytest
 from bedrock import PlayerIdentity, sign_token
@@ -82,6 +84,17 @@ def test_the_backend_sees_the_authenticated_name_in_online_mode(make_proxy, back
     upstream = logged_in(player, backend, proxy)
     assert json.loads(upstream.peer.wait("login-token"))["xname"] == "Alex"
     assert json.loads(upstream.peer.wait("client-data"))["ThirdPartyName"] == "Alex"
+
+
+def test_the_backend_finds_the_player_under_the_id_an_online_mode_join_uses(make_proxy, backend, services, connect):
+    proxy = make_proxy(backend.port, services=services)
+    identity = PlayerIdentity(name="Alex", xuid="2535400000000042")
+    player = connect(proxy, services=services, identity=identity)
+    upstream = logged_in(player, backend, proxy)
+    digest = bytearray(hashlib.md5(b"pocket-auth-1-xuid:2535400000000042").digest())
+    digest[6] = digest[6] & 0x0F | 0x30
+    digest[8] = digest[8] & 0x3F | 0x80
+    assert json.loads(upstream.peer.wait("client-data"))["SelfSignedId"] == str(uuid.UUID(bytes=bytes(digest)))
 
 
 def test_a_login_from_an_older_protocol_is_refused(proxy, connect):

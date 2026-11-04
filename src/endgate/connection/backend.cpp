@@ -458,14 +458,17 @@ bool LoginSessionHandler::handleEach(const bp::NetworkSettingsPacket &packet)
                                   claims);
     std::map<std::string, glz::raw_json> client_data_claims;
     std::string name;
+    std::string self_signed_id;
     std::string forwarded_client_data;
-    if (glz::read_json(client_data_claims, profile.client_data) || glz::write_json(profile.name, name)) {
+    if (glz::read_json(client_data_claims, profile.client_data) || glz::write_json(profile.name, name) ||
+        glz::write_json(profile.id.toString(), self_signed_id)) {
         result_future_->completeExceptionally(
             std::make_exception_ptr(std::runtime_error("can't read the player's client data")));
         server_connection_->disconnect();
         return true;
     }
     client_data_claims["ThirdPartyName"] = std::move(name);
+    client_data_claims["SelfSignedId"] = std::move(self_signed_id);
     std::ignore = glz::write_json(client_data_claims, forwarded_client_data);
     const auto token = signToken(key, header, claims);
     const auto client_data = signToken(key, header, forwarded_client_data);
