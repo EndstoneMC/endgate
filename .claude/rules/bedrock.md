@@ -82,3 +82,14 @@ This is `ServerConnectionAuthValidator::_validateBase`, called from `ServerNetwo
 5. An empty display name fails with 143 `InvalidName`.
 
 The player's UUID comes from `mce::makePlayerUUIDForXUID`: `pocket-auth-1-xuid:{xid}`, with PSN and Nintendo variants.
+
+### Forwarding a login (1.26.60)
+
+What lets a backend trust a token signed by a proxy:
+
+- `MinecraftServiceKeyManager::tryGetKey` isn't virtual, and every key fetch replaces both key maps, so a backend hooks it instead of inserting a key.
+- `GameServerToken::getTrustedInfo` drops claims it doesn't know, so a backend reads an added claim from the raw token.
+- BDS signs its NetherNet identity assertion and the login handshake with its one identity key. Neither JWT has `aud` or `kid`, which `GameServerToken::_validate` needs, so a forwarding token can share that key.
+- A self-signed token never reaches `tryGetKey`, so a backend that trusts a proxy must refuse self-signed logins itself.
+- A token that isn't self-signed is checked the same in online and offline mode.
+- Vanilla BDS never gets the xuid or pfid: it reads `xid` and `mid` only from a trusted token.

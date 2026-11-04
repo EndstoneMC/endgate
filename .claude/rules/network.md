@@ -63,6 +63,13 @@ Deviations from Netty, all for performance:
 - `MinecraftDecoder` fires a `DecodedPacket` that keeps the bytes the packet arrived in, so a packet no handler changes is handed on as those bytes instead of being encoded again.
 - `MinecraftEncoder` has no state: a Bedrock packet's id is the same in every state, so it encodes any packet of the connection's version and refuses one of another.
 
+## Identity forwarding
+
+- `player-info-forwarding-mode` is Velocity's key. `none` logs in to a backend with a self-signed token. `modern` signs the player's own token: its claims with `cpk`, `exp` and `iat` replaced, plus `endgate:player_info` (`version`, and `address` as the player's IP without a port, unwrapped from IPv4-mapped IPv6).
+- The token is sent as `AuthenticationType` 0 with `Token`, its header only `alg` ES384 and `kid`. `kid` and `cpk` are the key's base64 SPKI, the string `ServerIdentityAssertionGenerator` builds as `public_key`. `aud` stays the multiplayer audience. The client data is still signed by the `cpk` key.
+- The key is `keys/server_identity_key.pem`, loaded once when the connection manager binds, whichever transport carries a player. The NetherNet identity assertion and `ServerToClientHandshake` never carry `aud` or `kid`; only the forwarding token does (`bedrock.md`, "Forwarding a login").
+- `modern` needs `online-mode`: with it off, endgate would sign xuids it never checked, so it refuses to start.
+
 ## Transports
 
 - One UDP port carries RakNet and NetherNet. NetherNet's HTTP signalling listens on TCP at the same port number.
