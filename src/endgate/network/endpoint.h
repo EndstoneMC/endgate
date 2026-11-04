@@ -112,7 +112,8 @@ private:
         std::string ufrag;
     };
 
-    [[nodiscard]] ServerPing getServerPing(const nethernet::PingRequest &request) override;
+    [[nodiscard]] Awaitable<ServerPing> getServerPing(const nethernet::PingRequest &request) override;
+    Awaitable<void> processOfflinePing(ByteBuf datagram, asio::ip::udp::endpoint sender);
     void onJoin(nethernet::JoinRequest request, nethernet::JoinResponse response) override;
     Awaitable<void> join(nethernet::JoinRequest request, nethernet::JoinResponse response);
 

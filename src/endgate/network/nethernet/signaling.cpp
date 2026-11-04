@@ -336,6 +336,10 @@ Awaitable<void> HttpSignalingServer::exchange(Stream &stream, std::chrono::stead
                           .host = std::string(host_name),
                           .port = host_port,
                           .body = buffer.substr(header_end + 4, body_length)};
+        asio::error_code remote_error;
+        if (const auto remote = stream.lowest_layer().remote_endpoint(remote_error); !remote_error) {
+            request->remote_address = remote.address().to_string() + ":" + std::to_string(remote.port());
+        }
     }
 
     const auto response = co_await respond(std::move(*request));
@@ -376,7 +380,9 @@ Awaitable<HttpSignalingServer::Response> HttpSignalingServer::respond(Request re
                 ping_request.network_id = value;
             }
         }
-        const auto ping = handler_.getServerPing(ping_request);
+        ping_request.host = request.host;
+        ping_request.remote_address = request.remote_address;
+        const auto ping = co_await handler_.getServerPing(ping_request);
         std::string body;
         if (glz::write_json(Ping{.name = ping.getDescription(),
                                  .protocol = ping.getVersion().getProtocol(),

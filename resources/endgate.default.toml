@@ -24,6 +24,17 @@ online-mode = true
 # any existing player who is online if a duplicate connection attempt is made.
 kick-existing-players = false
 
+# Should Endgate pass server list ping requests to a backend server?
+# Available options:
+# - "disabled":    No pass-through will be done. The endgate.toml will determine the initial server
+#                  list ping response.
+# - "description": Uses the motd and the level name from the backend server. The first server in
+#                  the try (or forced host) list that responds is used for them.
+# - "all":         Uses the backend server's response as the proxy response. The Endgate
+#                  configuration is used if no servers could be contacted.
+# A backend only answers when it has enable-lan-visibility=true.
+ping-passthrough = "disabled"
+
 # If not enabled (default is true) player IP addresses will be replaced by <ip address withheld> in logs
 enable-player-address-logging = true
 
@@ -73,6 +84,9 @@ log-player-connections = true
 # Moves a player to the next server in try when their server drops them without a disconnect
 # message, instead of disconnecting them.
 failover-on-unexpected-server-disconnect = true
+
+# Shows ping requests to the proxy from clients.
+show-ping-requests = false
 
 [query]
 # Whether to enable responding to GameSpy 4 query responses or not.

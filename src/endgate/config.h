@@ -11,6 +11,15 @@
 namespace endgate {
 
 /**
+ * @see com.velocitypowered.proxy.config.PingPassthroughMode
+ */
+enum class PingPassthroughMode {
+    Disabled,
+    Description,
+    All,
+};
+
+/**
  * The proxy's configuration, as read from endgate.toml.
  *
  * @see com.velocitypowered.api.proxy.config.ProxyConfig
@@ -27,6 +36,8 @@ public:
     [[nodiscard]] int getShowMaxPlayers() const;
     [[nodiscard]] bool isOnlineMode() const;
     [[nodiscard]] bool isOnlineModeKickExistingPlayers() const;
+    [[nodiscard]] PingPassthroughMode getPingPassthrough() const;
+    [[nodiscard]] bool isShowPingRequests() const;
     [[nodiscard]] bool isPlayerAddressLoggingEnabled() const;
     [[nodiscard]] const std::map<std::string, std::string> &getServers() const;
     [[nodiscard]] const std::vector<std::string> &getAttemptConnectionOrder() const;
@@ -56,6 +67,8 @@ private:
     int show_max_players_ = 0;
     bool online_mode_ = false;
     bool kick_existing_players_ = false;
+    PingPassthroughMode ping_passthrough_ = PingPassthroughMode::Disabled;
+    bool show_ping_requests_ = false;
     bool enable_player_address_logging_ = false;
     std::map<std::string, std::string> servers_;
     std::vector<std::string> attempt_connection_order_;

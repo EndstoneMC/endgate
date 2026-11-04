@@ -35,12 +35,12 @@ constexpr std::string_view OFFER = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n";
 
 class RecordingHandler : public JoinHandler {
 public:
-    ServerPing getServerPing(const PingRequest &request) override
+    Awaitable<ServerPing> getServerPing(const PingRequest &request) override
     {
         const std::scoped_lock lock(mutex);
         pings.push_back(request);
-        return {ServerPing::Version{924, "1.26.50"}, ServerPing::Players{3, 20}, "Endgate", "Bedrock level",
-                GameType::Survival};
+        co_return ServerPing{ServerPing::Version{924, "1.26.50"}, ServerPing::Players{3, 20}, "Endgate",
+                             "Bedrock level", GameType::Survival};
     }
 
     void onJoin(JoinRequest request, JoinResponse response) override

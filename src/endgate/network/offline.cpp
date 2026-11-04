@@ -16,7 +16,7 @@ OfflineMessageHandler::OfflineMessageHandler(ProxyServer &server)
 
 void OfflineMessageHandler::setPingResponder(std::uint16_t port)
 {
-    const auto announcement = server_.getServerListPingHandler().getInitialPing(std::nullopt).toMotd(guid_, port);
+    const auto announcement = server_.getServerListPingHandler().constructLocalPing(std::nullopt).toMotd(guid_, port);
 
     const auto length = static_cast<std::uint16_t>(announcement.size());
     offline_ping_response_.clear();

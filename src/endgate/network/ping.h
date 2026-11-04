@@ -5,10 +5,20 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
+
+#include <asio/io_context.hpp>
+
+#include "endgate/awaitable.h"
+
+namespace spdlog {
+class logger;
+}  // namespace spdlog
 
 namespace endgate {
 
 class ProxyServer;
+enum class PingPassthroughMode;
 
 /**
  * How a world is played, as it appears in an announcement.
@@ -129,17 +139,38 @@ private:
  */
 class ServerListPingHandler {
 public:
-    explicit ServerListPingHandler(ProxyServer &server) : server_(server) {}
+    explicit ServerListPingHandler(ProxyServer &server);
 
     /**
      * Shows the client its own protocol when the proxy supports it, and the newest one otherwise.
      *
+     * @see com.velocitypowered.proxy.connection.util.ServerListPingHandler#constructLocalPing
+     */
+    [[nodiscard]] ServerPing constructLocalPing(std::optional<int> protocol) const;
+
+    /**
+     * Logs a ping when show-ping-requests is on.
+     *
+     * @see com.velocitypowered.proxy.connection.client.StatusSessionHandler#activated
+     */
+    void activated(std::string_view association, std::optional<int> protocol) const;
+
+    /**
+     * Fetches the "default" server ping for a client. A RakNet ping names neither protocol nor virtual
+     * host; a NetherNet ping names the protocol and, when the client dialled a hostname, the host.
+     *
      * @see com.velocitypowered.proxy.connection.util.ServerListPingHandler#getInitialPing
      */
-    [[nodiscard]] ServerPing getInitialPing(std::optional<int> protocol) const;
+    [[nodiscard]] Awaitable<ServerPing> getInitialPing(std::optional<int> protocol, std::string_view virtual_host,
+                                                       asio::io_context &io_context) const;
 
 private:
+    [[nodiscard]] Awaitable<ServerPing> attemptPingPassthrough(PingPassthroughMode mode, std::optional<int> protocol,
+                                                               const std::vector<std::string> &servers,
+                                                               asio::io_context &io_context) const;
+
     ProxyServer &server_;
+    spdlog::logger &logger_;
 };
 
 }  // namespace endgate

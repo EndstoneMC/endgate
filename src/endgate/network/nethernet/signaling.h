@@ -54,6 +54,8 @@ struct PingRequest {
     std::optional<int> protocol;
     std::string version;
     std::string network_id;
+    std::string host;
+    std::string remote_address;
 };
 
 struct JoinRequest {
@@ -66,7 +68,7 @@ struct JoinRequest {
 class JoinHandler {
 public:
     virtual ~JoinHandler() = default;
-    [[nodiscard]] virtual ServerPing getServerPing(const PingRequest &request) = 0;
+    [[nodiscard]] virtual Awaitable<ServerPing> getServerPing(const PingRequest &request) = 0;
     virtual void onJoin(JoinRequest request, JoinResponse response) = 0;
 };
 
@@ -115,6 +117,7 @@ private:
         std::string host;
         std::optional<std::uint16_t> port;
         std::string body;
+        std::string remote_address;
     };
 
     struct Response {

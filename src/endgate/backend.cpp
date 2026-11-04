@@ -151,6 +151,45 @@ Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(a
     co_return detected;
 }
 
+Awaitable<std::optional<ServerPing>> BackendServer::ping(asio::io_context &io_context)
+{
+    constexpr std::chrono::seconds resolve_timeout{2};
+    constexpr std::chrono::milliseconds signaling_timeout{2000};
+    constexpr std::chrono::milliseconds ping_timeout{1000};
+
+    std::optional<asio::ip::udp::endpoint> address;
+    asio::error_code ec;
+    if (const auto literal = asio::ip::make_address(info_.getHost(), ec); !ec) {
+        address.emplace(literal, info_.getPort());
+    }
+    else {
+        asio::ip::udp::resolver resolver(co_await asio::this_coro::executor);
+        const auto [error, results] =
+            co_await resolver.async_resolve(info_.getHost(), std::to_string(info_.getPort()),
+                                            asio::cancel_after(resolve_timeout, asio::as_tuple(asio::use_awaitable)));
+        if (!error && !results.empty()) {
+            address = results.begin()->endpoint();
+        }
+    }
+    if (!address) {
+        co_return std::nullopt;
+    }
+
+    const auto transport = co_await detectTransport(io_context, *address);
+    if (transport == ServerInfo::Transport::NetherNet) {
+        const auto probe =
+            co_await nethernet::SignalingClient::probeNetherNet(io_context, info_.getHost(), info_.getPort(),
+                                                                {.connect_timeout = signaling_timeout,
+                                                                 .request_timeout = signaling_timeout,
+                                                                 .tls_handshake_timeout = signaling_timeout});
+        co_return probe.ping;
+    }
+    if (transport == ServerInfo::Transport::RakNet) {
+        co_return (co_await ping(*address, ping_timeout)).ping;
+    }
+    co_return std::nullopt;
+}
+
 void BackendServer::recordProtocol(const std::optional<ServerPing> &announcement)
 {
     if (!announcement || announcement->getVersion().getProtocol() <= 0) {

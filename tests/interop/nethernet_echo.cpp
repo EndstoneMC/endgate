@@ -52,10 +52,11 @@ public:
 
     [[nodiscard]] std::uint16_t port() const { return socket_.local_endpoint().port(); }
 
-    endgate::ServerPing getServerPing(const endgate::nethernet::PingRequest &request) override
+    endgate::Awaitable<endgate::ServerPing> getServerPing(const endgate::nethernet::PingRequest &request) override
     {
-        return {endgate::ServerPing::Version{request.protocol.value_or(2193), "1.26.52"},
-                endgate::ServerPing::Players{0, 10}, "Endgate Echo", "echo", endgate::GameType::Survival};
+        co_return endgate::ServerPing{endgate::ServerPing::Version{request.protocol.value_or(2193), "1.26.52"},
+                                      endgate::ServerPing::Players{0, 10}, "Endgate Echo", "echo",
+                                      endgate::GameType::Survival};
     }
 
     void onJoin(endgate::nethernet::JoinRequest request, endgate::nethernet::JoinResponse response) override

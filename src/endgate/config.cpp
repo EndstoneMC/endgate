@@ -30,18 +30,20 @@ struct Advanced {
     bool log_command_executions = false;
     bool log_player_connections = false;
     bool failover_on_unexpected_server_disconnect = false;
+    bool show_ping_requests = false;
 
     struct glaze {
         using T = Advanced;
-        static constexpr auto value = glz::object(                 //
-            "compression-threshold", &T::compression_threshold,    //
-            "compression-level", &T::compression_level,            //
-            "login-ratelimit", &T::login_ratelimit,                //
-            "connection-timeout", &T::connection_timeout,          //
-            "read-timeout", &T::read_timeout,                      //
-            "log-command-executions", &T::log_command_executions,  //
-            "log-player-connections", &T::log_player_connections,  //
-            "failover-on-unexpected-server-disconnect", &T::failover_on_unexpected_server_disconnect);
+        static constexpr auto value = glz::object(                                                     //
+            "compression-threshold", &T::compression_threshold,                                        //
+            "compression-level", &T::compression_level,                                                //
+            "login-ratelimit", &T::login_ratelimit,                                                    //
+            "connection-timeout", &T::connection_timeout,                                              //
+            "read-timeout", &T::read_timeout,                                                          //
+            "log-command-executions", &T::log_command_executions,                                      //
+            "log-player-connections", &T::log_player_connections,                                      //
+            "failover-on-unexpected-server-disconnect", &T::failover_on_unexpected_server_disconnect,  //
+            "show-ping-requests", &T::show_ping_requests);
     };
 };
 
@@ -82,6 +84,7 @@ struct Document {
     int show_max_players = 0;
     bool online_mode = false;
     bool kick_existing_players = false;
+    std::string ping_passthrough;
     bool enable_player_address_logging = false;
     std::map<std::string, std::variant<std::string, std::vector<std::string>>> servers;
     std::optional<std::map<std::string, std::variant<std::string, std::vector<std::string>>>> forced_hosts;
@@ -100,6 +103,7 @@ struct Document {
             "show-max-players", &T::show_max_players,                            //
             "online-mode", &T::online_mode,                                      //
             "kick-existing-players", &T::kick_existing_players,                  //
+            "ping-passthrough", &T::ping_passthrough,                            //
             "enable-player-address-logging", &T::enable_player_address_logging,  //
             "servers", &T::servers,                                              //
             "forced-hosts", &T::forced_hosts,                                    //
@@ -147,7 +151,21 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
         document.forced_hosts = defaults.forced_hosts;
     }
 
+    std::string passthrough = document.ping_passthrough;
+    std::ranges::transform(passthrough, passthrough.begin(), [](unsigned char c) { return std::toupper(c); });
+    constexpr std::pair<std::string_view, PingPassthroughMode> modes[] = {
+        {"DISABLED", PingPassthroughMode::Disabled},
+        {"DESCRIPTION", PingPassthroughMode::Description},
+        {"ALL", PingPassthroughMode::All}};
+    const auto *const mode =
+        std::ranges::find(modes, passthrough, &std::pair<std::string_view, PingPassthroughMode>::first);
+    if (mode == std::end(modes)) {
+        return std::unexpected(std::format("invalid ping-passthrough '{}'", document.ping_passthrough));
+    }
+
     ProxyConfig config;
+    config.ping_passthrough_ = mode->second;
+    config.show_ping_requests_ = document.advanced.show_ping_requests;
     config.bind_ = document.bind;
     config.motd_ = document.motd;
     config.show_max_players_ = document.show_max_players;
@@ -294,6 +312,16 @@ bool ProxyConfig::isOnlineMode() const
 bool ProxyConfig::isOnlineModeKickExistingPlayers() const
 {
     return kick_existing_players_;
+}
+
+PingPassthroughMode ProxyConfig::getPingPassthrough() const
+{
+    return ping_passthrough_;
+}
+
+bool ProxyConfig::isShowPingRequests() const
+{
+    return show_ping_requests_;
 }
 
 bool ProxyConfig::isPlayerAddressLoggingEnabled() const

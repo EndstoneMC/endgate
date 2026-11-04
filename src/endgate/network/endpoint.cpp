@@ -170,6 +170,15 @@ void Endpoint::handleDatagram(std::span<const std::byte> datagram, const asio::i
     if (offline_message &&
         (id == raknet::MessageId::UnconnectedPing || id == raknet::MessageId::UnconnectedPingOpenConnections ||
          id == raknet::MessageId::OpenConnectionRequest1)) {
+        if (id != raknet::MessageId::OpenConnectionRequest1) {
+            const auto &handler = server_.getServerListPingHandler();
+            handler.activated(toString(sender), std::nullopt);
+            if (server_.getConfiguration().getPingPassthrough() != PingPassthroughMode::Disabled) {
+                asio::co_spawn(event_loop_.getExecutor(), processOfflinePing(buffer.slice().copy(), sender),
+                               asio::detached);
+                return;
+            }
+        }
         static_cast<void>(offline_.handle(buffer.slice(), sender, true));
         return;
     }
@@ -393,9 +402,26 @@ void Endpoint::removeRoute(const asio::ip::udp::endpoint &remote,
     }
 }
 
-ServerPing Endpoint::getServerPing(const nethernet::PingRequest &request)
+Awaitable<ServerPing> Endpoint::getServerPing(const nethernet::PingRequest &request)
 {
-    return server_.getServerListPingHandler().getInitialPing(request.protocol);
+    const auto &handler = server_.getServerListPingHandler();
+    handler.activated(request.remote_address, request.protocol);
+    co_return co_await handler.getInitialPing(request.protocol, request.host, event_loop_.getIoContext());
+}
+
+Awaitable<void> Endpoint::processOfflinePing(ByteBuf datagram, asio::ip::udp::endpoint sender)
+{
+    const auto ping_response =
+        co_await server_.getServerListPingHandler().getInitialPing(std::nullopt, "", event_loop_.getIoContext());
+    if (closed_) {
+        co_return;
+    }
+    const auto announcement = ping_response.toMotd(offline_.getGuid(), socket_->local_endpoint().port());
+    auto data = Unpooled::buffer(2 + announcement.size());
+    data.writeShort(static_cast<std::uint16_t>(announcement.size()));
+    data.writeBytes(std::as_bytes(std::span{announcement}));
+    offline_.setOfflinePingResponse(data.slice());
+    static_cast<void>(offline_.handle(datagram.slice(), sender, true));
 }
 
 void Endpoint::onJoin(nethernet::JoinRequest request, nethernet::JoinResponse response)

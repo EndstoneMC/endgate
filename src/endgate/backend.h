@@ -102,6 +102,13 @@ public:
     };
 
     /**
+     * Asks the backend for its announcement, over the transport it uses.
+     *
+     * @see com.velocitypowered.proxy.server.VelocityRegisteredServer#ping
+     */
+    [[nodiscard]] Awaitable<std::optional<ServerPing>> ping(asio::io_context &io_context);
+
+    /**
      * Sends RakNet unconnected pings until one is answered, and reads the announcement it carries.
      *
      * @see com.velocitypowered.proxy.server.VelocityRegisteredServer#ping

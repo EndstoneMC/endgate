@@ -36,10 +36,10 @@ public:
 
     void rejectWith(std::uint32_t error) { reject_ = error; }
 
-    ServerPing getServerPing(const PingRequest &) override
+    Awaitable<ServerPing> getServerPing(const PingRequest &) override
     {
-        return {ServerPing::Version{800, "1.26.52"}, ServerPing::Players{3, 10}, "Endgate Test", "world",
-                GameType::Creative};
+        co_return ServerPing{ServerPing::Version{800, "1.26.52"}, ServerPing::Players{3, 10}, "Endgate Test", "world",
+                             GameType::Creative};
     }
 
     void onJoin(JoinRequest request, JoinResponse response) override
