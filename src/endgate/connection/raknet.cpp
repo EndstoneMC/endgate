@@ -82,7 +82,7 @@ void RakNetConnection::connect()
         connection_.close(false, raknet::Clock::now());
         return;
     }
-    asio::co_spawn(eventLoop().getExecutor(), read(std::static_pointer_cast<RakNetConnection>(shared_from_this())),
+    asio::co_spawn(eventLoop().getExecutor(), read(std::shared_ptr<RakNetConnection>(shared_from_this(), this)),
                    asio::detached);
     connection_.handleTimeout(raknet::Clock::now());
     arm();
@@ -221,7 +221,7 @@ void RakNetConnection::arm()
     }
     armed_ = next;
     timer_.expires_at(*next);
-    timer_.async_wait([weak = std::weak_ptr(std::static_pointer_cast<RakNetConnection>(shared_from_this()))](
+    timer_.async_wait([weak = std::weak_ptr(std::shared_ptr<RakNetConnection>(shared_from_this(), this))](
                           const asio::error_code &ec) {
         const auto self = weak.lock();
         if (ec || !self) {

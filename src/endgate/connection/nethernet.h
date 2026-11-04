@@ -134,7 +134,7 @@ void NetherNetConnection<Session>::connect(std::string host, std::uint16_t port,
     requires DIALING
 {
     asio::co_spawn(eventLoop().getExecutor(),
-                   dial(std::static_pointer_cast<NetherNetConnection>(shared_from_this()), std::move(host), port,
+                   dial(std::shared_ptr<NetherNetConnection>(shared_from_this(), this), std::move(host), port,
                         std::move(identity)),
                    asio::detached);
 }
@@ -360,7 +360,7 @@ void NetherNetConnection<Session>::arm()
     }
     armed_ = next;
     timer_.expires_at(*next);
-    timer_.async_wait([weak = std::weak_ptr(std::static_pointer_cast<NetherNetConnection>(shared_from_this()))](
+    timer_.async_wait([weak = std::weak_ptr(std::shared_ptr<NetherNetConnection>(shared_from_this(), this))](
                           const asio::error_code &ec) {
         const auto self = weak.lock();
         if (ec || !self || !self->session_) {
