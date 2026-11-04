@@ -17,6 +17,7 @@ Velocity is PaperMC/Velocity. Read the Java before writing any C++.
    | --- | --- |
    | Netty `EventLoop`, `EventLoopGroup`, channels | `network/eventloop.h` (`threading.md`) |
    | Netty pipeline and `ByteBuf` | `network/pipeline.h`, `network/codec.h`, `buffer/bytebuf.h` |
+   | Brigadier | `brigadier/` (`command/brigadier.md`) |
    | `private static final Logger` | a `spdlog::logger &` member |
    | JLine, TerminalConsoleAppender | replxx, `logging/appender.h` |
    | night-config | glaze |
