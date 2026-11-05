@@ -113,6 +113,19 @@ TEST_F(ProxyConfigTest, PlayerInfoForwardingDefaultsToNone)
     EXPECT_EQ(config->getPlayerInfoForwardingMode(), PlayerInfoForwarding::None);
 }
 
+TEST_F(ProxyConfigTest, ForwardingKeyFileDefaultsToTheKeysFolder)
+{
+    auto config = ProxyConfig::read(directory_ / "endgate.toml");
+    ASSERT_TRUE(config.has_value());
+    EXPECT_EQ(config->getForwardingKeyFile(), std::filesystem::path{"keys/forwarding_key.pem"});
+}
+
+TEST_F(ProxyConfigTest, ReadsTheForwardingKeyFile)
+{
+    const auto config = readDocument("forwarding-key-file = \"custom.pem\"\n");
+    EXPECT_EQ(config.getForwardingKeyFile(), std::filesystem::path{"custom.pem"});
+}
+
 TEST_F(ProxyConfigTest, PlayerInfoForwardingModeIsCaseInsensitive)
 {
     EXPECT_EQ(readDocument("player-info-forwarding-mode = \"MODERN\"\n").getPlayerInfoForwardingMode(),

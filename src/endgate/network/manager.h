@@ -50,6 +50,8 @@ public:
     void awaitTermination();
 
 private:
+    void writeForwardingKey();
+
     ProxyServer &server_;
     spdlog::logger &logger_;
     OfflineMessageHandler offline_;

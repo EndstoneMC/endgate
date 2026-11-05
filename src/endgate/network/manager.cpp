@@ -1,8 +1,12 @@
 #include "endgate/network/manager.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <exception>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <latch>
 #include <memory>
 #include <ranges>
@@ -48,6 +52,36 @@ void ConnectionManager::logChannelInformation()
 HttpClient ConnectionManager::createHttpClient()
 {
     return HttpClient(group_.next(), {});
+}
+
+void ConnectionManager::writeForwardingKey()
+{
+    const auto &path = server_.getConfiguration().getForwardingKeyFile();
+    const auto pem = identity_->getPublicKeyPem();
+    const auto without_space = [](std::string text) {
+        std::erase_if(text, [](unsigned char c) { return std::isspace(c) != 0; });
+        return text;
+    };
+    if (std::filesystem::exists(path)) {
+        std::ifstream in(path);
+        const std::string existing((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (without_space(existing) != without_space(pem)) {
+            logger_.warn("The forwarding-key-file at {} holds a different key than the one Endgate signs with, so "
+                         "backends will refuse forwarded logins until you delete it and copy the new file to them.",
+                         path.string());
+        }
+        return;
+    }
+    std::error_code ec;
+    if (path.has_parent_path()) {
+        std::filesystem::create_directories(path.parent_path(), ec);
+    }
+    std::ofstream out(path);
+    if (ec || !(out << pem)) {
+        logger_.error("Can't write the forwarding-key-file at {}", path.string());
+        return;
+    }
+    logger_.info("The forwarding-key-file does not exist. A new file has been created at {}", path.string());
 }
 
 bool ConnectionManager::bind(asio::ip::address address, std::uint16_t port)
@@ -106,7 +140,6 @@ bool ConnectionManager::bind(asio::ip::address address, std::uint16_t port)
     constexpr auto identity_key_path = "keys/server_identity_key.pem";
 
     const auto &configuration = server_.getConfiguration();
-    std::shared_ptr<asio::ssl::context> tls;
     try {
         if (!identity_) {
             const auto key = nethernet::ServerIdentityAssertionGenerator::loadOrCreateKey(identity_key_path);
@@ -116,6 +149,15 @@ bool ConnectionManager::bind(asio::ip::address address, std::uint16_t port)
                 key, nethernet::ServerIdentityAssertionGenerator::Config{
                          .cpk_encoding = nethernet::CpkEncoding::SubjectPublicKeyInfo});
         }
+    }
+    catch (const std::exception &e) {
+        logger_.error("Can't load the identity key: {}", e.what());
+        return false;
+    }
+    writeForwardingKey();
+
+    std::shared_ptr<asio::ssl::context> tls;
+    try {
         if (!configuration.getTlsCertificate().empty()) {
             tls = nethernet::HttpSignalingServer::loadTls(configuration.getTlsCertificate(),
                                                           configuration.getTlsCertificateKey());

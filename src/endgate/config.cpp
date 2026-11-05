@@ -102,6 +102,7 @@ struct Document {
     bool online_mode = false;
     bool kick_existing_players = false;
     std::string player_info_forwarding_mode;
+    std::string forwarding_key_file;
     std::string ping_passthrough;
     bool enable_player_address_logging = false;
     std::map<std::string, std::variant<std::string, std::vector<std::string>>> servers;
@@ -123,6 +124,7 @@ struct Document {
             "online-mode", &T::online_mode,                                      //
             "kick-existing-players", &T::kick_existing_players,                  //
             "player-info-forwarding-mode", &T::player_info_forwarding_mode,      //
+            "forwarding-key-file", &T::forwarding_key_file,                      //
             "ping-passthrough", &T::ping_passthrough,                            //
             "enable-player-address-logging", &T::enable_player_address_logging,  //
             "servers", &T::servers,                                              //
@@ -197,6 +199,7 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
 
     ProxyConfig config;
     config.player_info_forwarding_mode_ = forwarding_mode->second;
+    config.forwarding_key_file_ = document.forwarding_key_file;
     config.ping_passthrough_ = mode->second;
     config.show_ping_requests_ = document.advanced.show_ping_requests;
     config.bind_ = document.bind;
@@ -374,6 +377,11 @@ bool ProxyConfig::isOnlineModeKickExistingPlayers() const
 PlayerInfoForwarding ProxyConfig::getPlayerInfoForwardingMode() const
 {
     return player_info_forwarding_mode_;
+}
+
+const std::filesystem::path &ProxyConfig::getForwardingKeyFile() const
+{
+    return forwarding_key_file_;
 }
 
 PingPassthroughMode ProxyConfig::getPingPassthrough() const

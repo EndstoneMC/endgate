@@ -34,6 +34,10 @@ kick-existing-players = false
 #             must be in online mode.
 player-info-forwarding-mode = "none"
 
+# If you are using modern IP forwarding, configure a file that Endgate writes its public key to.
+# Copy it to each backend as the file its forwarding-key-file setting names.
+forwarding-key-file = "keys/forwarding_key.pem"
+
 # Should Endgate pass server list ping requests to a backend server?
 # Available options:
 # - "disabled":    No pass-through will be done. The endgate.toml will determine the initial server

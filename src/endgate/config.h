@@ -45,6 +45,7 @@ public:
     [[nodiscard]] bool isOnlineMode() const;
     [[nodiscard]] bool isOnlineModeKickExistingPlayers() const;
     [[nodiscard]] PlayerInfoForwarding getPlayerInfoForwardingMode() const;
+    [[nodiscard]] const std::filesystem::path &getForwardingKeyFile() const;
     [[nodiscard]] PingPassthroughMode getPingPassthrough() const;
     [[nodiscard]] bool isShowPingRequests() const;
     [[nodiscard]] bool isPlayerAddressLoggingEnabled() const;
@@ -83,6 +84,7 @@ private:
     bool online_mode_ = false;
     bool kick_existing_players_ = false;
     PlayerInfoForwarding player_info_forwarding_mode_ = PlayerInfoForwarding::None;
+    std::filesystem::path forwarding_key_file_;
     PingPassthroughMode ping_passthrough_ = PingPassthroughMode::Disabled;
     bool show_ping_requests_ = false;
     bool enable_player_address_logging_ = false;
