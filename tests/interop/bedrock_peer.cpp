@@ -35,8 +35,11 @@
  *   initialized <runtime id>
  *   loading-screen <type>
  *   chunk-radius <radius>
+ *   violation <type> <severity> <packet id> <context hex>  a PacketViolationWarningPacket arrived
  *   packet <id>          any other packet
  *   error <what>
+ *
+ * The client's login comes from --request as hex or --request-file as raw bytes.
  *
  * With --play, a server plays a join after the login: the pack exchange, then StartGame with
  * --runtime-id, --unique-id, --checksum and --dimension, then PlayStatus PlayerSpawn. A client answers the pack
@@ -54,7 +57,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <format>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <span>
@@ -680,6 +685,13 @@ private:
             std::cout << "soft-enum " << toHex(update.enum_name) << ' ' << static_cast<int>(update.type) << ' '
                       << (values.empty() ? "-" : values) << '\n';
         }
+        else if (id == bp::PacketViolationWarningPacket_<V>::Id) {
+            const auto warning = decode<bp::PacketViolationWarningPacket_<V>>(packet);
+            std::cout << "violation " << static_cast<int>(warning.violation_type) << ' '
+                      << static_cast<int>(warning.violation_severity) << ' '
+                      << static_cast<int>(warning.violating_packet_id) << ' ' << toHex(warning.violation_context)
+                      << '\n';
+        }
         else if (id == bp::DisconnectPacket_<V>::Id) {
             const auto disconnect = decode<bp::DisconnectPacket_<V>>(packet);
             const auto *const messages = std::get_if<bp::DisconnectPacketMessages>(&disconnect.messages);
@@ -801,6 +813,10 @@ int main(int argc, char **argv)
         }
         else if (argument == "--request") {
             options.request = value();
+        }
+        else if (argument == "--request-file") {
+            std::ifstream file(value(), std::ios::binary);
+            options.request = toHex(std::string(std::istreambuf_iterator<char>(file), {}));
         }
         else if (argument == "--play") {
             options.play = true;
