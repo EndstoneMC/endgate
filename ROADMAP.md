@@ -109,7 +109,8 @@ Live, with a real client, endgate and an Endstone backend:
 
 - [x] Joined through endgate, the backend sees the player's real xuid, pfid, name and address (RakNet and NetherNet, BDS 1.26.61)
 - [x] A direct join is refused with "This server requires you to connect with endgate."
-- [ ] A login signed by another key is refused with "Unable to verify player details"
+- [x] A login signed by another key is refused with "Unable to verify player details"
+- [ ] A self-signed login straight to the backend is refused, with and without a forged `endgate:player_info`
 - [ ] Endstone's CHANGELOG lists `[proxies.endgate]`
 
 Facts the design rests on: `bedrock.md`, "Forwarding a login". Backends must be reachable only through endgate.
