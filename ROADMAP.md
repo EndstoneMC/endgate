@@ -98,11 +98,11 @@ Endgate:
 
 Endstone:
 
-- [ ] Hook `MinecraftServiceKeyManager::tryGetKey`: return endgate's key for its kid, else call the original
-- [ ] `EndgateProxy` in `proxy/endgate.h`, Paper's `VelocityProxy`: `checkIntegrity` (endgate's kid, not self-signed), `readAddress`, `MaxSupportedForwardingVersion` and `PlayerInfoChannel`
-- [ ] After BDS validates the login, as Paper's `handleCustomQueryPacket`: no `endgate:player_info` refuses with "This server requires you to connect with endgate.", a failed `checkIntegrity` with "Unable to verify player details", a version above the maximum with "Unsupported forwarding version N, wanted upto 1"; the forwarded address then replaces the connection's, before the IP-ban check
-- [ ] `[proxies.endgate]` in `endstone.toml`: `enabled = false` and `forwarding-key-file = "keys/forwarding_key.pem"`, as Velocity's `forwarding-secret-file`; enabled refuses every login not signed by endgate's key, self-signed included, whatever online-mode says
-- [ ] Refuse to start when enabled and the key file is missing, saying to copy endgate's `keys/forwarding_key.pem`, or isn't a P-384 public key
+- [x] Hook `MinecraftServiceKeyManager::tryGetKey`: return endgate's key for its kid, else call the original
+- [x] `EndgateProxy` in `proxy/endgate.h`, Paper's `VelocityProxy`: `checkIntegrity` (endgate's kid, not self-signed), `readAddress`, `MaxSupportedForwardingVersion` and `PlayerInfoChannel`
+- [x] After BDS validates the login, as Paper's `handleCustomQueryPacket`: no `endgate:player_info` refuses with "This server requires you to connect with endgate.", a failed `checkIntegrity` with "Unable to verify player details", a version above the maximum with "Unsupported forwarding version N, wanted upto 1"; the forwarded address then replaces the connection's, before the IP-ban check
+- [x] `[proxies.endgate]` in `endstone.toml`: `enabled = false` and `forwarding-key-file = "keys/forwarding_key.pem"`, as Velocity's `forwarding-secret-file`; enabled refuses every login not signed by endgate's key, self-signed included, whatever online-mode says
+- [x] Refuse to start when enabled and the key file is missing, saying to copy endgate's `keys/forwarding_key.pem`, or isn't a P-384 public key
 
 Facts the design rests on: `bedrock.md`, "Forwarding a login".
 
