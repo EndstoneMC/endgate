@@ -59,7 +59,10 @@ def test_modern_forwarding_signs_the_players_own_token_with_endgates_key(make_pr
     assert claims["cpk"] == spki(key)
     assert claims["cpk"] != identity.cpk
     assert claims["exp"] > claims["iat"]
-    assert claims["endgate:player_info"] == {"version": 1, "address": "127.0.0.1"}
+    info = claims["endgate:player_info"]
+    assert info == {"version": 1, "address": "127.0.0.1"}
+    assert type(info["version"]) is int
+    assert type(info["address"]) is str
 
     r, s = int.from_bytes(signature[:48], "big"), int.from_bytes(signature[48:], "big")
     key.public_key().verify(
@@ -106,6 +109,9 @@ def test_the_public_half_of_the_identity_key_is_written_once(make_proxy, backend
         serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
     )
     assert base64.b64encode(der).decode() == spki(identity_key(proxy))
+    assert len(der) == 120
+    body = [line for line in text.splitlines() if not line.startswith("-----")]
+    assert base64.b64decode("".join(body)) == der
     assert any(
         re.search(r"INFO The forwarding-key-file does not exist\. A new file has been created at ", line)
         for line in proxy.lines
