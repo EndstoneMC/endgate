@@ -99,9 +99,10 @@ Endgate:
 Endstone:
 
 - [ ] Hook `MinecraftServiceKeyManager::tryGetKey`: return endgate's key for its kid, else call the original
-- [ ] On player creation, read `endgate:player_info` from the raw token for endgate's kid only; refuse a version above the maximum; set the address
-- [ ] `[proxies.endgate]` in `endstone.toml`: `enabled = false` and `forwarding-key-file = "keys/forwarding_key.pem"`, as Velocity's `forwarding-secret-file`; enabled refuses every login not signed by endgate's key, self-signed included, with Paper's "This server requires you to connect with endgate."
-- [ ] Refuse to start when enabled and the key file is missing, saying to copy endgate's `keys/forwarding_key.pem`, or isn't a P-384 public key; log an unknown kid, an expired proxy token and a too-new version
+- [ ] `EndgateProxy` in `proxy/endgate.h`, Paper's `VelocityProxy`: `checkIntegrity` (endgate's kid, not self-signed), `readAddress`, `MaxSupportedForwardingVersion` and `PlayerInfoChannel`
+- [ ] After BDS validates the login, as Paper's `handleCustomQueryPacket`: no `endgate:player_info` refuses with "This server requires you to connect with endgate.", a failed `checkIntegrity` with "Unable to verify player details", a version above the maximum with "Unsupported forwarding version N, wanted upto 1"; the forwarded address then replaces the connection's, before the IP-ban check
+- [ ] `[proxies.endgate]` in `endstone.toml`: `enabled = false` and `forwarding-key-file = "keys/forwarding_key.pem"`, as Velocity's `forwarding-secret-file`; enabled refuses every login not signed by endgate's key, self-signed included, whatever online-mode says
+- [ ] Refuse to start when enabled and the key file is missing, saying to copy endgate's `keys/forwarding_key.pem`, or isn't a P-384 public key
 
 Facts the design rests on (1.26.60):
 
