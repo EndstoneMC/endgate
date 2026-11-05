@@ -51,11 +51,13 @@ Metrics::Metrics(spdlog::logger &logger, HttpClient client, int service_id, bool
         std::move(overrides));
 
     if (!config->didExistBefore()) {
+        logger.info("");
         logger.info("Endgate collects metrics and sends them to bStats (https://bStats.org).");
         logger.info("bStats collects some basic information for server authors, like how many people use");
         logger.info("Endgate and their total player count. It's recommended to keep bStats enabled, but");
         logger.info("if you're not comfortable with this, you can opt-out by editing the config.toml file in");
         logger.info("the 'plugins/bstats' folder and setting enabled to false.");
+        logger.info("");
     }
 }
 
