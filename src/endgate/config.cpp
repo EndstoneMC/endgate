@@ -101,6 +101,7 @@ struct Document {
     int show_max_players = 0;
     bool online_mode = false;
     bool kick_existing_players = false;
+    std::string player_info_forwarding_mode;
     std::string ping_passthrough;
     bool enable_player_address_logging = false;
     std::map<std::string, std::variant<std::string, std::vector<std::string>>> servers;
@@ -121,6 +122,7 @@ struct Document {
             "show-max-players", &T::show_max_players,                            //
             "online-mode", &T::online_mode,                                      //
             "kick-existing-players", &T::kick_existing_players,                  //
+            "player-info-forwarding-mode", &T::player_info_forwarding_mode,      //
             "ping-passthrough", &T::ping_passthrough,                            //
             "enable-player-address-logging", &T::enable_player_address_logging,  //
             "servers", &T::servers,                                              //
@@ -182,7 +184,19 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
         return std::unexpected(std::format("invalid ping-passthrough '{}'", document.ping_passthrough));
     }
 
+    std::string forwarding = document.player_info_forwarding_mode;
+    std::ranges::transform(forwarding, forwarding.begin(), [](unsigned char c) { return std::toupper(c); });
+    constexpr std::pair<std::string_view, PlayerInfoForwarding> forwarding_modes[] = {
+        {"NONE", PlayerInfoForwarding::None}, {"MODERN", PlayerInfoForwarding::Modern}};
+    const auto *const forwarding_mode =
+        std::ranges::find(forwarding_modes, forwarding, &std::pair<std::string_view, PlayerInfoForwarding>::first);
+    if (forwarding_mode == std::end(forwarding_modes)) {
+        return std::unexpected(
+            std::format("invalid player-info-forwarding-mode '{}'", document.player_info_forwarding_mode));
+    }
+
     ProxyConfig config;
+    config.player_info_forwarding_mode_ = forwarding_mode->second;
     config.ping_passthrough_ = mode->second;
     config.show_ping_requests_ = document.advanced.show_ping_requests;
     config.bind_ = document.bind;
@@ -251,6 +265,20 @@ bool ProxyConfig::validate() const
     if (!online_mode_) {
         logger().warn("The proxy is running in offline mode! This is a security risk and you will NOT receive any "
                       "support!");
+    }
+
+    switch (player_info_forwarding_mode_) {
+    case PlayerInfoForwarding::None:
+        logger().warn("Player info forwarding is disabled! All players will appear to be connecting from the proxy "
+                      "with a self-signed login.");
+        break;
+    case PlayerInfoForwarding::Modern:
+        if (!online_mode_) {
+            logger().error("Modern player info forwarding needs online-mode, since the proxy would vouch for "
+                           "players it never authenticated.");
+            valid = false;
+        }
+        break;
     }
 
     if (servers_.empty()) {
@@ -341,6 +369,11 @@ bool ProxyConfig::isOnlineMode() const
 bool ProxyConfig::isOnlineModeKickExistingPlayers() const
 {
     return kick_existing_players_;
+}
+
+PlayerInfoForwarding ProxyConfig::getPlayerInfoForwardingMode() const
+{
+    return player_info_forwarding_mode_;
 }
 
 PingPassthroughMode ProxyConfig::getPingPassthrough() const

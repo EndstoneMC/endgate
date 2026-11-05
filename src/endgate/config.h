@@ -20,6 +20,14 @@ enum class PingPassthroughMode {
 };
 
 /**
+ * @see com.velocitypowered.proxy.config.PlayerInfoForwarding
+ */
+enum class PlayerInfoForwarding {
+    None,
+    Modern,
+};
+
+/**
  * The proxy's configuration, as read from endgate.toml.
  *
  * @see com.velocitypowered.api.proxy.config.ProxyConfig
@@ -36,6 +44,7 @@ public:
     [[nodiscard]] int getShowMaxPlayers() const;
     [[nodiscard]] bool isOnlineMode() const;
     [[nodiscard]] bool isOnlineModeKickExistingPlayers() const;
+    [[nodiscard]] PlayerInfoForwarding getPlayerInfoForwardingMode() const;
     [[nodiscard]] PingPassthroughMode getPingPassthrough() const;
     [[nodiscard]] bool isShowPingRequests() const;
     [[nodiscard]] bool isPlayerAddressLoggingEnabled() const;
@@ -73,6 +82,7 @@ private:
     int show_max_players_ = 0;
     bool online_mode_ = false;
     bool kick_existing_players_ = false;
+    PlayerInfoForwarding player_info_forwarding_mode_ = PlayerInfoForwarding::None;
     PingPassthroughMode ping_passthrough_ = PingPassthroughMode::Disabled;
     bool show_ping_requests_ = false;
     bool enable_player_address_logging_ = false;

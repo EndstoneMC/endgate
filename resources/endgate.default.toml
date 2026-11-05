@@ -25,6 +25,15 @@ online-mode = true
 # any existing player who is online if a duplicate connection attempt is made.
 kick-existing-players = false
 
+# Should we forward IP addresses and other data to backend servers?
+# Available options:
+# - "none":   No forwarding will be done. All players will appear to be connecting
+#             from the proxy and will log in with a self-signed token.
+# - "modern": Forward player IDs and IPs as part of the login, in a token signed with
+#             Endgate's own key. Only applicable to Endstone backends, and the proxy
+#             must be in online mode.
+player-info-forwarding-mode = "none"
+
 # Should Endgate pass server list ping requests to a backend server?
 # Available options:
 # - "disabled":    No pass-through will be done. The endgate.toml will determine the initial server
