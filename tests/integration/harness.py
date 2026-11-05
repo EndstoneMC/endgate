@@ -158,6 +158,10 @@ class Proxy:
                 ]
             )
         )
+        bstats_config = self.workdir / "plugins" / "bstats" / "config.toml"
+        if "ENDGATE_BSTATS_URI" not in os.environ and not bstats_config.exists():
+            bstats_config.parent.mkdir(parents=True, exist_ok=True)
+            bstats_config.write_text('enabled = false\nserver-uuid = "00000000-0000-0000-0000-000000000000"\n')
         environment = dict(os.environ)
         if self.debug:
             environment["SPDLOG_LEVEL"] = "debug"
