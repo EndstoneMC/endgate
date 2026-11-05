@@ -702,7 +702,7 @@ wheels = [
 [[package]]
 name = "nethernet"
 version = "0.0.1"
-source = { git = "https://github.com/EndstoneMC/nethernet-python#339eb5a65582098af4152f27ed5c855ba205c65d" }
+source = { git = "https://github.com/EndstoneMC/nethernet-python#daf10158736a929a911c468f6010e761cfcbdd4c" }
 dependencies = [
     { name = "aiortc" },
     { name = "cryptography" },

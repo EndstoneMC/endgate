@@ -428,9 +428,11 @@ class Player(Session):
         self, link, identity: PlayerIdentity, request: bytes, key_path: Path, protocol: int = PROTOCOL
     ) -> None:
         self.identity = identity
+        request_path = key_path.with_suffix(".request")
+        request_path.write_bytes(request)
         super().__init__(
             link,
-            ["client", "--protocol", str(protocol), "--key", str(key_path), "--request", request.hex()],
+            ["client", "--protocol", str(protocol), "--key", str(key_path), "--request-file", str(request_path)],
         )
         self.peer.command("start")
 
