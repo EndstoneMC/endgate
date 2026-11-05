@@ -26,6 +26,7 @@ constexpr auto HISTORY_FILE = ".console_history";
 Console::Console(ProxyServer &server) : server_(server), logger_(LogManager::getLogger(*this))
 {
     constexpr std::size_t max_history_size = 1000;
+    constexpr int max_hint_rows = 8;
 
 #ifdef _WIN32
     const bool interactive = _isatty(_fileno(stdin)) != 0 && _isatty(_fileno(stdout)) != 0;
@@ -36,13 +37,24 @@ Console::Console(ProxyServer &server) : server_(server), logger_(LogManager::get
         rx_ = replxx::Replxx{};
         rx_->bind_key_internal(replxx::Replxx::KEY::control('J'), "commit_line");
         rx_->set_max_history_size(max_history_size);
+        rx_->set_immediate_completion(false);
+        rx_->set_max_hint_rows(max_hint_rows);
+        rx_->bind_key(replxx::Replxx::KEY::TAB, [this, &rx = *rx_](char32_t code) {
+            return complete(rx, replxx::Replxx::ACTION::COMPLETE_NEXT, code);
+        });
+        rx_->bind_key(replxx::Replxx::KEY::shift(replxx::Replxx::KEY::TAB), [this, &rx = *rx_](char32_t code) {
+            return complete(rx, replxx::Replxx::ACTION::COMPLETE_PREVIOUS, code);
+        });
         rx_->history_load(HISTORY_FILE);
         rx_->set_completion_callback([this](const std::string &input, int &context_len) {
             replxx::Replxx::completions_t completions;
+            candidates_.clear();
+            completer_ran_ = true;
             try {
                 for (const std::string &offer :
                      server_.getCommandManager().offerSuggestions(shared_from_this(), input)) {
                     completions.emplace_back(offer);
+                    candidates_.push_back(offer);
                 }
             }
             catch (const std::exception &e) {
@@ -52,6 +64,12 @@ Console::Console(ProxyServer &server) : server_(server), logger_(LogManager::get
             context_len =
                 static_cast<int>(std::ranges::count_if(word, [](unsigned char c) { return (c & 0xC0) != 0x80; }));
             return completions;
+        });
+        rx_->set_hint_callback([this](const std::string &input, int &context_len, replxx::Replxx::Color &color) {
+            context_len = 0;
+            color = replxx::Replxx::Color::GRAY;
+            return (completing_ || input == tab_line_) && candidates_.size() > 1 ? candidates_
+                                                                                 : replxx::Replxx::hints_t{};
         });
     }
 }
@@ -82,6 +100,7 @@ void Console::start()
                 break;
             }
             line = input;
+            candidates_.clear();
         }
         else if (!std::getline(std::cin, line)) {
             break;
@@ -147,6 +166,27 @@ void Console::runCommand(const std::string &command)
     catch (const std::exception &e) {
         logger_.error("An error occurred while running this command: {}", e.what());
     }
+}
+
+replxx::Replxx::ACTION_RESULT Console::complete(replxx::Replxx &rx, replxx::Replxx::ACTION action, char32_t code)
+{
+    completer_ran_ = false;
+    completing_ = true;
+    const auto result = rx.invoke(action, code);
+    completing_ = false;
+    tab_line_ = rx.get_state().text();
+    if (!completer_ran_ || candidates_.size() != 1) {
+        return result;
+    }
+
+    const std::string text = rx.get_state().text();
+    const auto length = std::ranges::count_if(text, [](unsigned char c) { return (c & 0xC0) != 0x80; });
+    const auto cursor = rx.get_state().cursor_position();
+    if (cursor == length) {
+        rx.invoke(replxx::Replxx::ACTION::MOVE_CURSOR_TO_END_OF_LINE, code);
+        rx.set_state({(text + ' ').c_str(), cursor + 1});
+    }
+    return result;
 }
 
 void Console::shutdown()

@@ -49,10 +49,15 @@ private:
     [[nodiscard]] bool isRunning() const;
     void runCommand(const std::string &command);
     void shutdown();
+    replxx::Replxx::ACTION_RESULT complete(replxx::Replxx &rx, replxx::Replxx::ACTION action, char32_t code);
 
     ProxyServer &server_;
     spdlog::logger &logger_;
     std::optional<replxx::Replxx> rx_;
+    replxx::Replxx::hints_t candidates_;
+    std::string tab_line_;
+    bool completing_ = false;
+    bool completer_ran_ = false;
 };
 
 }  // namespace endgate
