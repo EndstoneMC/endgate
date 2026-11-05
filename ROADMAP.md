@@ -82,6 +82,7 @@ Gate: each item works on a real client.
 - [ ] PROXY protocol v2 (researched, waits for decisions)
 - [ ] Packet limiter (Velocity has none)
 - [ ] Find why a client drops a Disconnect sent right after LoginSuccess (avoided by refusing before it)
+- [ ] A backend's refusal reads well: log its Disconnect reason code, and give the player text for an empty message or a raw key such as `hostdisconnected`
 
 Not ported: /endgate dump, ping passthrough's mods, JLine's highlighted completion menu (needs a patched replxx), and Java-only features (Forge, legacy ping, signed chat, BungeeCord channel).
 
