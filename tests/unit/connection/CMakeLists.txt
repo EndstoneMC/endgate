@@ -4,6 +4,7 @@ add_executable(endgate_connection_tests
         test_future.cpp
         test_command_request.cpp
         test_login.cpp
+        test_forwarding.cpp
         test_play.cpp
         test_routing.cpp
 )

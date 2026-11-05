@@ -34,6 +34,7 @@ struct GameProfile {
     std::string xuid;
     std::string name;
     std::string client_data;
+    std::string identity_claims;
 };
 class BackendServer;
 class Player;

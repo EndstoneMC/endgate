@@ -178,6 +178,24 @@ ServerIdentityAssertionGenerator::ServerIdentityAssertionGenerator(PrivateKey ke
     if (curveOf(key_.get()) == nullptr) {
         throw std::invalid_argument("the identity key must be an ECDSA P-256, P-384 or P-521 key");
     }
+    unsigned char *der = nullptr;
+    const auto der_length = i2d_PUBKEY(key_.get(), &der);
+    const std::unique_ptr<unsigned char, decltype([](unsigned char *p) { OPENSSL_free(p); })> owned_der(der);
+    if (der_length <= 0) {
+        throw std::invalid_argument("the identity key has no encodable public key");
+    }
+    public_key_ = base64Encode(std::as_bytes(std::span{der, static_cast<std::size_t>(der_length)}));
+}
+
+std::string ServerIdentityAssertionGenerator::getPublicKeyPem() const
+{
+    const std::unique_ptr<BIO, decltype(&BIO_free)> bio(BIO_new(BIO_s_mem()), BIO_free);
+    if (!bio || PEM_write_bio_PUBKEY(bio.get(), key_.get()) != 1) {
+        return {};
+    }
+    char *data = nullptr;
+    const auto length = BIO_get_mem_data(bio.get(), &data);
+    return {data, static_cast<std::size_t>(length)};
 }
 
 PrivateKey ServerIdentityAssertionGenerator::loadOrCreateKey(const std::filesystem::path &path)
@@ -233,14 +251,6 @@ std::optional<std::string> ServerIdentityAssertionGenerator::createAssertion(
     const auto issued = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
     const auto expires = issued + config_.token_lifetime.count();
 
-    unsigned char *der = nullptr;
-    const auto der_length = i2d_PUBKEY(key_.get(), &der);
-    const std::unique_ptr<unsigned char, decltype([](unsigned char *p) { OPENSSL_free(p); })> owned_der(der);
-    if (der_length <= 0) {
-        return std::nullopt;
-    }
-    const auto public_key = base64Encode(std::as_bytes(std::span{der, static_cast<std::size_t>(der_length)}));
-
     std::string claims;
     if (config_.cpk_encoding == CpkEncoding::JsonWebKey) {
         BIGNUM *x = nullptr;
@@ -265,11 +275,11 @@ std::optional<std::string> ServerIdentityAssertionGenerator::createAssertion(
                                               .iat = issued});
     }
     else {
-        claims = writeJson(Claims<std::string>{.cpk = public_key, .exp = expires, .iat = issued});
+        claims = writeJson(Claims<std::string>{.cpk = public_key_, .exp = expires, .iat = issued});
     }
 
     const auto token_head =
-        base64UrlEncode(bytesOf(writeJson(JwtHeader{.alg = std::string(curve->algorithm), .x5u = public_key}))) + "." +
+        base64UrlEncode(bytesOf(writeJson(JwtHeader{.alg = std::string(curve->algorithm), .x5u = public_key_}))) + "." +
         base64UrlEncode(bytesOf(claims));
     const auto jws_head = base64UrlEncode(bytesOf(writeJson(JwsHeader{.alg = std::string(curve->algorithm)})));
     const auto token_signature = signJws(key_.get(), token_head);

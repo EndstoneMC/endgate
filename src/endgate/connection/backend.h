@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -22,6 +23,7 @@
 #include "endgate/connection/connection.h"
 #include "endgate/connection/player.h"
 #include "endgate/network/eventloop.h"
+#include "endgate/network/nethernet/identity.h"
 #include "endgate/util/future.h"
 
 namespace endgate {
@@ -39,7 +41,20 @@ class ClientPlaySessionHandler;
  */
 class ServerConnection : public std::enable_shared_from_this<ServerConnection> {
 public:
+    static constexpr int MODERN_FORWARDING_DEFAULT = 1;
+    static constexpr std::string_view PLAYER_INFO_CLAIM = "endgate:player_info";
+
     ServerConnection(BackendServer &server, std::shared_ptr<Player> player);
+
+    /**
+     * Builds the login token modern forwarding sends: the player's own claims with the key's public half as cpk
+     * and a fresh lifetime, plus the player's address, signed by the key and keyed by its public half.
+     *
+     * @see com.velocitypowered.proxy.connection.backend.VelocityServerConnection#createForwardingData
+     */
+    [[nodiscard]] static std::optional<std::string> createForwardingData(
+        const nethernet::ServerIdentityAssertionGenerator &identity, std::string_view address,
+        const GameProfile &profile, std::chrono::system_clock::time_point now);
 
     /**
      * Finds out which transport the backend supports, opens a leg to it over that transport and logs

@@ -400,6 +400,26 @@ struct SelfSignedClaims {
     };
 };
 
+struct ForwardingHeader {
+    std::string alg;
+    std::string kid;
+
+    struct glaze {
+        using T = ForwardingHeader;
+        static constexpr auto value = glz::object("alg", &T::alg, "kid", &T::kid);
+    };
+};
+
+struct PlayerInfo {
+    int version;
+    std::string address;
+
+    struct glaze {
+        using T = PlayerInfo;
+        static constexpr auto value = glz::object("version", &T::version, "address", &T::address);
+    };
+};
+
 struct HandshakeClaims {
     std::string salt;
 
@@ -435,6 +455,36 @@ void appendLongString(std::string &out, std::string_view text)
 
 }  // namespace
 
+std::optional<std::string> ServerConnection::createForwardingData(
+    const nethernet::ServerIdentityAssertionGenerator &identity, std::string_view address, const GameProfile &profile,
+    std::chrono::system_clock::time_point now)
+{
+    constexpr std::chrono::hours token_lifetime{1};
+
+    const auto issued = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+    std::map<std::string, glz::raw_json> claims;
+    std::string cpk;
+    std::string player_info;
+    std::string header;
+    std::string body;
+    if (glz::read_json(claims, profile.identity_claims) || glz::write_json(identity.getPublicKey(), cpk) ||
+        glz::write_json(PlayerInfo{.version = MODERN_FORWARDING_DEFAULT, .address = std::string(address)},
+                        player_info) ||
+        glz::write_json(
+            ForwardingHeader{.alg = std::string(curveOf(identity.getKey())->algorithm), .kid = identity.getPublicKey()},
+            header)) {
+        return std::nullopt;
+    }
+    claims["cpk"] = std::move(cpk);
+    claims["exp"] = std::to_string(issued + token_lifetime / std::chrono::seconds{1});
+    claims["iat"] = std::to_string(issued);
+    claims[std::string(PLAYER_INFO_CLAIM)] = std::move(player_info);
+    if (glz::write_json(claims, body)) {
+        return std::nullopt;
+    }
+    return signToken(identity.getKey(), header, body);
+}
+
 LoginSessionHandler::LoginSessionHandler(std::shared_ptr<ServerConnection> server_connection,
                                          std::shared_ptr<ConnectionResultFuture> result_future)
     : logger_(LogManager::getLogger(*this)), server_connection_(std::move(server_connection)),
@@ -459,24 +509,17 @@ bool LoginSessionHandler::handleEach(const bp::NetworkSettingsPacket &packet)
     auto *const backend = server_connection_->getConnection();
     backend->setCompressionThreshold(packet.compression_threshold, packet.compression_algorithm);
 
-    auto *const key = backend->getEndpoint().getOfferIdentity()->getKey();
-    unsigned char *der = nullptr;
-    const auto der_length = i2d_PUBKEY(key, &der);
-    const std::unique_ptr<unsigned char, decltype([](unsigned char *p) { OPENSSL_free(p); })> owned_der(der);
-    if (der_length <= 0) {
-        result_future_->completeExceptionally(
-            std::make_exception_ptr(std::runtime_error("can't encode the proxy's key")));
-        server_connection_->disconnect();
-        return true;
-    }
-    const auto cpk = base64Encode(std::as_bytes(std::span{der, static_cast<std::size_t>(der_length)}));
+    const auto &identity = *backend->getEndpoint().getOfferIdentity();
+    auto *const key = identity.getKey();
+    const auto &cpk = identity.getPublicKey();
     const auto now =
         std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     std::string header;
     std::string claims;
     std::ignore = glz::write_json(TokenHeader{.alg = std::string(curveOf(key)->algorithm), .x5u = cpk}, header);
-    const auto &profile = server_connection_->getPlayer().getGameProfile();
+    const auto &player = server_connection_->getPlayer();
+    const auto &profile = player.getGameProfile();
     std::ignore = glz::write_json(SelfSignedClaims{.cpk = cpk,
                                                    .exp = now + token_lifetime / std::chrono::seconds{1},
                                                    .iat = now,
@@ -497,11 +540,27 @@ bool LoginSessionHandler::handleEach(const bp::NetworkSettingsPacket &packet)
     client_data_claims["ThirdPartyName"] = std::move(name);
     client_data_claims["SelfSignedId"] = std::move(self_signed_id);
     std::ignore = glz::write_json(client_data_claims, forwarded_client_data);
-    const auto token = signToken(key, header, claims);
+    const auto modern =
+        player.getConnection().getEndpoint().getServer().getConfiguration().getPlayerInfoForwardingMode() ==
+        PlayerInfoForwarding::Modern;
+    std::optional<std::string> token;
+    if (modern) {
+        auto ip = player.getConnection().getRemoteIp();
+        if (ip.is_v6()) {
+            auto v6 = ip.to_v6();
+            v6.scope_id(0);
+            ip = v6;
+        }
+        token =
+            ServerConnection::createForwardingData(identity, ip.to_string(), profile, std::chrono::system_clock::now());
+    }
+    else {
+        token = signToken(key, header, claims);
+    }
     const auto client_data = signToken(key, header, forwarded_client_data);
     std::string authentication;
     if (!token || !client_data ||
-        glz::write_json(LoginAuthentication{.authentication_type = 2, .token = *token}, authentication)) {
+        glz::write_json(LoginAuthentication{.authentication_type = modern ? 0 : 2, .token = *token}, authentication)) {
         result_future_->completeExceptionally(std::make_exception_ptr(std::runtime_error("can't sign the login")));
         server_connection_->disconnect();
         return true;

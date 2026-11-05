@@ -178,8 +178,11 @@ bool InitialLoginSessionHandler::handle(const bp::LoginPacket &packet)
     }
     const auto id = identity->getXuid().empty() ? UuidUtils::generateOfflinePlayerUuid(name)
                                                 : UuidUtils::generateXuidPlayerUuid(identity->getXuid());
-    profile_ = GameProfile{
-        .id = id, .xuid = identity->getXuid(), .name = std::move(name), .client_data = request->client_data.claims};
+    profile_ = GameProfile{.id = id,
+                           .xuid = identity->getXuid(),
+                           .name = std::move(name),
+                           .client_data = request->client_data.claims,
+                           .identity_claims = request->token.claims};
     virtual_host_ = client_data.server_address.transform(cleanVhost);
 
     if (keys == nullptr || connection_->isTransportEncrypted()) {

@@ -51,9 +51,20 @@ public:
     [[nodiscard]] std::string_view idpDomain() const { return config_.domain; }
     [[nodiscard]] EVP_PKEY *getKey() const { return key_.get(); }
 
+    /**
+     * The key's SubjectPublicKeyInfo as base64 of its DER, the string a backend is given to trust it by.
+     */
+    [[nodiscard]] const std::string &getPublicKey() const { return public_key_; }
+
+    /**
+     * The key's SubjectPublicKeyInfo as PEM.
+     */
+    [[nodiscard]] std::string getPublicKeyPem() const;
+
 private:
     PrivateKey key_;
     Config config_;
+    std::string public_key_;
 };
 
 /**
