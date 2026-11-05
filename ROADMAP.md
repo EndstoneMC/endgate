@@ -107,8 +107,8 @@ Endstone:
 
 Live, with a real client, endgate and an Endstone backend:
 
-- [x] Joined through endgate, the backend sees the player's real xuid, pfid, name and address (RakNet, BDS 1.26.61)
-- [ ] A direct join is refused with "This server requires you to connect with endgate."
+- [x] Joined through endgate, the backend sees the player's real xuid, pfid, name and address (RakNet and NetherNet, BDS 1.26.61)
+- [x] A direct join is refused with "This server requires you to connect with endgate."
 - [ ] A login signed by another key is refused with "Unable to verify player details"
 - [ ] Endstone's CHANGELOG lists `[proxies.endgate]`
 
