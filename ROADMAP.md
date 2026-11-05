@@ -112,7 +112,7 @@ Live, with a real client, endgate and an Endstone backend:
 - [x] A direct join is refused with "This server requires you to connect with endgate."
 - [x] A login signed by another key is refused with "Unable to verify player details"
 - [x] A self-signed login straight to the backend is refused, with and without a forged `endgate:player_info`
-- [ ] Endstone's CHANGELOG lists `[proxies.endgate]`
+- [x] Endstone's CHANGELOG lists `[proxies.endgate]`
 
 Facts the design rests on: `bedrock.md`, "Forwarding a login". Backends must be reachable only through endgate.
 
