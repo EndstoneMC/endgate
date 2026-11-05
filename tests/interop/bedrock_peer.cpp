@@ -97,8 +97,15 @@ constexpr std::uint8_t NO_COMPRESSION = 0xFF;
 constexpr std::size_t CHECKSUM_SIZE = 8;
 constexpr glz::opts LENIENT_READ{.error_on_unknown_keys = false, .error_on_missing_keys = false};
 
+enum class PlayerAuthenticationType : int {
+    Invalid = -1,
+    Full = 0,
+    Guest = 1,
+    SelfSigned = 2,
+};
+
 struct Authentication {
-    int authentication_type = -1;
+    PlayerAuthenticationType authentication_type = PlayerAuthenticationType::Invalid;
     std::string token;
 
     struct glaze {
@@ -706,7 +713,7 @@ private:
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(options_.delay_ms));
         std::cout << "login-jwt " << parsed.token << '\n';
-        std::cout << "login-type " << parsed.authentication_type << '\n';
+        std::cout << "login-type " << static_cast<int>(parsed.authentication_type) << '\n';
         std::cout << "login-token " << token->claims << '\n';
         std::cout << "client-data " << client_data->claims << '\n';
         Claims claims;

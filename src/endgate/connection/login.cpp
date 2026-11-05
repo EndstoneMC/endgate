@@ -26,7 +26,7 @@ namespace {
 constexpr glz::opts LENIENT_READ{.error_on_unknown_keys = false, .error_on_missing_keys = true};
 
 struct AuthenticationInfo {
-    std::optional<int> authentication_type;
+    std::optional<PlayerAuthenticationType> authentication_type;
     std::optional<std::string> token;
 
     struct glaze {
@@ -97,7 +97,8 @@ std::optional<ConnectionRequest> ConnectionRequest::fromString(std::string_view 
         if (!token || !client_data) {
             return std::nullopt;
         }
-        return ConnectionRequest{.authentication_type = parsed.authentication_type.value_or(-1),
+        return ConnectionRequest{.authentication_type =
+                                     parsed.authentication_type.value_or(PlayerAuthenticationType::Invalid),
                                  .token = std::move(*token),
                                  .client_data = std::move(*client_data)};
     }
@@ -132,8 +133,8 @@ bool InitialLoginSessionHandler::handle(const bp::LoginPacket &packet)
     }
 
     const auto request = ConnectionRequest::fromString(packet.connection_request);
-    if (!request ||
-        (request->authentication_type != 0 && request->authentication_type != ConnectionRequest::SELF_SIGNED)) {
+    if (!request || (request->authentication_type != PlayerAuthenticationType::Full &&
+                     request->authentication_type != PlayerAuthenticationType::SelfSigned)) {
         connection_->closeWith(DisconnectFailReason::NotAuthenticated);
         return true;
     }
@@ -157,7 +158,7 @@ bool InitialLoginSessionHandler::handle(const bp::LoginPacket &packet)
     }
 
     const auto client_key = decodeSubjectPublicKeyInfo(identity->getClientPublicKey());
-    const auto self_signed = request->authentication_type == ConnectionRequest::SELF_SIGNED;
+    const auto self_signed = request->authentication_type == PlayerAuthenticationType::SelfSigned;
     if (!client_key || (self_signed && !request->token.verify(client_key.get())) ||
         request->client_data.x5u != identity->getClientPublicKey() || !request->client_data.verify(client_key.get())) {
         connection_->closeWith(DisconnectFailReason::NotAuthenticated);

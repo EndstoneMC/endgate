@@ -17,6 +17,16 @@ namespace endgate {
 class ProxyServer;
 
 /**
+ * @see PlayerAuthenticationType
+ */
+enum class PlayerAuthenticationType : int {
+    Invalid = -1,
+    Full = 0,
+    Guest = 1,
+    SelfSigned = 2,
+};
+
+/**
  * The login a client's LoginPacket carries: how it authenticates, the token that names it, and the
  * client data it signs with that token's key.
  *
@@ -24,10 +34,9 @@ class ProxyServer;
  * @see BaseConnectionRequest::_parseConnectionString
  */
 struct ConnectionRequest {
-    static constexpr int SELF_SIGNED = 2;
     static constexpr std::size_t MAX_CLIENT_DATA_SIZE = 10 * 1024 * 1024;
 
-    int authentication_type{-1};
+    PlayerAuthenticationType authentication_type = PlayerAuthenticationType::Invalid;
     JsonWebToken token;
     JsonWebToken client_data;
 

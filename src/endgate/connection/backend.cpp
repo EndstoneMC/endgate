@@ -26,6 +26,7 @@
 
 #include "endgate/awaitable.h"
 #include "endgate/backend.h"
+#include "endgate/connection/login.h"
 #include "endgate/connection/nethernet.h"
 #include "endgate/connection/player.h"
 #include "endgate/connection/raknet.h"
@@ -367,7 +368,7 @@ namespace {
 constexpr glz::opts LENIENT_READ{.error_on_unknown_keys = false, .error_on_missing_keys = true};
 
 struct LoginAuthentication {
-    int authentication_type;
+    PlayerAuthenticationType authentication_type;
     std::string token;
 
     struct glaze {
@@ -560,7 +561,10 @@ bool LoginSessionHandler::handleEach(const bp::NetworkSettingsPacket &packet)
     const auto client_data = signToken(key, header, forwarded_client_data);
     std::string authentication;
     if (!token || !client_data ||
-        glz::write_json(LoginAuthentication{.authentication_type = modern ? 0 : 2, .token = *token}, authentication)) {
+        glz::write_json(LoginAuthentication{.authentication_type = modern ? PlayerAuthenticationType::Full
+                                                                          : PlayerAuthenticationType::SelfSigned,
+                                            .token = *token},
+                        authentication)) {
         result_future_->completeExceptionally(std::make_exception_ptr(std::runtime_error("can't sign the login")));
         server_connection_->disconnect();
         return true;
