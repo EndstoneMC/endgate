@@ -16,8 +16,11 @@
  *   wire <hex>           a message for the transport
  *   settings <threshold> <algorithm>
  *   handshake            the encryption handshake finished
+ *   handshake-token <json> <json>  the header and claims of the handshake's token
  *   play-status <status>
  *   login-token <json>   the claims of the login's token
+ *   login-jwt <jwt>      the login's token as it arrived
+ *   login-type <type>    the login's AuthenticationType
  *   client-data <json>   the claims of the login's client data
  *   text <hex>
  *   command <hex>        a CommandRequestPacket arrived
@@ -95,11 +98,12 @@ constexpr std::size_t CHECKSUM_SIZE = 8;
 constexpr glz::opts LENIENT_READ{.error_on_unknown_keys = false, .error_on_missing_keys = false};
 
 struct Authentication {
+    int authentication_type = -1;
     std::string token;
 
     struct glaze {
         using T = Authentication;
-        static constexpr auto value = glz::object("Token", &T::token);
+        static constexpr auto value = glz::object("AuthenticationType", &T::authentication_type, "Token", &T::token);
     };
 };
 
@@ -595,6 +599,9 @@ private:
         else if (id == bp::ServerToClientHandshakePacket::Id) {
             const auto handshake = decode<bp::ServerToClientHandshakePacket>(packet);
             const auto token = endgate::JsonWebToken::decode(handshake.token);
+            if (token) {
+                std::cout << "handshake-token " << token->header << ' ' << token->claims << '\n';
+            }
             const auto server_key = token ? endgate::decodeSubjectPublicKeyInfo(token->x5u) : nullptr;
             Claims claims;
             if (!server_key || glz::read<LENIENT_READ>(claims, token->claims) || !endgate::base64Decode(claims.salt)) {
@@ -698,6 +705,8 @@ private:
             throw std::runtime_error("login does not parse");
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(options_.delay_ms));
+        std::cout << "login-jwt " << parsed.token << '\n';
+        std::cout << "login-type " << parsed.authentication_type << '\n';
         std::cout << "login-token " << token->claims << '\n';
         std::cout << "client-data " << client_data->claims << '\n';
         Claims claims;

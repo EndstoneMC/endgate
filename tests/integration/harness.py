@@ -199,6 +199,8 @@ class Proxy:
     def events(self, pattern: str = "") -> list[str]:
         startup = (
             "INFO Starting",
+            "WARN Player info forwarding is disabled!",
+            "INFO The forwarding-key-file does not exist.",
             "WARN The proxy is running in offline mode!",
             "WARN Minecraft services are discovered at",
             "INFO Connections will use",
