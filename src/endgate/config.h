@@ -83,7 +83,7 @@ private:
     int show_max_players_ = 0;
     bool online_mode_ = false;
     bool kick_existing_players_ = false;
-    PlayerInfoForwarding player_info_forwarding_mode_ = PlayerInfoForwarding::None;
+    PlayerInfoForwarding player_info_forwarding_mode_ = PlayerInfoForwarding::Modern;
     std::filesystem::path forwarding_key_file_;
     PingPassthroughMode ping_passthrough_ = PingPassthroughMode::Disabled;
     bool show_ping_requests_ = false;

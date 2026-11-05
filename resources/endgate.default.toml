@@ -28,11 +28,12 @@ kick-existing-players = false
 # Should we forward IP addresses and other data to backend servers?
 # Available options:
 # - "none":   No forwarding will be done. All players will appear to be connecting
-#             from the proxy and will log in with a self-signed token.
+#             from the proxy and will log in with a self-signed token. Use this for
+#             vanilla backends or when the proxy is in offline mode.
 # - "modern": Forward player IDs and IPs as part of the login, in a token signed with
 #             Endgate's own key. Only applicable to Endstone backends, and the proxy
 #             must be in online mode.
-player-info-forwarding-mode = "none"
+player-info-forwarding-mode = "modern"
 
 # If you are using modern IP forwarding, configure a file that Endgate writes its public key to.
 # Copy it to each backend as the file its forwarding-key-file setting names.

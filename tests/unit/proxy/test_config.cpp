@@ -106,11 +106,11 @@ TEST_F(ProxyConfigTest, RejectsAForcedHostWithoutServers)
     EXPECT_FALSE(readDocument("[forced-hosts]\n\"play.example.com\" = []\n").validate());
 }
 
-TEST_F(ProxyConfigTest, PlayerInfoForwardingDefaultsToNone)
+TEST_F(ProxyConfigTest, PlayerInfoForwardingDefaultsToModern)
 {
     auto config = ProxyConfig::read(directory_ / "endgate.toml");
     ASSERT_TRUE(config.has_value());
-    EXPECT_EQ(config->getPlayerInfoForwardingMode(), PlayerInfoForwarding::None);
+    EXPECT_EQ(config->getPlayerInfoForwardingMode(), PlayerInfoForwarding::Modern);
 }
 
 TEST_F(ProxyConfigTest, ForwardingKeyFileDefaultsToTheKeysFolder)
@@ -148,9 +148,14 @@ TEST_F(ProxyConfigTest, RejectsModernForwardingInOfflineMode)
     EXPECT_FALSE(readDocument("online-mode = false\nplayer-info-forwarding-mode = \"modern\"\n").validate());
 }
 
+TEST_F(ProxyConfigTest, RejectsOfflineModeUnlessForwardingIsNone)
+{
+    EXPECT_FALSE(readDocument("online-mode = false\n").validate());
+}
+
 TEST_F(ProxyConfigTest, AcceptsNoForwardingInOfflineMode)
 {
-    EXPECT_TRUE(readDocument("online-mode = false\n").validate());
+    EXPECT_TRUE(readDocument("online-mode = false\nplayer-info-forwarding-mode = \"none\"\n").validate());
 }
 
 }  // namespace endgate

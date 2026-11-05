@@ -129,6 +129,11 @@ class Proxy:
                     f"online-mode = {str(self.services is not None).lower()}",
                     f'tls-certificate = "{self.tls[0].as_posix() if self.tls else ""}"',
                     f'tls-certificate-key = "{self.tls[1].as_posix() if self.tls else ""}"',
+                    *(
+                        []
+                        if "player-info-forwarding-mode" in self.settings.get("", {})
+                        else ['player-info-forwarding-mode = "none"']
+                    ),
                     *self._settings(""),
                     "[servers]",
                     f'lobby = "{self.backend}"',

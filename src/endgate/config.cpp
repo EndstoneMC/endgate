@@ -278,7 +278,8 @@ bool ProxyConfig::validate() const
     case PlayerInfoForwarding::Modern:
         if (!online_mode_) {
             logger().error("Modern player info forwarding needs online-mode, since the proxy would vouch for "
-                           "players it never authenticated.");
+                           "players it never authenticated. Set player-info-forwarding-mode = \"none\" to run in "
+                           "offline mode.");
             valid = false;
         }
         break;

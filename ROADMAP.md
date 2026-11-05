@@ -90,7 +90,7 @@ Gate: an Endstone backend sees the player's real xuid, pfid, name and address, a
 
 Endgate:
 
-- [x] `player-info-forwarding-mode`: none (today's self-signed login) and modern; modern refused in offline mode
+- [x] `player-info-forwarding-mode`: none (today's self-signed login) and modern, the default; modern refused in offline mode
 - [x] Modern signs a login token: the player's Microsoft claims with new cpk, exp and iat, ES384 under endgate's P-384 key, kid = the key's base64 SPKI
 - [x] The token carries `"endgate:player_info": {"version": 1, "address": "<ip>"}`
 - [x] Sign with endgate's own `keys/server_identity_key.pem`, loaded even with NetherNet off; only the forwarding token carries `aud` and `kid`
