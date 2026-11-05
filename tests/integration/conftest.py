@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,39 @@ def binary(request: pytest.FixtureRequest) -> Path:
     if not path.exists():
         pytest.exit(f"endgate binary not found at {path}")
     return path
+
+
+@pytest.fixture(scope="session", autouse=True)
+def drain_datagrams_on_close():
+    if sys.platform != "win32":
+        yield
+        return
+    from asyncio import proactor_events
+
+    transport = proactor_events._ProactorDatagramTransport
+    loop_writing = transport._loop_writing
+
+    def drain(self, fut=None):
+        if not self._closing:
+            return loop_writing(self, fut)
+        self._write_fut = None
+        try:
+            if fut is not None:
+                fut.result()
+            if self._buffer:
+                data, addr = self._buffer.popleft()
+                self._buffer_size -= len(data) + self._header_size
+                self._write_fut = self._loop._proactor.sendto(self._sock, data, addr=addr)
+                self._write_fut.add_done_callback(self._loop_writing)
+                return
+        except OSError:
+            self._buffer.clear()
+            self._buffer_size = 0
+        self._loop.call_soon(self._call_connection_lost, None)
+
+    transport._loop_writing = drain
+    yield
+    transport._loop_writing = loop_writing
 
 
 @pytest.fixture
