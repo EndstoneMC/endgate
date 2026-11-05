@@ -10,11 +10,6 @@
 
 #include <spdlog/details/os.h>
 
-#ifdef _WIN32
-#include <fcntl.h>
-#include <io.h>
-#endif
-
 #include "endgate/console.h"
 #include "endgate/logging/formatter.h"
 
@@ -95,11 +90,8 @@ bool compress(const std::filesystem::path &src, const std::filesystem::path &tar
 }  // namespace
 
 TerminalConsoleAppender::TerminalConsoleAppender(std::FILE *target_file, spdlog::color_mode mode)
-    : target_file_(target_file)
+    : target_file_(target_file), formatter_(spdlog::pattern_time_type::local, "\n")
 {
-#ifdef _WIN32
-    _setmode(_fileno(target_file_), _O_BINARY);
-#endif
     constexpr auto red = "\033[31m";
     constexpr auto yellow = "\033[33m";
 
