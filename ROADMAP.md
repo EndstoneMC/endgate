@@ -90,11 +90,11 @@ Gate: an Endstone backend sees the player's real xuid, pfid, name and address, a
 
 Endgate:
 
-- [ ] `player-info-forwarding-mode`: none (today's self-signed login) and modern; modern refused in offline mode
-- [ ] Modern signs a login token: the player's Microsoft claims with new cpk, exp and iat, ES384 under endgate's P-384 key, kid = the key's base64 SPKI
-- [ ] The token carries `"endgate:player_info": {"version": 1, "address": "<ip>"}`
-- [ ] Sign with endgate's own `keys/server_identity_key.pem`, loaded even with NetherNet off; only the forwarding token carries `aud` and `kid`
-- [ ] `forwarding-key-file`, default `keys/forwarding_key.pem`: written with the key's public half (PEM SPKI) when missing, as Velocity writes `forwarding.secret`; the admin copies it to each backend's `keys/forwarding_key.pem`
+- [x] `player-info-forwarding-mode`: none (today's self-signed login) and modern; modern refused in offline mode
+- [x] Modern signs a login token: the player's Microsoft claims with new cpk, exp and iat, ES384 under endgate's P-384 key, kid = the key's base64 SPKI
+- [x] The token carries `"endgate:player_info": {"version": 1, "address": "<ip>"}`
+- [x] Sign with endgate's own `keys/server_identity_key.pem`, loaded even with NetherNet off; only the forwarding token carries `aud` and `kid`
+- [x] `forwarding-key-file`, default `keys/forwarding_key.pem`: written with the key's public half (PEM SPKI) when missing, as Velocity writes `forwarding.secret`; the admin copies it to each backend's `keys/forwarding_key.pem`
 
 Endstone:
 
@@ -104,14 +104,8 @@ Endstone:
 - [ ] `[proxies.endgate]` in `endstone.toml`: `enabled = false` and `forwarding-key-file = "keys/forwarding_key.pem"`, as Velocity's `forwarding-secret-file`; enabled refuses every login not signed by endgate's key, self-signed included, whatever online-mode says
 - [ ] Refuse to start when enabled and the key file is missing, saying to copy endgate's `keys/forwarding_key.pem`, or isn't a P-384 public key
 
-Facts the design rests on (1.26.60):
+Facts the design rests on: `bedrock.md`, "Forwarding a login".
 
-- `tryGetKey` isn't virtual, and every key fetch replaces both key maps, so a hook beats inserting a key.
-- `getTrustedInfo` drops claims it doesn't know, hence the raw token re-parse.
-- BDS signs NetherNet identity and the login handshake with its one identity key. Neither JWT has `aud` or `kid`, which a login token needs, so the forwarding token can share the key.
-- A self-signed token never reaches `tryGetKey`, so `enabled` must also refuse self-signed logins.
-- A non-self-signed token is checked the same in online and offline mode.
-- Vanilla BDS never gets the xuid or pfid: it reads xid and mid only from a trusted token.
 - Backends must be reachable only through endgate.
 
 ## World state
