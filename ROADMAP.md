@@ -82,7 +82,8 @@ Gate: each item works on a real client.
 - [ ] PROXY protocol v2 (researched, waits for decisions)
 - [ ] Packet limiter (Velocity has none)
 - [ ] Find why a client drops a Disconnect sent right after LoginSuccess (avoided by refusing before it)
-- [ ] A backend's refusal reads well, on Velocity's `handleConnectionException`: its message as sent, or `<Name> (<number>)` for an empty message or the reason's own key, e.g. `HostDisconnected (21)`
+- [ ] A backend's refusal reads well, on Velocity's `handleConnectionException`: its message as sent, or `<name> (<number>)` for an empty message or the reason's own key, e.g. `hostdisconnected (140)`
+- [ ] Show the reason in BDS casing (`HostDisconnected (140)`) once a bedrock-protocol release has `enum_schema_names`
 
 Not ported: /endgate dump, ping passthrough's mods, JLine's highlighted completion menu (needs a patched replxx), and Java-only features (Forge, legacy ping, signed chat, BungeeCord channel).
 
