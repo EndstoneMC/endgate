@@ -32,7 +32,7 @@ Gate: a real client logs in, online and offline; the backend accepts endgate's l
 - [x] online-mode-kick-existing-players
 - [x] Encryption with the client and with the backend
 - [x] ConnectedPlayer from the login and client data
-- [x] Backend login under endgate's key, self-signed until Phase 7, with SelfSignedId set so vanilla BDS keeps each player's save
+- [x] Backend login under endgate's key; with `player-info-forwarding-mode = "none"` it is self-signed, with SelfSignedId set so vanilla BDS keeps each player's save
 - [x] Resource packs: the first backend's set, fixed for the session
 - [x] login-ratelimit, connection-timeout, read-timeout
 - [ ] Decide: keep the first backend's pack set, or serve one from endgate's config
@@ -78,11 +78,12 @@ Gate: each item works on a real client.
 - [x] enable-player-address-logging, config reload, shutdown kick
 - [x] bStats
 - [x] Dual-stack default bind
+- [x] Console Tab completion: common prefix, cycling in place, a trailing space on a single match, candidates listed under the line
 - [ ] PROXY protocol v2 (researched, waits for decisions)
 - [ ] Packet limiter (Velocity has none)
 - [ ] Find why a client drops a Disconnect sent right after LoginSuccess (avoided by refusing before it)
 
-Not ported: /endgate dump, ping passthrough's mods, and Java-only features (Forge, legacy ping, signed chat, BungeeCord channel).
+Not ported: /endgate dump, ping passthrough's mods, JLine's highlighted completion menu (needs a patched replxx), and Java-only features (Forge, legacy ping, signed chat, BungeeCord channel).
 
 ## Phase 7: identity forwarding
 
@@ -104,9 +105,14 @@ Endstone:
 - [x] `[proxies.endgate]` in `endstone.toml`: `enabled = false` and `forwarding-key-file = "keys/forwarding_key.pem"`, as Velocity's `forwarding-secret-file`; enabled refuses every login not signed by endgate's key, self-signed included, whatever online-mode says
 - [x] Refuse to start when enabled and the key file is missing, saying to copy endgate's `keys/forwarding_key.pem`, or isn't a P-384 public key
 
-Facts the design rests on: `bedrock.md`, "Forwarding a login".
+Live, with a real client, endgate and an Endstone backend:
 
-- Backends must be reachable only through endgate.
+- [ ] Joined through endgate, the backend sees the player's real xuid, pfid, name and address
+- [ ] A direct join is refused with "This server requires you to connect with endgate."
+- [ ] A login signed by another key is refused with "Unable to verify player details"
+- [ ] Endstone's CHANGELOG lists `[proxies.endgate]`
+
+Facts the design rests on: `bedrock.md`, "Forwarding a login". Backends must be reachable only through endgate.
 
 ## World state
 
