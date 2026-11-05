@@ -82,7 +82,7 @@ Gate: each item works on a real client.
 - [ ] PROXY protocol v2 (researched, waits for decisions)
 - [ ] Packet limiter (Velocity has none)
 - [ ] Find why a client drops a Disconnect sent right after LoginSuccess (avoided by refusing before it)
-- [ ] A backend's refusal reads well: log its Disconnect reason code, and give the player text for an empty message or a raw key such as `hostdisconnected`
+- [ ] A backend's refusal reads well, on Velocity's `handleConnectionException`: its message as sent, or `<Name> (<number>)` for an empty message or the reason's own key, e.g. `HostDisconnected (21)`
 
 Not ported: /endgate dump, ping passthrough's mods, JLine's highlighted completion menu (needs a patched replxx), and Java-only features (Forge, legacy ping, signed chat, BungeeCord channel).
 
@@ -102,7 +102,8 @@ Endstone:
 
 - [x] Hook `MinecraftServiceKeyManager::tryGetKey`: return endgate's key for its kid, else call the original
 - [x] `EndgateProxy` in `proxy/endgate.h`, Paper's `VelocityProxy`: `checkIntegrity` (endgate's kid, not self-signed), `readAddress`, `MaxSupportedForwardingVersion` and `PlayerInfoChannel`
-- [x] After BDS validates the login, as Paper's `handleCustomQueryPacket`: no `endgate:player_info` refuses with "This server requires you to connect with endgate.", a failed `checkIntegrity` with "Unable to verify player details", a version above the maximum with "Unsupported forwarding version N, wanted upto 1"; the forwarded address then replaces the connection's, before the IP-ban check
+- [x] Before BDS validates the token, as Paper's `handleCustomQueryPacket`: no `endgate:player_info` refuses with "This server requires you to connect with endgate.", a failed `checkIntegrity` with "Unable to verify player details", a version above the maximum with "Unsupported forwarding version N, wanted upto 1"; once BDS has validated it, the forwarded address replaces the connection's, before the IP-ban check
+- [ ] Commit that reorder on Endstone v0.12
 - [x] `[proxies.endgate]` in `endstone.toml`: `enabled = false` and `forwarding-key-file = "keys/forwarding_key.pem"`, as Velocity's `forwarding-secret-file`; enabled refuses every login not signed by endgate's key, self-signed included, whatever online-mode says
 - [x] Refuse to start when enabled and the key file is missing, saying to copy endgate's `keys/forwarding_key.pem`, or isn't a P-384 public key
 
