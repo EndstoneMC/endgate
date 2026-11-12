@@ -69,14 +69,26 @@ private:
  * @see com.velocitypowered.api.proxy.server.RegisteredServer
  * @see com.velocitypowered.proxy.server.VelocityRegisteredServer
  */
+struct PingTimeouts {
+    std::chrono::milliseconds connect{2000};
+    std::chrono::milliseconds read{1000};
+};
+
+struct TransportDetection {
+    std::optional<ServerInfo::Transport> transport;
+    std::optional<ServerPing> ping;
+    bool attempted{false};
+};
+
 class BackendServer {
 public:
     explicit BackendServer(ServerInfo info);
 
     [[nodiscard]] const ServerInfo &getServerInfo() const { return info_; }
 
-    [[nodiscard]] Awaitable<std::optional<ServerInfo::Transport>> detectTransport(asio::io_context &io_context,
-                                                                                  asio::ip::udp::endpoint address);
+    [[nodiscard]] Awaitable<TransportDetection> detectTransport(asio::io_context &io_context,
+                                                                asio::ip::udp::endpoint address,
+                                                                PingTimeouts timeouts = {});
 
     void forgetTransport();
 
@@ -108,7 +120,7 @@ public:
      *
      * @see com.velocitypowered.proxy.server.VelocityRegisteredServer#ping
      */
-    [[nodiscard]] Awaitable<std::optional<ServerPing>> ping(asio::io_context &io_context);
+    [[nodiscard]] Awaitable<std::optional<ServerPing>> ping(asio::io_context &io_context, PingTimeouts timeouts = {});
 
     /**
      * Sends RakNet unconnected pings until one is answered, and reads the announcement it carries.

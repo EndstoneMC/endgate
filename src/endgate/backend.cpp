@@ -84,35 +84,33 @@ std::optional<ServerInfo> ServerInfo::parse(std::string name, std::string_view a
 
 BackendServer::BackendServer(ServerInfo info) : info_(std::move(info)), logger_(LogManager::getLogger(*this)) {}
 
-Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(asio::io_context &io_context,
-                                                                               asio::ip::udp::endpoint address)
+Awaitable<TransportDetection> BackendServer::detectTransport(asio::io_context &io_context,
+                                                             asio::ip::udp::endpoint address, PingTimeouts timeouts)
 {
-    constexpr std::chrono::milliseconds signaling_timeout{2000};
-    constexpr std::chrono::milliseconds ping_timeout{1000};
-
     if (const auto pinned = info_.getTransport()) {
         if (getProtocol()) {
-            co_return pinned;
+            co_return TransportDetection{.transport = pinned};
         }
         if (*pinned == ServerInfo::Transport::NetherNet) {
             const auto probe =
                 co_await nethernet::SignalingClient::probeNetherNet(io_context, info_.getHost(), info_.getPort(),
-                                                                    {.connect_timeout = signaling_timeout,
-                                                                     .request_timeout = signaling_timeout,
-                                                                     .tls_handshake_timeout = signaling_timeout});
+                                                                    {.connect_timeout = timeouts.connect,
+                                                                     .request_timeout = timeouts.read,
+                                                                     .tls_handshake_timeout = timeouts.connect});
             recordProtocol(probe.ping);
             if (probe.supported) {
                 warnWithoutProtocol();
             }
+            co_return TransportDetection{.transport = pinned, .ping = probe.ping, .attempted = true};
         }
         else {
-            const auto pong = co_await ping(address, ping_timeout);
+            const auto pong = co_await ping(address, timeouts.read);
             recordProtocol(pong.ping);
             if (pong.answered) {
                 warnWithoutProtocol();
             }
+            co_return TransportDetection{.transport = pinned, .ping = pong.ping, .attempted = true};
         }
-        co_return pinned;
     }
     std::optional<ServerInfo::Transport> detected;
     {
@@ -120,26 +118,26 @@ Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(a
         detected = detected_;
     }
     if (detected) {
-        co_return detected;
+        co_return TransportDetection{.transport = detected};
     }
 
     std::optional<ServerPing> announcement;
-    const auto probe =
-        co_await nethernet::SignalingClient::probeNetherNet(io_context, info_.getHost(), info_.getPort(),
-                                                            {.connect_timeout = signaling_timeout,
-                                                             .request_timeout = signaling_timeout,
-                                                             .tls_handshake_timeout = signaling_timeout});
+    bool attempted = true;
+    const auto probe = co_await nethernet::SignalingClient::probeNetherNet(io_context, info_.getHost(), info_.getPort(),
+                                                                           {.connect_timeout = timeouts.connect,
+                                                                            .request_timeout = timeouts.read,
+                                                                            .tls_handshake_timeout = timeouts.connect});
     if (probe.supported) {
         detected = ServerInfo::Transport::NetherNet;
         announcement = probe.ping;
     }
-    else if (const auto pong = co_await ping(address, ping_timeout); pong.answered) {
+    else if (const auto pong = co_await ping(address, timeouts.read); pong.answered) {
         detected = ServerInfo::Transport::RakNet;
         announcement = pong.ping;
     }
     if (!detected) {
         logger_.debug("Server {} supports neither NetherNet nor RakNet", info_.getName());
-        co_return detected;
+        co_return TransportDetection{.attempted = attempted};
     }
     logger_.debug("Server {} uses {}", info_.getName(), toString(*detected));
     {
@@ -148,15 +146,11 @@ Awaitable<std::optional<ServerInfo::Transport>> BackendServer::detectTransport(a
     }
     recordProtocol(announcement);
     warnWithoutProtocol();
-    co_return detected;
+    co_return TransportDetection{.transport = detected, .ping = announcement, .attempted = attempted};
 }
 
-Awaitable<std::optional<ServerPing>> BackendServer::ping(asio::io_context &io_context)
+Awaitable<std::optional<ServerPing>> BackendServer::ping(asio::io_context &io_context, PingTimeouts timeouts)
 {
-    constexpr std::chrono::seconds resolve_timeout{2};
-    constexpr std::chrono::milliseconds signaling_timeout{2000};
-    constexpr std::chrono::milliseconds ping_timeout{1000};
-
     std::optional<asio::ip::udp::endpoint> address;
     asio::error_code ec;
     if (const auto literal = asio::ip::make_address(info_.getHost(), ec); !ec) {
@@ -166,7 +160,7 @@ Awaitable<std::optional<ServerPing>> BackendServer::ping(asio::io_context &io_co
         asio::ip::udp::resolver resolver(co_await asio::this_coro::executor);
         const auto [error, results] =
             co_await resolver.async_resolve(info_.getHost(), std::to_string(info_.getPort()),
-                                            asio::cancel_after(resolve_timeout, asio::as_tuple(asio::use_awaitable)));
+                                            asio::cancel_after(timeouts.connect, asio::as_tuple(asio::use_awaitable)));
         if (!error && !results.empty()) {
             address = results.begin()->endpoint();
         }
@@ -175,17 +169,20 @@ Awaitable<std::optional<ServerPing>> BackendServer::ping(asio::io_context &io_co
         co_return std::nullopt;
     }
 
-    const auto transport = co_await detectTransport(io_context, *address);
-    if (transport == ServerInfo::Transport::NetherNet) {
+    const auto detection = co_await detectTransport(io_context, *address, timeouts);
+    if (detection.attempted) {
+        co_return detection.ping;
+    }
+    if (detection.transport == ServerInfo::Transport::NetherNet) {
         const auto probe =
             co_await nethernet::SignalingClient::probeNetherNet(io_context, info_.getHost(), info_.getPort(),
-                                                                {.connect_timeout = signaling_timeout,
-                                                                 .request_timeout = signaling_timeout,
-                                                                 .tls_handshake_timeout = signaling_timeout});
+                                                                {.connect_timeout = timeouts.connect,
+                                                                 .request_timeout = timeouts.read,
+                                                                 .tls_handshake_timeout = timeouts.connect});
         co_return probe.ping;
     }
-    if (transport == ServerInfo::Transport::RakNet) {
-        co_return (co_await ping(*address, ping_timeout)).ping;
+    if (detection.transport == ServerInfo::Transport::RakNet) {
+        co_return (co_await ping(*address, timeouts.read)).ping;
     }
     co_return std::nullopt;
 }
