@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <chrono>
 #include <cstddef>
 #include <exception>
 #include <format>
@@ -60,6 +61,10 @@ Awaitable<ServerPing> ServerListPingHandler::attemptPingPassthrough(PingPassthro
                                                                     asio::io_context &io_context) const
 {
     auto fallback = constructLocalPing(protocol);
+    const auto timeouts = PingTimeouts{
+        .connect = std::chrono::milliseconds{std::max(1, server_.getConfiguration().getConnectTimeout())},
+        .read = std::chrono::milliseconds{std::max(1, server_.getConfiguration().getReadTimeout())},
+    };
     struct Pending {
         explicit Pending(const asio::any_io_executor &executor) : done(executor, asio::steady_timer::time_point::max())
         {
@@ -88,10 +93,10 @@ Awaitable<ServerPing> ServerListPingHandler::attemptPingPassthrough(PingPassthro
     for (std::size_t i = 0; i < backends.size(); ++i) {
         asio::co_spawn(
             executor,
-            [](BackendServer *backend, asio::io_context &io, std::shared_ptr<Pending> state,
-               std::size_t index) -> Awaitable<void> {
+            [](BackendServer *backend, asio::io_context &io, std::shared_ptr<Pending> state, std::size_t index,
+               PingTimeouts timeouts) -> Awaitable<void> {
                 try {
-                    state->responses[index] = co_await backend->ping(io);
+                    state->responses[index] = co_await backend->ping(io, timeouts);
                 }
                 catch (const std::exception &) {
                     state->responses[index].reset();
@@ -99,7 +104,7 @@ Awaitable<ServerPing> ServerListPingHandler::attemptPingPassthrough(PingPassthro
                 if (--state->remaining == 0) {
                     state->done.cancel();
                 }
-            }(backends[i], io_context, pending, i),
+            }(backends[i], io_context, pending, i, timeouts),
             asio::detached);
     }
     if (pending->remaining != 0) {

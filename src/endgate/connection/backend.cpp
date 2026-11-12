@@ -70,7 +70,8 @@ Awaitable<ConnectionRequestBuilder::Result> ServerConnection::open(std::shared_p
 
     std::optional<ServerInfo::Transport> transport;
     if (address && player.isActive()) {
-        transport = co_await self->server_.detectTransport(endpoint.getEventLoop().getIoContext(), *address);
+        transport =
+            (co_await self->server_.detectTransport(endpoint.getEventLoop().getIoContext(), *address)).transport;
     }
     if (!player.isActive()) {
         throw std::runtime_error("the player left");
