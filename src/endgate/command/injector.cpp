@@ -117,6 +117,27 @@ bool covers(const Overload &longer, const Overload &shorter)
 void dropCovered(std::vector<Overload> &overloads)
 {
     std::vector<bool> covered(overloads.size());
+    for (const Overload &message : overloads) {
+        if (message.empty() || message.back().kind != Parameter::Kind::Message) {
+            continue;
+        }
+        for (std::size_t i = 0; i < overloads.size(); i++) {
+            Overload &prefix = overloads[i];
+            if (prefix.size() >= message.size() ||
+                !std::equal(prefix.begin(), prefix.end(), message.begin(), [](Parameter a, const Parameter &b) {
+                    a.optional = b.optional;
+                    return a == b;
+                })) {
+                continue;
+            }
+            if (prefix.size() + 1 == message.size()) {
+                covered[i] = true;
+            }
+            for (Parameter &parameter : prefix) {
+                parameter.optional = false;
+            }
+        }
+    }
     for (std::size_t i = 0; i < overloads.size(); i++) {
         for (std::size_t j = 0; j < overloads.size() && !covered[i]; j++) {
             if (i != j && covers(overloads[j], overloads[i])) {

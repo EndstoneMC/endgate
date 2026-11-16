@@ -330,12 +330,11 @@ TEST_F(InjectorTest, ShutdownKeepsItsAliasesAndTakesAMessageLast)
         EXPECT_TRUE(std::ranges::contains(valuesOf(packet, *names), name)) << name;
     }
     EXPECT_EQ(command->flags, 128 | 64);
-    ASSERT_EQ(command->overloads.size(), 2U);
-    EXPECT_TRUE(command->overloads[0].params.empty());
-    ASSERT_EQ(command->overloads[1].params.size(), 1U);
-    EXPECT_EQ(command->overloads[1].params[0].name, "reason");
-    EXPECT_EQ(command->overloads[1].params[0].parse_symbol, MESSAGE_ROOT);
-    EXPECT_FALSE(command->overloads[1].params[0].optional);
+    ASSERT_EQ(command->overloads.size(), 1U);
+    ASSERT_EQ(command->overloads[0].params.size(), 1U);
+    EXPECT_EQ(command->overloads[0].params[0].name, "reason");
+    EXPECT_EQ(command->overloads[0].params[0].parse_symbol, MESSAGE_ROOT);
+    EXPECT_FALSE(command->overloads[0].params[0].optional);
     expectConsistent(packet);
 }
 
@@ -574,6 +573,30 @@ TEST_F(ClashTest, WordsAndMessagesUseTheIdAndMessageRootSymbols)
     ASSERT_NE(note, nullptr);
     EXPECT_EQ(note->flags, 128);
     EXPECT_FALSE(note->overloads[0].params[0].optional);
+}
+
+TEST_F(ClashTest, AMessageOverloadIsSentWithoutThePrefixItEndsAndEveryParameterRequired)
+{
+    ASSERT_TRUE(registers(literal("tier").then(word("a").executes(run).then(word("b").executes(run).then(
+        BrigadierCommand::requiredArgumentBuilder("text", StringArgumentType::greedyString()).executes(run))))));
+
+    Packet packet;
+    manager_.getInjector().inject(packet, source_, PROTOCOL);
+
+    const CommandData *command = find(packet, "tier");
+    ASSERT_NE(command, nullptr);
+    ASSERT_EQ(command->overloads.size(), 2U);
+    ASSERT_EQ(command->overloads[0].params.size(), 1U);
+    EXPECT_EQ(command->overloads[0].params[0].name, "a");
+    EXPECT_FALSE(command->overloads[0].params[0].optional);
+    const auto &params = command->overloads[1].params;
+    ASSERT_EQ(params.size(), 3U);
+    for (const auto &[index, name, symbol] :
+         {std::tuple{0, "a", ID}, std::tuple{1, "b", ID}, std::tuple{2, "text", MESSAGE_ROOT}}) {
+        EXPECT_EQ(params[index].name, name);
+        EXPECT_EQ(params[index].parse_symbol, symbol);
+        EXPECT_FALSE(params[index].optional) << name;
+    }
 }
 
 }  // namespace
