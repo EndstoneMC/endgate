@@ -28,6 +28,7 @@ The client rebuilds BDS's own `CommandRegistry` from `AvailableCommandsPacket` a
 - 1.26.51: `int` is `Int`, `float` is `Val`, `std::string` is `Id`, `CommandMessage` is `MessageRoot`, `CommandSelector<Player>` is `Selection`, `CommandRawText` is `RawText`.
 - `Id` is one word or one quoted string. Its parse function strips the surrounding quotes, and a backslash escapes the next character.
 - `MessageRoot` is the rest of the line.
+- `MessageRoot` is nullable: its rules in the 1.26.51 BDS `CommandRegistry` constructor (`0x14122f2d0`..`0x14122fa0e`) are `MessageRoot -> 0x100045` and `0x100045 -> Epsilon` with `kill`. An empty message still leaves a `MessageRoot` node.
 - `bool` and every `enum class` parameter take an enum symbol, set when the enum is registered, not a hard non-terminal.
 
 ## Enum values and soft enums
@@ -54,6 +55,7 @@ The client rebuilds BDS's own `CommandRegistry` from `AvailableCommandsPacket` a
 
 - `registerCommand` makes a signature. `registerOverloadInternal` adds each overload and `setupOverloadRules` rebuilds the signature's rules.
 - `setupOverloadRules` discards the rules, factorizations and optionals the signature built earlier, orders its overloads with a fixed comparator, runs `buildRules` over them, and adds the rule that ties the command symbol to the `Command` non-terminal.
+- `setupOverloadRules` is inlined into `registerOverloadInternal` (1.26.51 BDS `0x141248da0`). Its comparator (the CommandRegistry.cpp:4474 lambda, decompiled at `0x14126cd40`) compares only version ranges: `a` sorts first when the ranges differ and `a`'s contains `b`'s. Parameter count, symbols and registration order are ignored. The sort is stable (insertion sort for small lists, `_Stable_sort_unchecked` at `0x14126ce50` otherwise), so overloads with one version range keep their registration order, and the grammar they build does not depend on it.
 - Left factoring (factorization symbols) and optional chains (optional symbols) let overloads that share a prefix or end in optional parameters coexist in an LL(1) table. How `buildRules` factors them is not decompiled.
 - A parse table is built per version from first sets, follow sets and a nullable set, then a predict table. `loadRemoteCommands` erases the cached tables.
 - The predict table is a map from (token, non-terminal) to a rule index. `CommandRegistry::Parser`'s constructor fills it from a flat list of (token, non-terminal, rule) triples. It looks each pair up and overwrites the stored rule when the pair exists, else appends. The last triple wins; nothing is logged, asserted or dropped. Checked on 1.26.51, BDS (`0x14121f2a0`, store at `0x141221010`) and client (`0x144a531e0`, store at `0x144a54f80`): identical, so a clash resolves the same way in execution and in completion.
@@ -96,6 +98,7 @@ The client rebuilds BDS's own `CommandRegistry` from `AvailableCommandsPacket` a
 - `executeCommand` builds a `CommandOutput` and sends it with `MinecraftCommands::handleOutput` only when it has messages or is a data-set output. The packet written by `handleOutput` was not decompiled.
 - A parse failure adds the parser's message id (`commands.generic.unknown` or `commands.generic.syntax`, with the word as parameter), sets `statusCode` to `FailedToParseCommand` and sends the output. Unknown commands take this path, so the player gets the usual error line.
 - With commands disabled in the level (and the command not exempt) the output is `commands.generic.disabled`; an invalid origin gives `commands.generic.invalidOrigin`.
+- `CommandRegistry::createCommand` (1.26.51 BDS `0x14121d2d0`, decompiled) pairs each overload's parameters with the parse tree's tokens by position. A leftover token fails the overload. When the tokens run out, the overload matches only if the first parameter without a token is optional; otherwise it writes "Command version mismatch" (`0x14121d56b`). So one input matches at most one overload.
 - A command that runs and prints nothing sends nothing. The output type, picked from the origin and gamerules, can be zero, and then messages are not even added.
 
 ## Symbol encodings
@@ -144,6 +147,8 @@ Checked on 1.26.60 (`buildRules`, disassembled) and the 1.26.52 capture. Not dec
 - For a group, the run is the first parameter plus the optional parameters that follow it identically in every overload of the group. The run is cut at the first parameter that differs, is required, or where an overload ends.
 - When some overload continues past the run, the rest is `buildRules` again from the next position, and the rule is `F -> run F'`. When every overload ends in the run, the rule is `F -> run` alone.
 - Optional parameters are not expanded into extra overloads. A run of optionals becomes a chain of optional non-terminals: `Opt -> param Opt'`, `Opt -> param`, and `Opt -> Epsilon`. Chains are reused when their parameters match.
+- Whether a group's run ends the rule is a flag that only the group's later overloads update (1.26.51 BDS `0x14124b336`..`0x14124b36a`; the first overload's value is saved at `0x14124b40d` and restored at `0x14124b6d8`). An overload whose remaining parameter count equals the run length keeps the flag; a longer one clears it; a shorter one shortens the run and clears it. With the flag set and the overload ending at the run, the rule is `F -> run` with required parameters in place (`0x14124d70b`), and no optional chain.
+- When the flag stays set but an overload continues past a run cut at an optional, everything after the run becomes an optional chain, required parameters included (`0x14124d7bf`..`0x14124d88f`). Each chain ends with `Opt -> Epsilon`, added last (`0x14124c822`), so it wins any clash on its pair.
 - Each overload keeps the symbols it was built from, for later rule lookup.
 - The rules are added without a conflict check. If two groups at one position predict the same word, the predict table decides, and it overwrites silently (see Open).
 - Vanilla keeps every shared prefix on one symbol. In the capture, 315 same-position enum pairs share no value text, and `/execute` reuses `Option_Positioned` and `Option_If_Unless` across its overloads.
@@ -152,7 +157,8 @@ Combinations at one position (after the same prefix) that conflict, so the injec
 - Two different enum symbols whose values share any text, including the same word in two enums made for two overloads. The factor never forms and both predict the word.
 - A literal enum next to a parameter that derives `Id`: a string, a selector, a soft enum, a file path or raw text. The `Id` token type is looked up first, so the literal's overload is never reached for any word.
 - Two different `Id`-deriving parameters: string and selector, string and soft enum, selector and soft enum, two different soft enums. Each predicts on `Id`.
-- An optional parameter followed by a required one whose first token overlaps it. The optional is taken greedily and the required one then finds nothing. Optional enum then required message is the common case (Endstone #559).
+- An optional parameter followed by a required one whose first token overlaps it. The optional is taken greedily and the required one then finds nothing.
+- Any optional parameter followed by a required message (Endstone #559). The message joins the optional chain, and `MessageRoot` is nullable, so at end of input the chain's `Opt -> Epsilon` wins and the message gets no token. `createCommand` then rejects the overload with "Command version mismatch".
 - A message or raw-text parameter that is not last.
 
 Combinations that factor cleanly (all in the 1.26.52 capture):
@@ -161,6 +167,8 @@ Combinations that factor cleanly (all in the 1.26.52 capture):
 - A shorter overload that is a prefix of a longer one.
 - Int next to a literal enum or a postfix; Position or PositionFloat next to a selector or a literal enum; Id next to Position or PositionFloat; RVal, a comparison operator or a block state array next to a literal enum; a block state array next to a chained parameter.
 - An optional parameter followed by a required enum (`/summon`).
+- A message is required, last, and after only required parameters (`/kick`, `/tell`, `/me`, `/say`, `/scriptevent`, `/title`). `/kick <name>` with nothing after it still matches, with an empty message.
+- For optional parameters before a message, all-required overloads: one prefix ending before each optional, plus the full list. Leave out the prefix that stops just before the message: it ties with the empty-message match, the full overload's rule is added last and wins, and a dev client asserts. Checked by tracing 1.26.51 BDS `buildRules` in both registration orders.
 
 Injector:
 - Proxy commands (`/server`, `/glist`, `/send`, `/shutdown`, `/endgate info|reload|dump`) never need factorization. Do not put factorization data on the wire; the client derives it.
@@ -187,13 +195,13 @@ Injector:
 
 ## Open
 
-- Which rule is emitted last for a clashing pair (the comparator in `setupOverloadRules` and the order `buildRules` adds rules), and what the map in the keyword pre-insert check holds. Not traced in the third pass.
+- Which rule is emitted last for a clashing pair outside an optional chain, and what the map in the keyword pre-insert check holds.
 - Whether every `Id`-deriving type (string, selector, soft enum, file path, raw text) predicts on the one `Id` entry. Not decoded.
 - The packet written by `MinecraftCommands::handleOutput`, and what the client shows when a request gets no output.
 - Whether BDS's `serializeAvailableCommands` filters by flag, permission or cheats; `requiresCheatsEnabled`; what flag 64 (Message) changes; constraint ids; `registerAlias` order; soft enum values with spaces.
 - Which signature `registerCommand` keeps for a repeated command name.
 - Whether `setupChainedSubcommandOverloadRules` and the lexer's postfix split (`findPostfix`) behave as hoped; see the Chained subcommands and Postfixes sections.
-- How `buildRules` factors shared prefixes.
+- How `buildRules` factors shared prefixes beyond the run flag and optional chains in Factorization.
 - Whether the parse rejects a soft enum word outside its values.
 - Out-of-range indices in `loadRemoteCommands` other than enum values and the alias enum.
 - 1.26.60: the BDS database has no names, so the symbol table there comes from headers only.
