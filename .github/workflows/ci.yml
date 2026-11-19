@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths-ignore: &ignored-paths
+      - '**/*.md'
+      - '.claude/**'
+      - '.vscode/**'
+      - 'LICENSE'
+  push:
+    branches:
+      - main
+    paths-ignore: *ignored-paths
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read

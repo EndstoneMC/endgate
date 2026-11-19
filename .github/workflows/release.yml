@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(sed -nE 's/^project\(endgate VERSION ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt)
+          if [ -z "$VERSION" ]; then
+            echo "::error::No project version found in CMakeLists.txt"
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$VERSION" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match CMakeLists.txt version $VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build
+    needs: [ check ]
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/') && github.repository == 'EndstoneMC/endgate'
+    runs-on: ubuntu-latest
+    needs: [ check, build ]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: endgate-*.zip
+          path: dist
+          merge-multiple: true
+          skip-decompress: true
+
+      - name: Name archives
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          cd dist
+          for file in endgate-*.zip; do
+            mv "$file" "endgate-${VERSION}-${file#endgate-}"
+          done
+          ls -l
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: v${{ needs.check.outputs.version }}
+          generate_release_notes: true
+          files: dist/*.zip
+
+  docker:
+    name: Docker (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    needs: [ check, build ]
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GHCR
+            registry: ghcr.io
+            image: ghcr.io/endstonemc/endgate
+            username: github_actor
+            password: GITHUB_TOKEN
+          - name: Docker Hub
+            registry: docker.io
+            image: endstone/endgate
+            username: DOCKERHUB_USERNAME
+            password: DOCKERHUB_TOKEN
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to ${{ matrix.name }}
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ matrix.registry }}
+          username: ${{ matrix.username == 'github_actor' && github.actor || secrets[matrix.username] }}
+          password: ${{ secrets[matrix.password] }}
+
+      - name: Extract Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=raw,value=${{ needs.check.outputs.version }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+
+      - name: Build and Push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=endgate
+          cache-to: type=gha,scope=endgate,mode=max

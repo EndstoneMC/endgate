@@ -1,0 +1,121 @@
+name: Build
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build on ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            compilers: '{"c":"clang-22","cpp":"clang++-22"}'
+          - name: windows-x86_64
+            os: windows-2022
+            compilers: '{"c":"clang-cl","cpp":"clang-cl"}'
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Clang (Linux)
+        if: runner.os == 'Linux'
+        env:
+          LLVM_VERSION: '22'
+        run: |
+          set -euo pipefail
+          CODENAME=$(. /etc/os-release && echo "${VERSION_CODENAME}")
+          curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors \
+            https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+          echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" \
+            | sudo tee /etc/apt/sources.list.d/llvm.list > /dev/null
+          sudo apt-get update -y -q -o Acquire::Retries=10
+          sudo apt-get install -y -q -o Acquire::Retries=10 \
+            build-essential \
+            clang-${LLVM_VERSION} \
+            libstdc++-14-dev
+
+      - name: Set up Clang (Windows)
+        if: runner.os == 'Windows'
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: '22.1.8'
+
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86_64
+
+      - name: Set up CMake and Ninja
+        uses: lukka/get-cmake@latest
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Conan
+        run: |
+          uv tool install conan
+          conan profile detect --force
+
+      - name: Cache Conan packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.conan2/p
+          key: ${{ runner.os }}-conan-RelWithDebInfo-${{ hashFiles('conanfile.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-conan-RelWithDebInfo-
+
+      - name: Install dependencies
+        run: |
+          conan install . \
+            -s '&:build_type=RelWithDebInfo' \
+            -s compiler.cppstd=23 \
+            -c tools.cmake.cmaketoolchain:generator=Ninja \
+            -c "tools.build:compiler_executables=${{ matrix.compilers }}" \
+            --build=missing
+
+      - name: Configure
+        run: cmake --preset conan-relwithdebinfo
+
+      - name: Build
+        run: cmake --build --preset conan-relwithdebinfo
+
+      - name: Run unit tests
+        run: ctest --test-dir build/RelWithDebInfo --output-on-failure -j
+
+      - name: Run integration tests
+        run: uv run --project tests pytest tests/integration -q
+
+      - name: Package
+        run: |
+          mkdir -p stage
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp build/RelWithDebInfo/endgate.exe stage/
+          else
+            cp build/RelWithDebInfo/endgate stage/
+            strip --strip-debug stage/endgate
+          fi
+          cp LICENSE stage/
+          cd stage
+          cmake -E tar cf "../endgate-${{ matrix.name }}.zip" --format=zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: endgate-${{ matrix.name }}.zip
+          archive: false
+          retention-days: 7
