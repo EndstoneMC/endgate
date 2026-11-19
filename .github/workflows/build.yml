@@ -50,9 +50,9 @@ jobs:
 
       - name: Set up Clang (Windows)
         if: runner.os == 'Windows'
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: '22.1.8'
+        run: |
+          choco install llvm --version=22.1.8 --yes --no-progress
+          echo "C:\\Program Files\\LLVM\\bin" >> "$GITHUB_PATH"
 
       - name: Set up MSVC (Windows)
         if: runner.os == 'Windows'
@@ -80,12 +80,14 @@ jobs:
             ${{ runner.os }}-conan-RelWithDebInfo-
 
       - name: Install dependencies
+        env:
+          COMPILERS: ${{ matrix.compilers }}
         run: |
           conan install . \
             -s '&:build_type=RelWithDebInfo' \
             -s compiler.cppstd=23 \
             -c tools.cmake.cmaketoolchain:generator=Ninja \
-            -c "tools.build:compiler_executables=${{ matrix.compilers }}" \
+            -c "tools.build:compiler_executables=${COMPILERS}" \
             --build=missing
 
       - name: Configure
