@@ -46,13 +46,17 @@ ServerConnection::ServerConnection(BackendServer &server, std::shared_ptr<Player
 
 Awaitable<ConnectionRequestBuilder::Result> ServerConnection::open(std::shared_ptr<ServerConnection> self)
 {
-    constexpr std::chrono::seconds resolve_timeout{2};
-
     const auto &info = self->server_.getServerInfo();
+    const auto &config = self->player_->getConnection().getEndpoint().getServer().getConfiguration();
+    const auto options = PingOptions{
+        .connect_timeout = std::chrono::milliseconds{config.getConnectTimeout()},
+        .read_timeout = std::chrono::milliseconds{config.getReadTimeout()},
+    };
     auto &player = *self->player_;
     auto &endpoint = player.getConnection().getEndpoint();
     const auto result_future = std::make_shared<ConnectionResultFuture>(co_await asio::this_coro::executor);
 
+    const auto resolve_timeout = options.connect_timeout.count() > 0 ? options.connect_timeout : PingOptions::unbounded;
     std::optional<asio::ip::udp::endpoint> address;
     asio::error_code ec;
     if (const auto literal = asio::ip::make_address(info.getHost(), ec); !ec) {
@@ -70,8 +74,8 @@ Awaitable<ConnectionRequestBuilder::Result> ServerConnection::open(std::shared_p
 
     std::optional<ServerInfo::Transport> transport;
     if (address && player.isActive()) {
-        transport =
-            (co_await self->server_.detectTransport(endpoint.getEventLoop().getIoContext(), *address)).transport;
+        transport = (co_await self->server_.detectTransport(endpoint.getEventLoop().getIoContext(), *address, options))
+                        .transport;
     }
     if (!player.isActive()) {
         throw std::runtime_error("the player left");
@@ -87,7 +91,7 @@ Awaitable<ConnectionRequestBuilder::Result> ServerConnection::open(std::shared_p
                                                                               describeProtocol(player_protocol)),
                                                                   self->server_);
     }
-    if (const auto connect_timeout = endpoint.getServer().getConfiguration().getConnectTimeout(); connect_timeout > 0) {
+    if (const auto connect_timeout = config.getConnectTimeout(); connect_timeout > 0) {
         self->connect_timeout_ = player.getConnection().eventLoop().schedule(
             [self, result_future] {
                 if (self->established_) {
