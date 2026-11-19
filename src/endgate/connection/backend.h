@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <deque>
 #include <format>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -486,42 +487,46 @@ public:
     }
 
     /**
+     * On a switch, holds the StartGame and what follows it until the backend's item registry shows the
+     * player can stay in the session they joined.
+     *
      * @see com.velocitypowered.proxy.connection.backend.TransitionSessionHandler#handle(JoinGamePacket)
      */
     template <typename Packet>
         requires IsPacket<Packet, bp::MinecraftPacketIds::StartGame>
     bool handleEach(const Packet &packet)
     {
-        auto &backend = server_connection_->ensureConnected();
-        auto &player = server_connection_->getPlayer();
-        const auto &active_handler = player.getConnection().getActiveSessionHandler();
-        auto play_handler = std::shared_ptr<ClientPlaySessionHandler>(
-            active_handler, active_handler ? active_handler->as<ClientPlaySessionHandler>() : nullptr);
-        const auto switching = play_handler != nullptr;
-        if (const auto incompatibility = switching ? play_handler->findIncompatibility(packet) : std::nullopt) {
-            server_connection_->disconnect();
-            result_future_->complete(ConnectionRequestBuilder::Result::forDisconnect(std::string{*incompatibility},
-                                                                                     server_connection_->getServer()));
+        const auto *const play_handler = getPlayHandler();
+        if (play_handler == nullptr) {
+            handleBackendStartGame(packet);
             return true;
         }
-        const auto existing_connection = player.getConnectedServer();
-        if (existing_connection) {
-            player.setConnectedServer(nullptr);
-            existing_connection->disconnect();
+        if (const auto incompatibility = play_handler->findIncompatibility(packet)) {
+            refuse(*incompatibility);
+            return true;
         }
+        held_start_game_ = [this, packet] {
+            handleBackendStartGame(packet);
+        };
+        return true;
+    }
 
-        if (!play_handler) {
-            play_handler = std::make_shared<ClientPlaySessionHandler>(player.shared_from_this());
-            player.getConnection().setSessionHandler(play_handler);
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::ItemRegistryPacket>
+    bool handleEach(const Packet &packet)
+    {
+        if (!held_start_game_) {
+            return false;
         }
-        play_handler->handleBackendStartGame(packet, *server_connection_);
-
-        backend.setSessionHandler(std::make_shared<BackendPlaySessionHandler>(server_connection_));
-        player.setConnectedServer(server_connection_);
-        if (switching) {
-            player.getPlayerSettings().replay(backend);
+        std::string registry;
+        bp::BinaryWriter writer{registry};
+        bp::serialize(writer, packet);
+        const auto &registries = getPlayHandler()->getSessionRegistries();
+        if (const auto joined = registries.find(Packet::Id); joined == registries.end() || joined->second != registry) {
+            refuse("it has other items than the server you joined");
+            return true;
         }
-        result_future_->complete(ConnectionRequestBuilder::Result::successful(server_connection_->getServer()));
+        std::exchange(held_start_game_, {})();
         return true;
     }
 
@@ -611,10 +616,47 @@ public:
 
 private:
     [[nodiscard]] bool isSwitching() const;
+    [[nodiscard]] ClientPlaySessionHandler *getPlayHandler() const;
+    void refuse(std::string_view reason);
+
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::StartGame>
+    void handleBackendStartGame(const Packet &packet)
+    {
+        auto &backend = server_connection_->ensureConnected();
+        auto &player = server_connection_->getPlayer();
+        const auto &active_handler = player.getConnection().getActiveSessionHandler();
+        auto play_handler = std::shared_ptr<ClientPlaySessionHandler>(active_handler, getPlayHandler());
+        const auto switching = play_handler != nullptr;
+        const auto existing_connection = player.getConnectedServer();
+        if (existing_connection) {
+            player.setConnectedServer(nullptr);
+            existing_connection->disconnect();
+        }
+
+        if (!play_handler) {
+            play_handler = std::make_shared<ClientPlaySessionHandler>(player.shared_from_this());
+            player.getConnection().setSessionHandler(play_handler);
+        }
+        play_handler->handleBackendStartGame(packet, *server_connection_);
+
+        backend.setSessionHandler(std::make_shared<BackendPlaySessionHandler>(server_connection_));
+        player.setConnectedServer(server_connection_);
+        if (switching) {
+            player.getPlayerSettings().replay(backend);
+        }
+        for (const auto &batch : std::exchange(held_, {})) {
+            backend.pipeline().template context<ReadTimeoutHandler>().fireChannelRead(batch.slice());
+        }
+        result_future_->complete(ConnectionRequestBuilder::Result::successful(server_connection_->getServer()));
+    }
 
     spdlog::logger &logger_;
     std::shared_ptr<ServerConnection> server_connection_;
     std::shared_ptr<ConnectionResultFuture> result_future_;
+    std::function<void()> held_start_game_;
+    std::vector<ByteBuf> held_;
+    std::size_t held_bytes_ = 0;
 };
 
 }  // namespace endgate

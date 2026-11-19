@@ -1,5 +1,7 @@
 """A player moved between two backends: by the console, by failover, by a transfer, and refused by the guard."""
 
+import time
+
 import pytest
 from bedrock import Backend
 
@@ -8,6 +10,7 @@ SECOND_RUNTIME_ID = 7
 START_LOADING_SCREEN = 1
 END_LOADING_SCREEN = 2
 NETHER = 1
+SYNC_ACTOR_PROPERTY = "165"
 CONNECTING_TO_SECOND = "Connecting to second…"
 
 
@@ -35,6 +38,13 @@ def nether():
 @pytest.fixture
 def different_blocks():
     server = Backend("raknet", play=True, runtime_id=SECOND_RUNTIME_ID, unique_id=-7, checksum=99)
+    yield server
+    server.close()
+
+
+@pytest.fixture
+def different_items():
+    server = Backend("raknet", play=True, runtime_id=SECOND_RUNTIME_ID, unique_id=-7, items=("endgate:test",))
     yield server
     server.close()
 
@@ -158,6 +168,39 @@ def test_a_server_with_other_blocks_is_refused(make_proxy, lobby, different_bloc
     assert player.peer.wait("camera", 10) == "fade 0.5 5 0.5"
     assert player.peer.wait("camera", 10) == "fade 0 0 0.5"
     assert not upstream.closed.is_set()
+
+
+def test_a_server_with_other_items_is_refused_before_the_switch_commits(make_proxy, lobby, different_items, connect):
+    proxy = proxy_for(make_proxy, lobby, different_items)
+    player = connect(proxy)
+    upstream = joined(player, lobby, proxy)
+
+    proxy.command(f"send {player.identity.name} second")
+
+    refused = different_items.accept()
+    assert player.wait_text() == CONNECTING_TO_SECOND
+    assert player.wait_text() == "§cUnable to connect to second: it has other items than the server you joined", (
+        proxy.lines[-20:]
+    )
+    assert refused.wait_closed(3)
+    assert player.peer.wait("camera", 10) == "fade 0.5 5 0.5"
+    assert player.peer.wait("camera", 10) == "fade 0 0 0.5"
+    assert player.peer.pending("start-game") == []
+    assert not upstream.closed.is_set()
+
+
+def test_what_the_next_server_sends_before_its_items_follows_the_switch(make_proxy, lobby, second, connect):
+    proxy = proxy_for(make_proxy, lobby, second)
+    player = connect(proxy)
+    joined(player, lobby, proxy)
+
+    proxy.command(f"send {player.identity.name} second")
+
+    assert spawned(second.accept(), proxy)
+    deadline = time.monotonic() + 5
+    while player.peer.pending("packet").count(SYNC_ACTOR_PROPERTY) < 2 and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert player.peer.pending("packet").count(SYNC_ACTOR_PROPERTY) == 2
 
 
 def test_a_transfer_to_a_known_server_switches(make_proxy, lobby, second, connect):

@@ -1,10 +1,12 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <concepts>
 #include <cstddef>
 #include <exception>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 namespace endgate {
@@ -233,6 +235,18 @@ public:
     [[nodiscard]] Handler &get()
     {
         return std::get<Handler>(handlers_);
+    }
+
+    /**
+     * @see io.netty.channel.ChannelPipeline#context(Class)
+     */
+    template <typename Handler>
+    [[nodiscard]] auto context()
+    {
+        constexpr std::array<bool, SIZE> matches{std::is_same_v<Handler, Handlers>...};
+        constexpr auto index = static_cast<std::size_t>(std::ranges::find(matches, true) - matches.begin());
+        static_assert(index < SIZE, "the handler is not in the pipeline");
+        return context<index>();
     }
 
 private:

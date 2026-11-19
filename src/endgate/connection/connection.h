@@ -317,6 +317,13 @@ public:
     void setEntityMap(const EntityMap &map);
 
     /**
+     * Call on the connection's event loop.
+     *
+     * @see io.netty.channel.Channel#pipeline
+     */
+    [[nodiscard]] auto &pipeline() { return pipeline_; }
+
+    /**
      * Sends a Disconnect with the reason, and the message when there is one, then closes. Call on the
      * connection's event loop.
      *

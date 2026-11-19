@@ -476,6 +476,7 @@ class Backend:
         unique_id: int = -1,
         checksum: int = 0,
         dimension: int = 0,
+        items: tuple[str, ...] = (),
     ) -> None:
         self.transport = transport
         self.protocol = protocol
@@ -492,6 +493,8 @@ class Backend:
         if play:
             self.arguments += ["--play", "--runtime-id", str(runtime_id), "--unique-id", str(unique_id)]
             self.arguments += ["--checksum", str(checksum), "--dimension", str(dimension)]
+            for item in items:
+                self.arguments += ["--item", item]
         self.sessions: queue.Queue[Session] = queue.Queue()
         self.all: list[Session] = []
         if transport == "raknet":

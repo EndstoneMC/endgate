@@ -55,7 +55,7 @@ Gate: /server moves a player between two same-version backends with no loading s
 - [x] Failover on a kick or unexpected disconnect
 - [x] A Transfer to a registered server becomes a switch
 - [x] Real ChangeDimension into another dimension
-- [ ] Refuse a different item registry before the switch commits
+- [x] A different item registry refused before the switch commits
 
 ## Phase 5: version routing
 

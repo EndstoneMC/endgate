@@ -1,6 +1,7 @@
 #include "endgate/connection/backend.h"
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <format>
@@ -322,7 +323,22 @@ void TransitionSessionHandler::activated()
 
 void TransitionSessionHandler::handleUnknown(ByteBufView batch)
 {
+    constexpr std::size_t max_held_bytes = 1024 * 1024;
+
     auto &player = server_connection_->getPlayer();
+    if (held_start_game_) {
+        held_bytes_ += batch.readableBytes();
+        if (held_bytes_ > max_held_bytes) {
+            logger_.warn("[server connection] {} -> {}: more than {} bytes arrived before the server's item "
+                         "registry, disconnecting",
+                         player.getGameProfile().name, server_connection_->getServer().getServerInfo().getName(),
+                         max_held_bytes);
+            refuse(ConnectionMessages::INTERNAL_SERVER_CONNECTION_ERROR);
+            return;
+        }
+        held_.push_back(batch.copy());
+        return;
+    }
     if (isSwitching() && player.getConnectedServer() != server_connection_) {
         return;
     }
@@ -333,6 +349,22 @@ bool TransitionSessionHandler::isSwitching() const
 {
     const auto &active = server_connection_->getPlayer().getConnection().getActiveSessionHandler();
     return active && active->is<ClientPlaySessionHandler>();
+}
+
+ClientPlaySessionHandler *TransitionSessionHandler::getPlayHandler() const
+{
+    const auto &active = server_connection_->getPlayer().getConnection().getActiveSessionHandler();
+    return active ? active->as<ClientPlaySessionHandler>() : nullptr;
+}
+
+void TransitionSessionHandler::refuse(std::string_view reason)
+{
+    held_start_game_ = {};
+    held_.clear();
+    held_bytes_ = 0;
+    server_connection_->disconnect();
+    result_future_->complete(
+        ConnectionRequestBuilder::Result::forDisconnect(std::string{reason}, server_connection_->getServer()));
 }
 
 void TransitionSessionHandler::readCompleted()

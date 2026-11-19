@@ -42,8 +42,9 @@
  * The client's login comes from --request as hex or --request-file as raw bytes.
  *
  * With --play, a server plays a join after the login: the pack exchange, then StartGame with
- * --runtime-id, --unique-id, --checksum and --dimension, then PlayStatus PlayerSpawn. A client answers the pack
- * exchange and the spawn as the game does.
+ * --runtime-id, --unique-id, --checksum and --dimension, a SyncActorPropertyPacket, an ItemRegistryPacket
+ * listing each --item, then PlayStatus PlayerSpawn. A client answers the pack exchange and the spawn as the game
+ * does.
  *
  * The batch framing, compression and encryption here are written from the wire format, not shared with
  * the proxy, so a mistake the proxy makes on both of its legs shows up as a failure.
@@ -70,11 +71,13 @@
 #include <variant>
 #include <vector>
 
+#include <bedrock/protocol/actor.h>
 #include <bedrock/protocol/camera.h>
 #include <bedrock/protocol/chunk.h>
 #include <bedrock/protocol/command.h>
 #include <bedrock/protocol/dimension.h>
 #include <bedrock/protocol/game.h>
+#include <bedrock/protocol/item.h>
 #include <bedrock/protocol/network.h>
 #include <bedrock/protocol/pack.h>
 #include <bedrock/protocol/packet.hpp>
@@ -314,6 +317,7 @@ struct Options {
     std::int64_t unique_id = -1;
     std::uint64_t checksum = 0;
     int dimension = 0;
+    std::vector<std::string> items;
 };
 
 class Endpoint {
@@ -570,6 +574,12 @@ private:
                 start_game.settings.spawn_settings.dimension =
                     static_cast<decltype(start_game.settings.spawn_settings.dimension)>(options_.dimension);
                 send(start_game);
+                send(bp::SyncActorPropertyPacket{});
+                bp::ItemRegistryPacket_<V> registry;
+                for (const auto &item : options_.items) {
+                    registry.items.push_back({.name = item});
+                }
+                send(registry);
                 send(bp::PlayStatusPacket{.status = bp::PlayStatus::PlayerSpawn});
             }
         }
@@ -832,6 +842,9 @@ int main(int argc, char **argv)
         }
         else if (argument == "--dimension") {
             options.dimension = std::stoi(value());
+        }
+        else if (argument == "--item") {
+            options.items.push_back(value());
         }
     }
 
