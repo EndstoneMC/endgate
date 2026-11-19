@@ -5,12 +5,15 @@
 #include <string_view>
 #include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <bedrock/protocol/actor.h>
+#include <bedrock/protocol/camera.h>
 #include <bedrock/protocol/level.h>
 #include <bedrock/protocol/serializer.hpp>
 #include <bedrock/protocol/stream.hpp>
+#include <bedrock/protocol/telemetry.h>
 #include <gtest/gtest.h>
 
 #include "endgate/buffer/bytebuf.h"
@@ -27,6 +30,9 @@ constexpr int PROTOCOL = MAXIMUM_VERSION.getProtocol();
 using SetActorMotionPacket = bp::packet_of_t<PROTOCOL, 40>;
 using SetActorDataPacket = bp::packet_of_t<PROTOCOL, 39>;
 using SetTimePacket = bp::packet_of_t<PROTOCOL, 10>;
+using ActorPickRequestPacket = bp::packet_of_t<PROTOCOL, 35>;
+using LegacyTelemetryEventPacket = bp::packet_of_t<PROTOCOL, 65>;
+using CameraInstructionPacket = bp::packet_of_t<PROTOCOL, 300>;
 
 const EntityMap MAP{bp::ActorRuntimeID{1}, bp::ActorUniqueID{10}, bp::ActorRuntimeID{7}, bp::ActorUniqueID{70}};
 
@@ -118,6 +124,50 @@ TEST(EntityMap, RewritesOnlyTheInt64ItemsOfActorData)
     ASSERT_EQ(items.size(), 2U);
     EXPECT_EQ(std::get<bp::DataItemInt64Payload_<PROTOCOL>>(items[0].payload).value, 10);
     EXPECT_EQ(std::get<bp::DataItemIntPayload_<PROTOCOL>>(items[1].payload).value, 70);
+}
+
+TEST(EntityMap, RewritesTheCamerasTargetAndAttachIds)
+{
+    CameraInstructionPacket packet;
+    packet.camera_instruction.target.emplace().target_actor_id = bp::ActorUniqueID{70};
+    packet.camera_instruction.attach_to_entity.emplace().attach_to_entity_id = bp::ActorUniqueID{70};
+
+    const auto rewritten = MAP.rewrite(PROTOCOL, encode(packet).slice());
+
+    ASSERT_TRUE(rewritten.has_value());
+    const auto instruction = decode<CameraInstructionPacket>(*rewritten).camera_instruction;
+    EXPECT_EQ(instruction.target->target_actor_id, bp::ActorUniqueID{10});
+    EXPECT_EQ(instruction.attach_to_entity->attach_to_entity_id, bp::ActorUniqueID{10});
+}
+
+TEST(EntityMap, RewritesThePickRequestsId)
+{
+    const auto packet = encode(ActorPickRequestPacket{.id = bp::ActorUniqueID{10}, .max_slots = 9});
+
+    const auto rewritten = MAP.rewrite(PROTOCOL, packet.slice());
+
+    ASSERT_TRUE(rewritten.has_value());
+    const auto request = decode<ActorPickRequestPacket>(*rewritten);
+    EXPECT_EQ(request.id, bp::ActorUniqueID{70});
+    EXPECT_EQ(request.max_slots, 9);
+}
+
+TEST(EntityMap, RewritesTheTelemetrysEntityIds)
+{
+    LegacyTelemetryEventPacket packet{.player_unique_id = bp::ActorUniqueID{10},
+                                      .type = LegacyTelemetryEventPacket::Type::MobKilled,
+                                      .use_player_id = true};
+    packet.event_data = LegacyTelemetryEventPacket::MobKilled{.killer_entity_id = bp::ActorUniqueID{10},
+                                                              .killed_mob_id = bp::ActorUniqueID{30}};
+
+    const auto rewritten = MAP.rewrite(PROTOCOL, encode(packet).slice());
+
+    ASSERT_TRUE(rewritten.has_value());
+    const auto event = decode<LegacyTelemetryEventPacket>(*rewritten);
+    EXPECT_EQ(event.player_unique_id, bp::ActorUniqueID{70});
+    const auto &killed = std::get<LegacyTelemetryEventPacket::MobKilled>(event.event_data);
+    EXPECT_EQ(killed.killer_entity_id, bp::ActorUniqueID{70});
+    EXPECT_EQ(killed.killed_mob_id, bp::ActorUniqueID{30});
 }
 
 TEST(EntityMap, KeepsTheSubClientBitsOfTheHeader)
