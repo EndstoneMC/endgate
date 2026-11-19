@@ -44,7 +44,7 @@ Gate: endgate maps every entity ID and tracks every packet that creates or destr
 - [x] Entity ID map per backend, rewritten from bedrock-protocol's reflection
 - [x] State per backend, kept player-side (see World state)
 - [x] Client settings replayed to the next backend
-- [ ] Rewrite the camera's target and attach IDs, the pick request's and the telemetry's (bedrock-protocol types them as plain integers)
+- [x] Camera target and attach IDs, the pick request's and the telemetry's rewritten (bedrock-protocol 0.4.6 types them as `ActorUniqueID`)
 
 ## Phase 4: seamless switch
 
