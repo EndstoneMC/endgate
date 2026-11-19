@@ -1,6 +1,7 @@
 include(GoogleTest)
 
 add_executable(endgate_util_tests
+        test_pointers.cpp
         test_ratelimit.cpp
         test_uuid.cpp
 )
