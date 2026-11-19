@@ -130,11 +130,12 @@ def test_a_login_with_no_backend_on_its_protocol_is_told_so(make_proxy, old, con
 def test_players_on_two_versions_each_reach_the_backend_on_their_own(make_proxy, old, lobby, connect):
     proxy = make_proxy(lobby.port, servers={"old": f"127.0.0.1:{old.port}"}, try_order=["old", "lobby"])
     old_player = connect(proxy, protocol=OLD_PROTOCOL)
-    new_player = connect(proxy)
-
     assert old_player.wait_login(), proxy.lines[-20:]
     old_session = old.accept()
     assert old_player.peer.wait("start-game", 10) == "2 -2 0 0", proxy.lines[-20:]
+
+    new_player = connect(proxy)
+
     assert new_player.wait_login(), proxy.lines[-20:]
     new_session = lobby.accept()
     assert new_player.peer.wait("start-game", 10) == "1 -1 0 0", proxy.lines[-20:]
@@ -146,6 +147,7 @@ def test_players_on_two_versions_each_reach_the_backend_on_their_own(make_proxy,
     old_session.say("to the old player")
     new_session.say("to the new player")
     assert old_player.texts() == ["to the old player"]
-    assert new_player.texts() == [REFUSED, "to the new player"]
+    assert new_player.texts() == ["to the new player"]
     assert old.sessions.empty()
     assert lobby.sessions.empty()
+    assert refusals(proxy) == []
