@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -21,6 +22,7 @@
 
 #include "endgate/awaitable.h"
 #include "endgate/backend.h"
+#include "endgate/config.h"
 #include "endgate/connection/connection.h"
 #include "endgate/connection/player.h"
 #include "endgate/network/eventloop.h"
@@ -531,9 +533,10 @@ public:
     }
 
     /**
-     * Lets the client run the pack exchange on the first connection. On a switch it answers for the
-     * client when the backend offers the packs the player joined with, since Bedrock applies packs only
-     * at login, and refuses the switch otherwise.
+     * On the first connection, offers the player the packs the proxy serves in place of the backend's and
+     * refuses a backend that offers other packs. On a switch it answers for the client when the backend
+     * offers the packs the player joined with, since Bedrock applies packs only at login, and refuses the
+     * switch otherwise.
      *
      * @see com.velocitypowered.proxy.connection.backend.ConfigSessionHandler#handle(ResourcePackRequestPacket)
      */
@@ -541,23 +544,43 @@ public:
         requires IsPacket<Packet, bp::MinecraftPacketIds::ResourcePacksInfo>
     bool handleEach(const Packet &packet)
     {
-        std::vector<std::string> packs;
+        std::vector<std::string> offered;
         for (const auto &pack : packet.resource_packs) {
             const auto &[msb, lsb] = pack.pack_id_version.id;
-            packs.push_back(std::format("{:08x}-{:04x}-{:04x}-{:04x}-{:012x}_{}{}", msb >> 32, (msb >> 16) & 0xffff,
-                                        msb & 0xffff, lsb >> 48, lsb & 0xffffffffffff,
-                                        pack.pack_id_version.version.version, pack.subpack_name));
+            offered.push_back(std::format("{:08x}-{:04x}-{:04x}-{:04x}-{:012x}_{}", msb >> 32, (msb >> 16) & 0xffff,
+                                          msb & 0xffff, lsb >> 48, lsb & 0xffffffffffff,
+                                          pack.pack_id_version.version.version));
         }
-        std::ranges::sort(packs);
+        std::ranges::sort(offered);
         auto &player = server_connection_->getPlayer();
-        if (!isSwitching()) {
-            player.setAppliedResourcePacks(std::move(packs));
-            return false;
+        const auto &config = getConfiguration();
+        const auto packs = isSwitching() ? player.getAppliedResourcePacks()
+                                         : std::span<const ResourcePackInfo>{config.getResourcePacks()};
+        std::vector<std::string> served;
+        for (const auto &pack : packs) {
+            served.push_back(pack.getPackIdVersion());
         }
-        if (packs != player.getAppliedResourcePacks()) {
-            server_connection_->disconnect();
-            result_future_->complete(ConnectionRequestBuilder::Result::forDisconnect(
-                "it needs other resource packs than the ones you joined with", server_connection_->getServer()));
+        std::ranges::sort(served);
+        if (offered != served) {
+            refuse(isSwitching() ? "it needs other resource packs than the ones you joined with"
+                                 : "it needs other resource packs than the proxy serves");
+            return true;
+        }
+        if (!isSwitching()) {
+            player.setAppliedResourcePacks(packs);
+            auto info = packet;
+            info.resource_pack_required = config.isTexturepackRequired();
+            info.resource_packs.clear();
+            for (const auto &pack : packs) {
+                info.resource_packs.push_back(
+                    {.pack_id_version = {.id = {.most_significant_bits = pack.getId().getMostSignificantBits(),
+                                                .least_significant_bits = pack.getId().getLeastSignificantBits()},
+                                         .version = {.version = pack.getVersion()}},
+                     .pack_size = pack.getFile().size(),
+                     .content_identity = {.identity = pack.getId().toString()},
+                     .is_ray_tracing_capable = pack.isRayTracingCapable()});
+            }
+            player.getConnection().write(std::move(info));
             return true;
         }
         auto &backend = server_connection_->ensureConnected();
@@ -571,10 +594,14 @@ public:
 
     template <typename Packet>
         requires IsPacket<Packet, bp::MinecraftPacketIds::ResourcePackStack>
-    bool handleEach(const Packet &)
+    bool handleEach(const Packet &packet)
     {
         if (!isSwitching()) {
-            return false;
+            auto &player = server_connection_->getPlayer();
+            auto stack = packet;
+            stack.texture_pack_required = getConfiguration().isTexturepackRequired();
+            player.getConnection().write(std::move(stack));
+            return true;
         }
         auto &backend = server_connection_->ensureConnected();
         visitProtocolVersion(backend.getProtocolVersion().getProtocol(), [&]<int Version>() {
@@ -617,6 +644,7 @@ public:
 private:
     [[nodiscard]] bool isSwitching() const;
     [[nodiscard]] ClientPlaySessionHandler *getPlayHandler() const;
+    [[nodiscard]] const ProxyConfig &getConfiguration() const;
     void refuse(std::string_view reason);
 
     template <typename Packet>

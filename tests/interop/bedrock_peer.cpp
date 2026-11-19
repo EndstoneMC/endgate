@@ -36,6 +36,9 @@
  *   loading-screen <type>
  *   chunk-radius <radius>
  *   violation <type> <severity> <packet id> <context hex>  a PacketViolationWarningPacket arrived
+ *   resource-packs <required> <id_version>...  a ResourcePacksInfoPacket arrived
+ *   resource-pack <id_version> <size> <chunks>  a ResourcePackDataInfoPacket arrived
+ *   pack-stack <required> <id_version>...  a ResourcePackStackPacket arrived
  *   packet <id>          any other packet
  *   error <what>
  *
@@ -43,8 +46,8 @@
  *
  * With --play, a server plays a join after the login: the pack exchange, then StartGame with
  * --runtime-id, --unique-id, --checksum and --dimension, a SyncActorPropertyPacket, an ItemRegistryPacket
- * listing each --item, then PlayStatus PlayerSpawn. A client answers the pack exchange and the spawn as the game
- * does.
+ * listing each --item, then PlayStatus PlayerSpawn. A server offers each --pack, named as <uuid>_<version>. A client
+ * answers the pack exchange and the spawn as the game does.
  *
  * The batch framing, compression and encryption here are written from the wire format, not shared with
  * the proxy, so a mistake the proxy makes on both of its legs shows up as a failure.
@@ -95,6 +98,7 @@
 
 #include "endgate/crypto/jose.h"
 #include "endgate/network/version.h"
+#include "endgate/util/uuid.h"
 
 namespace bp = bedrock::protocol;
 
@@ -318,6 +322,7 @@ struct Options {
     std::uint64_t checksum = 0;
     int dimension = 0;
     std::vector<std::string> items;
+    std::vector<std::string> packs;
 };
 
 class Endpoint {
@@ -563,7 +568,13 @@ private:
             const auto response = decode<bp::ResourcePackClientResponsePacket_<V>>(packet).response;
             if (std::holds_alternative<typename bp::ResourcePackClientResponsePacket_<V>::DownloadingFinished>(
                     response)) {
-                send(bp::ResourcePackStackPacket_<V>{});
+                bp::ResourcePackStackPacket_<V> stack;
+                for (const auto &pack : options_.packs) {
+                    const auto split = pack.find('_');
+                    stack.texture_pack_ids_and_versions.push_back(
+                        {.pack_id = pack.substr(0, split), .version = pack.substr(split + 1)});
+                }
+                send(stack);
             }
             else if (std::holds_alternative<
                          typename bp::ResourcePackClientResponsePacket_<V>::ResourcePackStackFinished>(response)) {
@@ -644,10 +655,54 @@ private:
             }
         }
         else if (id == bp::ResourcePacksInfoPacket_<V>::Id) {
-            send(bp::ResourcePackClientResponsePacket_<V>{
-                .response = typename bp::ResourcePackClientResponsePacket_<V>::DownloadingFinished{}});
+            const auto info = decode<bp::ResourcePacksInfoPacket_<V>>(packet);
+            std::string line = info.resource_pack_required ? "1" : "0";
+            typename bp::ResourcePackClientResponsePacket_<V>::Downloading downloading;
+            for (const auto &pack : info.resource_packs) {
+                const auto &id = pack.pack_id_version.id;
+                const auto name =
+                    std::format("{:08x}-{:04x}-{:04x}-{:04x}-{:012x}_{}", id.most_significant_bits >> 32,
+                                (id.most_significant_bits >> 16) & 0xffff, id.most_significant_bits & 0xffff,
+                                id.least_significant_bits >> 48, id.least_significant_bits & 0xffffffffffff,
+                                pack.pack_id_version.version.version);
+                line += ' ' + name;
+                downloading.downloading_packs.push_back(name);
+            }
+            std::cout << "resource-packs " << line << '\n';
+            awaiting_data_info_ = downloading.downloading_packs.size();
+            if (downloading.downloading_packs.empty()) {
+                send(bp::ResourcePackClientResponsePacket_<V>{
+                    .response = typename bp::ResourcePackClientResponsePacket_<V>::DownloadingFinished{}});
+            }
+            else {
+                send(bp::ResourcePackClientResponsePacket_<V>{.response = std::move(downloading)});
+            }
+        }
+        else if (id == bp::ResourcePackDataInfoPacket::Id) {
+            const auto info = decode<bp::ResourcePackDataInfoPacket>(packet);
+            std::cout << "resource-pack " << info.resource_name << ' ' << info.file_size << ' ' << info.nb_chunks
+                      << '\n';
+            --awaiting_data_info_;
+            chunks_left_ += info.nb_chunks;
+            for (std::uint32_t chunk = 0; chunk < info.nb_chunks; ++chunk) {
+                send(bp::ResourcePackChunkRequestPacket_<V>{.resource_name = info.resource_name,
+                                                            .chunk = static_cast<std::int32_t>(chunk)});
+            }
+        }
+        else if (id == bp::ResourcePackChunkDataPacket::Id) {
+            decode<bp::ResourcePackChunkDataPacket>(packet);
+            if (--chunks_left_ == 0 && awaiting_data_info_ == 0) {
+                send(bp::ResourcePackClientResponsePacket_<V>{
+                    .response = typename bp::ResourcePackClientResponsePacket_<V>::DownloadingFinished{}});
+            }
         }
         else if (id == bp::ResourcePackStackPacket_<V>::Id) {
+            const auto stack = decode<bp::ResourcePackStackPacket_<V>>(packet);
+            std::string line = stack.texture_pack_required ? "1" : "0";
+            for (const auto &pack : stack.texture_pack_ids_and_versions) {
+                line += ' ' + pack.pack_id + '_' + pack.version;
+            }
+            std::cout << "pack-stack " << line << '\n';
             send(bp::ResourcePackClientResponsePacket_<V>{
                 .response = typename bp::ResourcePackClientResponsePacket_<V>::ResourcePackStackFinished{}});
         }
@@ -717,7 +772,19 @@ private:
     {
         send(bp::PlayStatusPacket{.status = bp::PlayStatus::LoginSuccess});
         if (options_.play) {
-            send(bp::ResourcePacksInfoPacket_<V>{});
+            bp::ResourcePacksInfoPacket_<V> info;
+            for (const auto &pack : options_.packs) {
+                const auto split = pack.find('_');
+                const auto id = endgate::UUID::fromString(pack.substr(0, split));
+                if (!id) {
+                    throw std::runtime_error("bad --pack");
+                }
+                info.resource_packs.push_back(
+                    {.pack_id_version = {.id = {.most_significant_bits = id->getMostSignificantBits(),
+                                                .least_significant_bits = id->getLeastSignificantBits()},
+                                         .version = {.version = pack.substr(split + 1)}}});
+            }
+            send(info);
         }
     }
 
@@ -773,6 +840,8 @@ private:
     std::optional<Cipher> decrypt_;
     std::optional<bp::ActorRuntimeID> runtime_id_;
     bool initialized_ = false;
+    std::size_t awaiting_data_info_ = 0;
+    std::uint32_t chunks_left_ = 0;
 };
 
 std::unique_ptr<Endpoint> makePeer(const Options &options)
@@ -845,6 +914,9 @@ int main(int argc, char **argv)
         }
         else if (argument == "--item") {
             options.items.push_back(value());
+        }
+        else if (argument == "--pack") {
+            options.packs.push_back(value());
         }
     }
 

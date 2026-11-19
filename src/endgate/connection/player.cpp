@@ -357,6 +357,14 @@ void InitialConnectSessionHandler::handleUnknown(ByteBufView batch)
     }
 }
 
+const ResourcePackInfo *InitialConnectSessionHandler::findResourcePack(std::string_view name) const
+{
+    const auto packs = player_->getAppliedResourcePacks();
+    const auto pack = std::ranges::find_if(
+        packs, [&](const ResourcePackInfo &candidate) { return name.starts_with(candidate.getId().toString()); });
+    return pack == packs.end() ? nullptr : std::to_address(pack);
+}
+
 void InitialConnectSessionHandler::readCompleted()
 {
     if (const auto &server = player_->getConnectionInFlight()) {

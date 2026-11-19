@@ -13,6 +13,17 @@ Protocols 2168, 2169, 2193 and 2225 (1.26.40 to 1.26.60). A new release is a bed
 3. Multi-version is routing, not translation. Endweave stays out.
 4. bedrock-protocol is the codec; entity ID rewriting is generated from its reflection.
 5. A switch never uses Transfer or a ChangeDimension trick; ChangeDimension only for a real dimension change.
+6. Release 0.1 needs the item registry guard, the camera, pick request and telemetry ID rewrites, and endgate-served resource packs; PROXY protocol v2, the packet limiter and the refusal wording come after it.
+7. A release ships Linux and Windows binaries on GitHub Releases and a Docker image on GHCR and Docker Hub.
+
+## Release 0.1
+
+Gate: a `v0.1.0` tag publishes every artifact from a green run.
+
+- [x] CI builds and runs the unit and integration tests on Linux and Windows for every push and pull request
+- [x] A `v*` tag publishes the Linux and Windows zips to GitHub Releases and the image to GHCR and Docker Hub
+- [ ] First green run on GitHub Actions
+- [ ] Real-client run of the item registry guard, the ID rewrites and served resource packs
 
 ## Phase 1: protocol in the pipeline
 
@@ -33,9 +44,8 @@ Gate: a real client logs in, online and offline; the backend accepts endgate's l
 - [x] Encryption with the client and with the backend
 - [x] ConnectedPlayer from the login and client data
 - [x] Backend login under endgate's key; with `player-info-forwarding-mode = "none"` it is self-signed, with SelfSignedId set so vanilla BDS keeps each player's save
-- [x] Resource packs: the first backend's set, fixed for the session
 - [x] login-ratelimit, connection-timeout, read-timeout
-- [ ] Decide: keep the first backend's pack set, or serve one from endgate's config
+- [x] Resource packs from `[resource-packs]` in `endgate.toml`, served by endgate; every backend must offer the same set
 
 ## Phase 3: client state model
 

@@ -8,6 +8,8 @@
 
 #include <spdlog/logger.h>
 
+#include "endgate/connection/resourcepack.h"
+
 namespace endgate {
 
 /**
@@ -65,6 +67,8 @@ public:
     [[nodiscard]] bool isKickOnCommandRateLimit() const;
     [[nodiscard]] bool isLogPlayerConnections() const;
     [[nodiscard]] bool isFailoverOnUnexpectedServerDisconnect() const;
+    [[nodiscard]] const std::vector<ResourcePackInfo> &getResourcePacks() const;
+    [[nodiscard]] bool isTexturepackRequired() const;
     [[nodiscard]] bool isQueryEnabled() const;
     [[nodiscard]] int getQueryPort() const;
     [[nodiscard]] const std::string &getQueryMap() const;
@@ -103,6 +107,8 @@ private:
     int kick_after_rate_limited_commands_ = 0;
     bool log_player_connections_ = false;
     bool failover_on_unexpected_server_disconnect_ = false;
+    std::vector<ResourcePackInfo> resource_packs_;
+    bool texturepack_required_ = false;
     bool query_enabled_ = false;
     int query_port_ = 0;
     std::string query_map_;

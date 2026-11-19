@@ -113,7 +113,9 @@ template <>
 struct PacketRegistries<StateRegistry::Play> {
     using Serverbound =
         PacketRegistry<bp::MinecraftPacketIds::RequestChunkRadius, bp::MinecraftPacketIds::ClientCacheStatus,
-                       bp::MinecraftPacketIds::PlayerAuthInputPacket, bp::MinecraftPacketIds::CommandRequest>;
+                       bp::MinecraftPacketIds::PlayerAuthInputPacket, bp::MinecraftPacketIds::CommandRequest,
+                       bp::MinecraftPacketIds::ResourcePackClientResponse,
+                       bp::MinecraftPacketIds::ResourcePackChunkRequest>;
     using Clientbound =
         PacketRegistry<bp::MinecraftPacketIds::Disconnect, bp::MinecraftPacketIds::PlayStatus,
                        bp::MinecraftPacketIds::ResourcePacksInfo, bp::MinecraftPacketIds::ResourcePackStack,

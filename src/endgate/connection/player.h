@@ -8,16 +8,20 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include <bedrock/protocol/pack.h>
 #include <spdlog/logger.h>
 
 #include "endgate/awaitable.h"
 #include "endgate/command/source.h"
 #include "endgate/connection/connection.h"
+#include "endgate/connection/resourcepack.h"
 #include "endgate/connection/settings.h"
 #include "endgate/playerlist/playerlist.h"
 #include "endgate/util/uuid.h"
@@ -313,17 +317,13 @@ public:
     [[nodiscard]] bool isActive() const { return active_; }
 
     /**
-     * The resource packs the player joined with, each named as Bedrock names a pack: its UUID, an
-     * underscore and its version.
+     * The resource packs the player joined with.
      *
      * @see com.velocitypowered.api.proxy.Player#getAppliedResourcePacks
      */
-    [[nodiscard]] const std::optional<std::vector<std::string>> &getAppliedResourcePacks() const
-    {
-        return applied_resource_packs_;
-    }
+    [[nodiscard]] std::span<const ResourcePackInfo> getAppliedResourcePacks() const { return applied_resource_packs_; }
 
-    void setAppliedResourcePacks(std::vector<std::string> packs) { applied_resource_packs_ = std::move(packs); }
+    void setAppliedResourcePacks(std::span<const ResourcePackInfo> packs) { applied_resource_packs_ = packs; }
 
     /**
      * @see com.velocitypowered.api.proxy.Player#getPlayerSettings
@@ -382,7 +382,7 @@ private:
     std::optional<std::string> virtual_host_;
     std::optional<std::vector<std::string>> servers_to_try_;
     std::size_t try_index_ = 0;
-    std::optional<std::vector<std::string>> applied_resource_packs_;
+    std::span<const ResourcePackInfo> applied_resource_packs_;
     ClientSettings settings_;
     PlayerList player_list_;
     std::map<std::string, std::vector<std::string>> soft_enums_;
@@ -417,6 +417,69 @@ public:
         return false;
     }
 
+    /**
+     * Sends the player each resource pack it asks to download, as the proxy serves it.
+     *
+     * @see ServerNetworkHandler::handle(const NetworkIdentifier &, const ResourcePackClientResponsePacket &)
+     */
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::ResourcePackClientResponse>
+    bool handleEach(const Packet &packet)
+    {
+        const auto *const downloading = std::get_if<typename Packet::Downloading>(&packet.response);
+        if (downloading == nullptr) {
+            return false;
+        }
+        auto &client = player_->getConnection();
+        visitProtocolVersion(client.getProtocolVersion().getProtocol(), [&]<int Version>() {
+            for (const auto &name : downloading->downloading_packs) {
+                const auto *const pack = findResourcePack(name);
+                if (pack == nullptr) {
+                    continue;
+                }
+                PacketOf<Version, bp::MinecraftPacketIds::ResourcePackDataInfo> info;
+                info.resource_name = pack->getPackIdVersion();
+                info.chunk_size = ResourcePackInfo::CHUNK_SIZE;
+                info.nb_chunks = pack->getChunkCount();
+                info.file_size = pack->getFile().size();
+                info.file_hash = pack->getHash();
+                info.pack_type = decltype(info.pack_type)::Resources;
+                client.write(std::move(info));
+            }
+            return true;
+        });
+        return true;
+    }
+
+    /**
+     * @see ServerNetworkHandler::handle(const NetworkIdentifier &, const ResourcePackChunkRequestPacket &)
+     */
+    template <typename Packet>
+        requires IsPacket<Packet, bp::MinecraftPacketIds::ResourcePackChunkRequest>
+    bool handleEach(const Packet &packet)
+    {
+        const auto *const pack = findResourcePack(packet.resource_name);
+        if (pack == nullptr || packet.chunk < 0) {
+            return true;
+        }
+        const auto chunk = static_cast<std::uint32_t>(packet.chunk);
+        const auto data = pack->getChunk(chunk);
+        if (data.empty()) {
+            return true;
+        }
+        auto &client = player_->getConnection();
+        visitProtocolVersion(client.getProtocolVersion().getProtocol(), [&]<int Version>() {
+            PacketOf<Version, bp::MinecraftPacketIds::ResourcePackChunkData> chunk_data;
+            chunk_data.resource_name = pack->getPackIdVersion();
+            chunk_data.chunk_id = chunk;
+            chunk_data.byte_offset = static_cast<std::uint64_t>(chunk) * ResourcePackInfo::CHUNK_SIZE;
+            chunk_data.data.assign(reinterpret_cast<const char *>(data.data()), data.size());
+            client.write(std::move(chunk_data));
+            return true;
+        });
+        return true;
+    }
+
     [[nodiscard]] bool isInstanceOf(const std::type_info &target) const override
     {
         return target == typeid(InitialConnectSessionHandler) || MinecraftSessionHandler::isInstanceOf(target);
@@ -428,6 +491,8 @@ public:
     void disconnected() override;
 
 private:
+    [[nodiscard]] const ResourcePackInfo *findResourcePack(std::string_view name) const;
+
     std::shared_ptr<Player> player_;
 };
 

@@ -88,6 +88,7 @@ add_library(endgate_proxy STATIC
         src/endgate/connection/login.cpp
         src/endgate/connection/player.cpp
         src/endgate/connection/raknet.cpp
+        src/endgate/connection/resourcepack.cpp
         src/endgate/connection/settings.cpp
         src/endgate/console.cpp
         src/endgate/logging/appender.cpp

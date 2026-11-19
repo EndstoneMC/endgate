@@ -357,6 +357,11 @@ ClientPlaySessionHandler *TransitionSessionHandler::getPlayHandler() const
     return active ? active->as<ClientPlaySessionHandler>() : nullptr;
 }
 
+const ProxyConfig &TransitionSessionHandler::getConfiguration() const
+{
+    return server_connection_->getPlayer().getConnection().getEndpoint().getServer().getConfiguration();
+}
+
 void TransitionSessionHandler::refuse(std::string_view reason)
 {
     held_start_game_ = {};

@@ -80,6 +80,18 @@ struct Metrics {
     };
 };
 
+struct ResourcePacks {
+    std::vector<std::string> packs;
+    bool texturepack_required = false;
+
+    struct glaze {
+        using T = ResourcePacks;
+        static constexpr auto value = glz::object(  //
+            "packs", &T::packs,                     //
+            "texturepack-required", &T::texturepack_required);
+    };
+};
+
 struct Debug {
     bool packet_decode_logging = false;
     bool log_server_backpressure = false;
@@ -108,6 +120,7 @@ struct Document {
     std::map<std::string, std::variant<std::string, std::vector<std::string>>> servers;
     std::optional<std::map<std::string, std::variant<std::string, std::vector<std::string>>>> forced_hosts;
     Advanced advanced;
+    ResourcePacks resource_packs;
     Query query;
     Metrics metrics;
     Debug debug;
@@ -130,6 +143,7 @@ struct Document {
             "servers", &T::servers,                                              //
             "forced-hosts", &T::forced_hosts,                                    //
             "advanced", &T::advanced,                                            //
+            "resource-packs", &T::resource_packs,                                //
             "query", &T::query,                                                  //
             "metrics", &T::metrics,                                              //
             "debug", &T::debug);
@@ -247,6 +261,14 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
     config.log_server_backpressure_ = document.debug.log_server_backpressure;
     config.tls_certificate_ = document.tls_certificate;
     config.tls_certificate_key_ = document.tls_certificate_key;
+    for (const auto &file : document.resource_packs.packs) {
+        auto pack = ResourcePackInfo::read(file);
+        if (!pack) {
+            return std::unexpected(pack.error());
+        }
+        config.resource_packs_.push_back(std::move(*pack));
+    }
+    config.texturepack_required_ = document.resource_packs.texturepack_required;
     return config;
 }
 
@@ -478,6 +500,16 @@ bool ProxyConfig::isLogPlayerConnections() const
 bool ProxyConfig::isFailoverOnUnexpectedServerDisconnect() const
 {
     return failover_on_unexpected_server_disconnect_;
+}
+
+const std::vector<ResourcePackInfo> &ProxyConfig::getResourcePacks() const
+{
+    return resource_packs_;
+}
+
+bool ProxyConfig::isTexturepackRequired() const
+{
+    return texturepack_required_;
 }
 
 bool ProxyConfig::isQueryEnabled() const

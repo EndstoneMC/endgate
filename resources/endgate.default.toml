@@ -120,6 +120,14 @@ failover-on-unexpected-server-disconnect = true
 # Shows ping requests to the proxy from clients.
 show-ping-requests = false
 
+[resource-packs]
+# Which resource packs should players download when they join? List .mcpack or .zip files. Every server
+# must offer these same packs, since a player keeps the packs they joined with until they leave.
+packs = []
+
+# Should players have to accept the resource packs to join? This is BDS's texturepack-required.
+texturepack-required = false
+
 [query]
 # Whether to enable responding to GameSpy 4 query responses or not.
 enabled = false
