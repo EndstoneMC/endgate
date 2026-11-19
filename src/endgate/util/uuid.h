@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -30,6 +31,23 @@ struct UUID {
      * @see java.util.UUID#randomUUID
      */
     [[nodiscard]] static UUID randomUUID();
+
+    /**
+     * Creates a UUID from its string form, or nothing when the string is not one.
+     *
+     * @see java.util.UUID#fromString
+     */
+    [[nodiscard]] static std::optional<UUID> fromString(std::string_view name);
+
+    /**
+     * @see java.util.UUID#getMostSignificantBits
+     */
+    [[nodiscard]] std::uint64_t getMostSignificantBits() const;
+
+    /**
+     * @see java.util.UUID#getLeastSignificantBits
+     */
+    [[nodiscard]] std::uint64_t getLeastSignificantBits() const;
 
     /**
      * @see java.util.UUID#toString

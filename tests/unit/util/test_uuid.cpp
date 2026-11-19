@@ -16,6 +16,25 @@ TEST(Uuid, NameUuidFromBytesIsVersion3)
     EXPECT_EQ(uuid.toString(), "d41d8cd9-8f00-3204-a980-0998ecf8427e");
 }
 
+TEST(Uuid, FromStringReadsWhatToStringWrites)
+{
+    const auto uuid = UUID::fromString("d41d8cd9-8f00-3204-a980-0998ecf8427e");
+    ASSERT_TRUE(uuid.has_value());
+    EXPECT_EQ(uuid->toString(), "d41d8cd9-8f00-3204-a980-0998ecf8427e");
+    EXPECT_EQ(uuid->getMostSignificantBits(), 0xd41d8cd98f003204);
+    EXPECT_EQ(uuid->getLeastSignificantBits(), 0xa9800998ecf8427e);
+}
+
+TEST(Uuid, FromStringRefusesWhatIsNotAUuid)
+{
+    EXPECT_FALSE(UUID::fromString(""));
+    EXPECT_FALSE(UUID::fromString("d41d8cd98f00320 4a9800998ecf8427e"));
+    EXPECT_FALSE(UUID::fromString("d41d8cd9-8f00-3204-a980-0998ecf8427"));
+    EXPECT_FALSE(UUID::fromString("d41d8cd9-8f00-3204-a980-0998ecf8427g"));
+    EXPECT_FALSE(UUID::fromString("d41d8cd9-8f00-3204-a980-0998ecf8427e0"));
+    EXPECT_FALSE(UUID::fromString("+41d8cd9-8f00-3204-a980-0998ecf8427e"));
+}
+
 TEST(Uuid, RandomUuidIsVersion4)
 {
     const auto uuid = UUID::randomUUID();
