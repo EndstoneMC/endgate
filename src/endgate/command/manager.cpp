@@ -196,7 +196,7 @@ std::shared_ptr<CommandManager::Literal> CommandManager::shallowCopy(const Liter
 {
     auto builder = BrigadierCommand::LiteralBuilder::literal(new_name);
     builder.requires_(original.getRequirement())
-        .forward(original.getRedirect(), original.getRedirectModifier(), original.isFork())
+        .forward(original.getRedirectTarget(), original.getRedirectModifier(), original.isFork())
         .executes(original.getCommand());
     for (const auto &child : original.getChildren()) {
         builder.then(child);

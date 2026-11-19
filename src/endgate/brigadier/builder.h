@@ -61,15 +61,15 @@ public:
 
     [[nodiscard]] const Predicate<S> &getRequirement() const { return requirement_; }
 
-    T &redirect(const std::shared_ptr<CommandNode<S>> &target) { return forward(target.get(), {}, false); }
+    T &redirect(const std::shared_ptr<CommandNode<S>> &target) { return forward(target, {}, false); }
 
     T &redirect(const std::shared_ptr<CommandNode<S>> &target, SingleRedirectModifier<S> modifier)
     {
         if (!modifier) {
-            return forward(target.get(), {}, false);
+            return forward(target, {}, false);
         }
         return forward(
-            target.get(),
+            target,
             [modifier = std::move(modifier)](const CommandContext<S> &context) {
                 return std::vector<S>{modifier(context)};
             },
@@ -78,10 +78,10 @@ public:
 
     T &fork(const std::shared_ptr<CommandNode<S>> &target, RedirectModifier<S> modifier)
     {
-        return forward(target.get(), std::move(modifier), true);
+        return forward(target, std::move(modifier), true);
     }
 
-    T &forward(CommandNode<S> *target, RedirectModifier<S> modifier, bool fork)
+    T &forward(const std::shared_ptr<CommandNode<S>> &target, RedirectModifier<S> modifier, bool fork)
     {
         if (!arguments_->getChildren().empty()) {
             throw std::logic_error("Cannot forward a node with children");
@@ -92,7 +92,8 @@ public:
         return getThis();
     }
 
-    [[nodiscard]] CommandNode<S> *getRedirect() const { return target_; }
+    [[nodiscard]] CommandNode<S> *getRedirect() const { return target_.get(); }
+    [[nodiscard]] const std::shared_ptr<CommandNode<S>> &getRedirectTarget() const { return target_; }
     [[nodiscard]] const RedirectModifier<S> &getRedirectModifier() const { return modifier_; }
     [[nodiscard]] bool isFork() const { return forks_; }
 
@@ -105,7 +106,7 @@ private:
     Predicate<S> requirement_ = [](const S &) {
         return true;
     };
-    CommandNode<S> *target_ = nullptr;
+    std::shared_ptr<CommandNode<S>> target_;
     RedirectModifier<S> modifier_;
     bool forks_ = false;
 };
@@ -122,9 +123,9 @@ public:
 
     [[nodiscard]] std::shared_ptr<LiteralCommandNode<S>> build() const
     {
-        auto result =
-            std::make_shared<LiteralCommandNode<S>>(getLiteral(), this->getCommand(), this->getRequirement(),
-                                                    this->getRedirect(), this->getRedirectModifier(), this->isFork());
+        auto result = std::make_shared<LiteralCommandNode<S>>(getLiteral(), this->getCommand(), this->getRequirement(),
+                                                              this->getRedirectTarget(), this->getRedirectModifier(),
+                                                              this->isFork());
         for (const std::shared_ptr<CommandNode<S>> &argument : this->getArguments()) {
             result->addChild(argument);
         }
@@ -162,7 +163,7 @@ public:
     [[nodiscard]] std::shared_ptr<ArgumentCommandNode<S>> build() const
     {
         auto result = std::make_shared<ArgumentCommandNode<S>>(
-            getName(), getType(), this->getCommand(), this->getRequirement(), this->getRedirect(),
+            getName(), getType(), this->getCommand(), this->getRequirement(), this->getRedirectTarget(),
             this->getRedirectModifier(), this->isFork(), getSuggestionsProvider());
         for (const std::shared_ptr<CommandNode<S>> &argument : this->getArguments()) {
             result->addChild(argument);

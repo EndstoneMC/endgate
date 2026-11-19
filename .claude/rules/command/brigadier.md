@@ -32,7 +32,7 @@ Deviations from Brigadier:
 - `Message` and `LiteralMessage` are `std::string`. Bedrock text is a string, so there is no rich message to carry.
 - `ImmutableStringReader` is `const StringReader &`.
 - `Command`, `Predicate<S>`, `RedirectModifier` and `SuggestionProvider` are `std::function`s. `Command.SINGLE_SUCCESS` is `SINGLE_SUCCESS` in the namespace.
-- A node is a `std::shared_ptr<CommandNode<S>>`, owned by its parents and by the dispatcher's root. A redirect is a non-owning pointer, since it may point back up the tree.
+- A node is a `std::shared_ptr<CommandNode<S>>`, owned by its parents and by the dispatcher's root. A redirect is a `std::weak_ptr`, since it may point back up the tree, and no node derives from `enable_shared_from_this`; the dispatcher adds each parsed node to the context.
 - Children keep insertion order, as Java's `LinkedHashMap` does, so usage, suggestions and the client's overloads come out in registration order.
 - `CommandSyntaxException` derives from `std::exception`, and `what()` is its `getMessage()`. It keeps a non-owning pointer to its `CommandExceptionType`, which must outlive it, as the `BuiltInExceptions` members do. `BUILT_IN_EXCEPTIONS` is a constant `BuiltInExceptions`, with no `BuiltInExceptionProvider` to swap and no `ENABLE_COMMAND_STACK_TRACES`.
 - `Dynamic` exception arguments (`Object`) are `std::string`. A nullable `String` or `Message` is `std::optional`.
@@ -48,6 +48,6 @@ Deviations from Brigadier:
 - `CommandNode`, `CommandContext` and the other classes holding a `std::function` have no `equals` or `hashCode`, since a `std::function` cannot be compared. `ParsedCommandNode` compares its node by identity.
 - A `Map` whose order is observable (`ParseResults::getExceptions`, `getSmartUsage`) is a `std::vector` of pairs in insertion order. `getAllUsage` returns a `std::vector`, `getPath` and `findNode` take one.
 - `StringReader` reads bytes, so cursors and ranges are UTF-8 byte offsets, and case folding is ASCII only. `Suggestions::create` sorts case-insensitively and breaks ties by descending text.
-- Redirects and forks are ported whole. `CommandNode::getRedirect` is a raw `CommandNode<S> *`, `ArgumentBuilder::redirect` and `fork` take the target as a `std::shared_ptr`, and `forward` takes the raw pointer. `CommandContextBuilder` and `CommandContext` hold their child in a `std::shared_ptr`. `RedirectModifier` returns a `std::vector<S>`.
+- Redirects and forks are ported whole. `CommandNode::getRedirect` is a raw `CommandNode<S> *` and `getRedirectTarget` the `std::shared_ptr`; `ArgumentBuilder::redirect`, `fork` and `forward` take the target as a `std::shared_ptr`. `CommandContextBuilder` and `CommandContext` hold their child in a `std::shared_ptr`. `RedirectModifier` returns a `std::vector<S>`.
 - `CommandNode::removeChildByName` and `CommandContext::getArguments` are not Mojang's: Velocity runs on Paper's Brigadier fork, which adds them so a command can be unregistered and a suggestion provider can see the arguments parsed so far.
 - Not ported yet: `AmbiguityConsumer` and `findAmbiguities`; `IntegerSuggestion`, so `SuggestionsBuilder` has no `suggest(int)`; `buildFuture`.

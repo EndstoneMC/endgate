@@ -220,6 +220,7 @@ private:
             try {
                 try {
                     child->parse(reader, context);
+                    context.withNode(child, StringRange::between(cursor, reader.getCursor()));
                 }
                 catch (const CommandSyntaxException &) {
                     throw;
@@ -244,9 +245,9 @@ private:
             if (reader.canRead(child->getRedirect() == nullptr ? 2 : 1)) {
                 reader.skip();
                 if (child->getRedirect() != nullptr) {
-                    CommandContextBuilder<S> child_context(*this, source, child->getRedirect()->shared_from_this(),
+                    CommandContextBuilder<S> child_context(*this, source, child->getRedirectTarget(),
                                                            reader.getCursor());
-                    ParseResults<S> parse = parseNodes(child->getRedirect()->shared_from_this(), reader, child_context);
+                    ParseResults<S> parse = parseNodes(child->getRedirectTarget(), reader, child_context);
                     context.withChild(parse.getContext());
                     return {std::move(context), parse.getReader(), parse.getExceptions()};
                 }

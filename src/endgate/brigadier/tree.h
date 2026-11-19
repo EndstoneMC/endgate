@@ -44,7 +44,7 @@ using Predicate = std::function<bool(const S &)>;
  * @see com.mojang.brigadier.tree.CommandNode
  */
 template <typename S>
-class CommandNode : public std::enable_shared_from_this<CommandNode<S>> {
+class CommandNode {
 public:
     CommandNode(const CommandNode &) = delete;
     CommandNode &operator=(const CommandNode &) = delete;
@@ -52,7 +52,8 @@ public:
 
     [[nodiscard]] const Command<S> &getCommand() const { return command_; }
     [[nodiscard]] const std::vector<std::shared_ptr<CommandNode>> &getChildren() const { return children_; }
-    [[nodiscard]] CommandNode *getRedirect() const { return redirect_; }
+    [[nodiscard]] CommandNode *getRedirect() const { return redirect_.lock().get(); }
+    [[nodiscard]] std::shared_ptr<CommandNode> getRedirectTarget() const { return redirect_.lock(); }
     [[nodiscard]] const RedirectModifier<S> &getRedirectModifier() const { return modifier_; }
     [[nodiscard]] bool isFork() const { return forks_; }
 
@@ -158,8 +159,8 @@ public:
     }
 
 protected:
-    CommandNode(Command<S> command, Predicate<S> requirement, CommandNode *redirect, RedirectModifier<S> modifier,
-                bool forks)
+    CommandNode(Command<S> command, Predicate<S> requirement, const std::shared_ptr<CommandNode> &redirect,
+                RedirectModifier<S> modifier, bool forks)
         : requirement_(std::move(requirement)), redirect_(redirect), modifier_(std::move(modifier)), forks_(forks),
           command_(std::move(command))
     {
@@ -173,7 +174,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<LiteralCommandNode<S>>> literals_;
     std::vector<std::shared_ptr<CommandNode>> arguments_;
     Predicate<S> requirement_;
-    CommandNode *redirect_;
+    std::weak_ptr<CommandNode> redirect_;
     RedirectModifier<S> modifier_;
     bool forks_;
     Command<S> command_;
@@ -214,8 +215,8 @@ protected:
 template <typename S>
 class LiteralCommandNode : public CommandNode<S> {
 public:
-    LiteralCommandNode(std::string literal, Command<S> command, Predicate<S> requirement, CommandNode<S> *redirect,
-                       RedirectModifier<S> modifier, bool forks)
+    LiteralCommandNode(std::string literal, Command<S> command, Predicate<S> requirement,
+                       const std::shared_ptr<CommandNode<S>> &redirect, RedirectModifier<S> modifier, bool forks)
         : CommandNode<S>(std::move(command), std::move(requirement), redirect, std::move(modifier), forks),
           literal_(std::move(literal)), literal_lower_case_(SuggestionsBuilder::toLowerCase(literal_))
     {
@@ -229,11 +230,9 @@ public:
         return target == typeid(LiteralCommandNode) || CommandNode<S>::isInstanceOf(target);
     }
 
-    void parse(StringReader &reader, CommandContextBuilder<S> &context_builder) override
+    void parse(StringReader &reader, CommandContextBuilder<S> &) override
     {
-        const int start = reader.getCursor();
-        if (const int end = parse(reader); end > -1) {
-            context_builder.withNode(this->shared_from_this(), StringRange::between(start, end));
+        if (parse(reader) > -1) {
             return;
         }
         throw CommandSyntaxException::BUILT_IN_EXCEPTIONS.literalIncorrect().createWithContext(reader, literal_);
@@ -259,7 +258,7 @@ public:
     {
         LiteralArgumentBuilder<S> builder = LiteralArgumentBuilder<S>::literal(literal_);
         builder.requires_(this->getRequirement());
-        builder.forward(this->getRedirect(), this->getRedirectModifier(), this->isFork());
+        builder.forward(this->getRedirectTarget(), this->getRedirectModifier(), this->isFork());
         if (this->getCommand()) {
             builder.executes(this->getCommand());
         }
@@ -300,8 +299,8 @@ template <typename S>
 class ArgumentCommandNode : public CommandNode<S> {
 public:
     ArgumentCommandNode(std::string name, std::shared_ptr<const ArgumentType> type, Command<S> command,
-                        Predicate<S> requirement, CommandNode<S> *redirect, RedirectModifier<S> modifier, bool forks,
-                        SuggestionProvider<S> custom_suggestions)
+                        Predicate<S> requirement, const std::shared_ptr<CommandNode<S>> &redirect,
+                        RedirectModifier<S> modifier, bool forks, SuggestionProvider<S> custom_suggestions)
         : CommandNode<S>(std::move(command), std::move(requirement), redirect, std::move(modifier), forks),
           name_(std::move(name)), type_(std::move(type)), custom_suggestions_(std::move(custom_suggestions))
     {
@@ -327,7 +326,6 @@ public:
         ArgumentValue result = type_->parse(reader);
         const ParsedArgument parsed(start, reader.getCursor(), std::move(result));
         context_builder.withArgument(name_, parsed);
-        context_builder.withNode(this->shared_from_this(), parsed.getRange());
     }
 
     [[nodiscard]] Suggestions listSuggestions(const CommandContext<S> &context,
@@ -343,7 +341,7 @@ public:
     {
         RequiredArgumentBuilder<S> builder = RequiredArgumentBuilder<S>::argument(name_, type_);
         builder.requires_(this->getRequirement());
-        builder.forward(this->getRedirect(), this->getRedirectModifier(), this->isFork());
+        builder.forward(this->getRedirectTarget(), this->getRedirectModifier(), this->isFork());
         builder.suggests(custom_suggestions_);
         if (this->getCommand()) {
             builder.executes(this->getCommand());
