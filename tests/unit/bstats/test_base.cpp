@@ -47,7 +47,10 @@ class FakeBStats {
 public:
     explicit FakeBStats(int status = 200, std::string answer = "{}")
         : acceptor_(io_context_, asio::ip::tcp::endpoint(asio::ip::make_address("127.0.0.1"), 0)), status_(status),
-          answer_(std::move(answer)), thread_([this] { serve(); })
+          answer_(std::move(answer)), thread_([this] {
+              accept();
+              io_context_.run();
+          })
     {
     }
 
@@ -56,11 +59,7 @@ public:
     FakeBStats(FakeBStats &&) = delete;
     FakeBStats &operator=(FakeBStats &&) = delete;
 
-    ~FakeBStats()
-    {
-        io_context_.stop();
-        acceptor_.close();
-    }
+    ~FakeBStats() { io_context_.stop(); }
 
     [[nodiscard]] std::string url() const
     {
@@ -85,46 +84,49 @@ public:
     }
 
 private:
-    void serve()
+    void accept()
     {
-        while (!io_context_.stopped()) {
-            asio::ip::tcp::socket socket(io_context_);
-            asio::error_code error;
-            error = acceptor_.accept(socket, error);
+        acceptor_.async_accept([this](const asio::error_code &error, asio::ip::tcp::socket socket) {
             if (error) {
                 return;
             }
-            asio::streambuf buffer;
-            asio::read_until(socket, buffer, "\r\n\r\n", error);
-            if (error) {
-                continue;
-            }
-            std::istream stream(&buffer);
-            Received received;
-            std::getline(stream, received.request_line);
-            std::string line;
-            while (std::getline(stream, line) && line != "\r") {
-                const auto colon = line.find(':');
-                received.headers.emplace_back(line.substr(0, colon), line.substr(colon + 2, line.size() - colon - 3));
-            }
-            const auto length = static_cast<std::size_t>(std::stoul(received.header("Content-Length")));
-            received.body.resize(length);
-            const auto buffered = buffer.sgetn(received.body.data(), static_cast<std::streamsize>(length));
-            asio::read(socket,
-                       asio::buffer(received.body.data() + buffered, length - static_cast<std::size_t>(buffered)),
-                       error);
+            serve(socket);
+            accept();
+        });
+    }
 
-            const auto response = "HTTP/1.1 " + std::to_string(status_) +
-                                  " X\r\nContent-Length: " + std::to_string(answer_.size() + 2) +
-                                  "\r\nConnection: close\r\n\r\n" + answer_ + "\r\n";
-            asio::write(socket, asio::buffer(response), error);
-            {
-                const std::scoped_lock lock(mutex_);
-                received_.push_back(std::move(received));
-            }
-            if (!notified_.exchange(true)) {
-                arrived_.set_value();
-            }
+    void serve(asio::ip::tcp::socket &socket)
+    {
+        asio::error_code error;
+        asio::streambuf buffer;
+        asio::read_until(socket, buffer, "\r\n\r\n", error);
+        if (error) {
+            return;
+        }
+        std::istream stream(&buffer);
+        Received received;
+        std::getline(stream, received.request_line);
+        std::string line;
+        while (std::getline(stream, line) && line != "\r") {
+            const auto colon = line.find(':');
+            received.headers.emplace_back(line.substr(0, colon), line.substr(colon + 2, line.size() - colon - 3));
+        }
+        const auto length = static_cast<std::size_t>(std::stoul(received.header("Content-Length")));
+        received.body.resize(length);
+        const auto buffered = buffer.sgetn(received.body.data(), static_cast<std::streamsize>(length));
+        asio::read(socket, asio::buffer(received.body.data() + buffered, length - static_cast<std::size_t>(buffered)),
+                   error);
+
+        const auto response = "HTTP/1.1 " + std::to_string(status_) +
+                              " X\r\nContent-Length: " + std::to_string(answer_.size() + 2) +
+                              "\r\nConnection: close\r\n\r\n" + answer_ + "\r\n";
+        asio::write(socket, asio::buffer(response), error);
+        {
+            const std::scoped_lock lock(mutex_);
+            received_.push_back(std::move(received));
+        }
+        if (!notified_.exchange(true)) {
+            arrived_.set_value();
         }
     }
 
