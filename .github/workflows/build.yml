@@ -18,9 +18,11 @@ jobs:
           - name: linux-x86_64
             os: ubuntu-24.04
             compilers: '{"c":"clang-22","cpp":"clang++-22"}'
+            compilers-scope: ''
           - name: windows-x86_64
             os: windows-2022
             compilers: '{"c":"clang-cl","cpp":"clang-cl"}'
+            compilers-scope: '&:'
 
     defaults:
       run:
@@ -82,12 +84,13 @@ jobs:
       - name: Install dependencies
         env:
           COMPILERS: ${{ matrix.compilers }}
+          COMPILERS_SCOPE: ${{ matrix.compilers-scope }}
         run: |
           conan install . \
             -s '&:build_type=RelWithDebInfo' \
             -s compiler.cppstd=23 \
             -c tools.cmake.cmaketoolchain:generator=Ninja \
-            -c "tools.build:compiler_executables=${COMPILERS}" \
+            -c "${COMPILERS_SCOPE}tools.build:compiler_executables=${COMPILERS}" \
             --build=missing
 
       - name: Configure

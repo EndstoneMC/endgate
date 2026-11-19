@@ -107,7 +107,7 @@ std::optional<std::chrono::system_clock::time_point> parseHttpDate(std::string_v
 {
     std::istringstream stream{std::string(text)};
     date::sys_seconds parsed;
-    stream >> date::parse("%a, %d %b %Y %H:%M:%S GMT", parsed);
+    date::from_stream(stream, "%a, %d %b %Y %H:%M:%S GMT", parsed);
     if (stream.fail() || stream.peek() != std::istringstream::traits_type::eof()) {
         return std::nullopt;
     }
