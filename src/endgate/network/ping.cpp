@@ -61,9 +61,9 @@ Awaitable<ServerPing> ServerListPingHandler::attemptPingPassthrough(PingPassthro
                                                                     asio::io_context &io_context) const
 {
     auto fallback = constructLocalPing(protocol);
-    const auto timeouts = PingTimeouts{
-        .connect = std::chrono::milliseconds{std::max(1, server_.getConfiguration().getConnectTimeout())},
-        .read = std::chrono::milliseconds{std::max(1, server_.getConfiguration().getReadTimeout())},
+    const auto options = PingOptions{
+        .connect_timeout = std::chrono::milliseconds{server_.getConfiguration().getConnectTimeout()},
+        .read_timeout = std::chrono::milliseconds{server_.getConfiguration().getReadTimeout()},
     };
     struct Pending {
         explicit Pending(const asio::any_io_executor &executor) : done(executor, asio::steady_timer::time_point::max())
@@ -94,9 +94,9 @@ Awaitable<ServerPing> ServerListPingHandler::attemptPingPassthrough(PingPassthro
         asio::co_spawn(
             executor,
             [](BackendServer *backend, asio::io_context &io, std::shared_ptr<Pending> state, std::size_t index,
-               PingTimeouts timeouts) -> Awaitable<void> {
+               PingOptions options) -> Awaitable<void> {
                 try {
-                    state->responses[index] = co_await backend->ping(io, timeouts);
+                    state->responses[index] = co_await backend->ping(io, options);
                 }
                 catch (const std::exception &) {
                     state->responses[index].reset();
@@ -104,7 +104,7 @@ Awaitable<ServerPing> ServerListPingHandler::attemptPingPassthrough(PingPassthro
                 if (--state->remaining == 0) {
                     state->done.cancel();
                 }
-            }(backends[i], io_context, pending, i, timeouts),
+            }(backends[i], io_context, pending, i, options),
             asio::detached);
     }
     if (pending->remaining != 0) {

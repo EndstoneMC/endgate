@@ -61,17 +61,11 @@ private:
     return "unknown";
 }
 
-/**
- * A backend the proxy can send players to. Unless the configuration pins its transport, the first
- * connection to it finds out which one it supports, and every connection after uses that answer until a
- * connection to it fails. Either way, the first ping it answers tells the protocol it speaks.
- *
- * @see com.velocitypowered.api.proxy.server.RegisteredServer
- * @see com.velocitypowered.proxy.server.VelocityRegisteredServer
- */
-struct PingTimeouts {
-    std::chrono::milliseconds connect{2000};
-    std::chrono::milliseconds read{1000};
+struct PingOptions {
+    static constexpr std::chrono::milliseconds unbounded{std::chrono::years{100}};
+
+    std::chrono::milliseconds connect_timeout{};
+    std::chrono::milliseconds read_timeout{};
 };
 
 struct TransportDetection {
@@ -80,6 +74,14 @@ struct TransportDetection {
     bool attempted{false};
 };
 
+/**
+ * A backend the proxy can send players to. Unless the configuration pins its transport, the first
+ * connection to it finds out which one it supports, and every connection after uses that answer until a
+ * connection to it fails. Either way, the first ping it answers tells the protocol it speaks.
+ *
+ * @see com.velocitypowered.api.proxy.server.RegisteredServer
+ * @see com.velocitypowered.proxy.server.VelocityRegisteredServer
+ */
 class BackendServer {
 public:
     explicit BackendServer(ServerInfo info);
@@ -87,8 +89,7 @@ public:
     [[nodiscard]] const ServerInfo &getServerInfo() const { return info_; }
 
     [[nodiscard]] Awaitable<TransportDetection> detectTransport(asio::io_context &io_context,
-                                                                asio::ip::udp::endpoint address,
-                                                                PingTimeouts timeouts = {});
+                                                                asio::ip::udp::endpoint address, PingOptions options);
 
     void forgetTransport();
 
@@ -120,7 +121,7 @@ public:
      *
      * @see com.velocitypowered.proxy.server.VelocityRegisteredServer#ping
      */
-    [[nodiscard]] Awaitable<std::optional<ServerPing>> ping(asio::io_context &io_context, PingTimeouts timeouts = {});
+    [[nodiscard]] Awaitable<std::optional<ServerPing>> ping(asio::io_context &io_context, PingOptions options);
 
     /**
      * Sends RakNet unconnected pings until one is answered, and reads the announcement it carries.

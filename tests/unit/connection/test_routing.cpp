@@ -55,7 +55,8 @@ std::optional<int> protocolAfterDetecting(BackendServer &backend, int announced)
     auto done = asio::co_spawn(
         io,
         [&]() -> Awaitable<std::optional<int>> {
-            std::ignore = co_await backend.detectTransport(io, address);
+            std::ignore = co_await backend.detectTransport(
+                io, address, {.connect_timeout = std::chrono::seconds{2}, .read_timeout = std::chrono::seconds{1}});
             io.stop();
             co_return backend.getProtocol();
         },

@@ -85,8 +85,11 @@ std::optional<ServerInfo> ServerInfo::parse(std::string name, std::string_view a
 BackendServer::BackendServer(ServerInfo info) : info_(std::move(info)), logger_(LogManager::getLogger(*this)) {}
 
 Awaitable<TransportDetection> BackendServer::detectTransport(asio::io_context &io_context,
-                                                             asio::ip::udp::endpoint address, PingTimeouts timeouts)
+                                                             asio::ip::udp::endpoint address, PingOptions options)
 {
+    const auto connect_timeout = options.connect_timeout.count() > 0 ? options.connect_timeout : PingOptions::unbounded;
+    const auto request_timeout = options.read_timeout.count() > 0 ? options.read_timeout : PingOptions::unbounded;
+
     if (const auto pinned = info_.getTransport()) {
         if (getProtocol()) {
             co_return TransportDetection{.transport = pinned};
@@ -94,9 +97,9 @@ Awaitable<TransportDetection> BackendServer::detectTransport(asio::io_context &i
         if (*pinned == ServerInfo::Transport::NetherNet) {
             const auto probe =
                 co_await nethernet::SignalingClient::probeNetherNet(io_context, info_.getHost(), info_.getPort(),
-                                                                    {.connect_timeout = timeouts.connect,
-                                                                     .request_timeout = timeouts.read,
-                                                                     .tls_handshake_timeout = timeouts.connect});
+                                                                    {.connect_timeout = connect_timeout,
+                                                                     .request_timeout = request_timeout,
+                                                                     .tls_handshake_timeout = connect_timeout});
             recordProtocol(probe.ping);
             if (probe.supported) {
                 warnWithoutProtocol();
@@ -104,7 +107,7 @@ Awaitable<TransportDetection> BackendServer::detectTransport(asio::io_context &i
             co_return TransportDetection{.transport = pinned, .ping = probe.ping, .attempted = true};
         }
         else {
-            const auto pong = co_await ping(address, timeouts.read);
+            const auto pong = co_await ping(address, options.read_timeout);
             recordProtocol(pong.ping);
             if (pong.answered) {
                 warnWithoutProtocol();
@@ -124,14 +127,14 @@ Awaitable<TransportDetection> BackendServer::detectTransport(asio::io_context &i
     std::optional<ServerPing> announcement;
     bool attempted = true;
     const auto probe = co_await nethernet::SignalingClient::probeNetherNet(io_context, info_.getHost(), info_.getPort(),
-                                                                           {.connect_timeout = timeouts.connect,
-                                                                            .request_timeout = timeouts.read,
-                                                                            .tls_handshake_timeout = timeouts.connect});
+                                                                           {.connect_timeout = connect_timeout,
+                                                                            .request_timeout = request_timeout,
+                                                                            .tls_handshake_timeout = connect_timeout});
     if (probe.supported) {
         detected = ServerInfo::Transport::NetherNet;
         announcement = probe.ping;
     }
-    else if (const auto pong = co_await ping(address, timeouts.read); pong.answered) {
+    else if (const auto pong = co_await ping(address, options.read_timeout); pong.answered) {
         detected = ServerInfo::Transport::RakNet;
         announcement = pong.ping;
     }
@@ -149,8 +152,11 @@ Awaitable<TransportDetection> BackendServer::detectTransport(asio::io_context &i
     co_return TransportDetection{.transport = detected, .ping = announcement, .attempted = attempted};
 }
 
-Awaitable<std::optional<ServerPing>> BackendServer::ping(asio::io_context &io_context, PingTimeouts timeouts)
+Awaitable<std::optional<ServerPing>> BackendServer::ping(asio::io_context &io_context, PingOptions options)
 {
+    const auto connect_timeout = options.connect_timeout.count() > 0 ? options.connect_timeout : PingOptions::unbounded;
+    const auto request_timeout = options.read_timeout.count() > 0 ? options.read_timeout : PingOptions::unbounded;
+
     std::optional<asio::ip::udp::endpoint> address;
     asio::error_code ec;
     if (const auto literal = asio::ip::make_address(info_.getHost(), ec); !ec) {
@@ -160,7 +166,7 @@ Awaitable<std::optional<ServerPing>> BackendServer::ping(asio::io_context &io_co
         asio::ip::udp::resolver resolver(co_await asio::this_coro::executor);
         const auto [error, results] =
             co_await resolver.async_resolve(info_.getHost(), std::to_string(info_.getPort()),
-                                            asio::cancel_after(timeouts.connect, asio::as_tuple(asio::use_awaitable)));
+                                            asio::cancel_after(connect_timeout, asio::as_tuple(asio::use_awaitable)));
         if (!error && !results.empty()) {
             address = results.begin()->endpoint();
         }
@@ -169,20 +175,20 @@ Awaitable<std::optional<ServerPing>> BackendServer::ping(asio::io_context &io_co
         co_return std::nullopt;
     }
 
-    const auto detection = co_await detectTransport(io_context, *address, timeouts);
+    const auto detection = co_await detectTransport(io_context, *address, options);
     if (detection.attempted) {
         co_return detection.ping;
     }
     if (detection.transport == ServerInfo::Transport::NetherNet) {
         const auto probe =
             co_await nethernet::SignalingClient::probeNetherNet(io_context, info_.getHost(), info_.getPort(),
-                                                                {.connect_timeout = timeouts.connect,
-                                                                 .request_timeout = timeouts.read,
-                                                                 .tls_handshake_timeout = timeouts.connect});
+                                                                {.connect_timeout = connect_timeout,
+                                                                 .request_timeout = request_timeout,
+                                                                 .tls_handshake_timeout = connect_timeout});
         co_return probe.ping;
     }
     if (detection.transport == ServerInfo::Transport::RakNet) {
-        co_return (co_await ping(*address, timeouts.read)).ping;
+        co_return (co_await ping(*address, options.read_timeout)).ping;
     }
     co_return std::nullopt;
 }
@@ -231,6 +237,8 @@ bool BackendServer::isOnOtherProtocol(int protocol)
 Awaitable<BackendServer::Pong> BackendServer::ping(asio::ip::udp::endpoint address, std::chrono::milliseconds timeout)
 {
     constexpr int attempts = 4;
+    constexpr std::chrono::milliseconds retry_interval{250};
+    const bool bounded = timeout.count() > 0;
 
     asio::ip::udp::socket socket(co_await asio::this_coro::executor);
     asio::error_code ec;
@@ -248,12 +256,12 @@ Awaitable<BackendServer::Pong> BackendServer::ping(asio::ip::udp::endpoint addre
         .encode(request);
 
     std::array<std::byte, raknet::MAXIMUM_MTU_SIZE> response{};
-    for (int attempt = 1; attempt <= attempts; ++attempt) {
+    for (int attempt = 1; !bounded || attempt <= attempts; ++attempt) {
         socket.send(asio::buffer(request.nioBuffer()), 0, ec);
         if (ec) {
             co_return Pong{};
         }
-        const auto deadline = started + timeout * attempt / attempts;
+        const auto deadline = bounded ? started + timeout * attempt / attempts : started + retry_interval * attempt;
         for (auto now = std::chrono::steady_clock::now(); now < deadline; now = std::chrono::steady_clock::now()) {
             const auto [error, size] = co_await socket.async_receive(
                 asio::buffer(response), asio::cancel_after(deadline - now, asio::as_tuple(asio::use_awaitable)));
