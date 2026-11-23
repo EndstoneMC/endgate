@@ -121,7 +121,7 @@ NetherNetConnection<Session>::NetherNetConnection(Endpoint &endpoint, const std:
 template <typename Session>
 NetherNetConnection<Session>::NetherNetConnection(Endpoint &endpoint, const asio::ip::udp::endpoint &address,
                                                   std::shared_ptr<const rtc::Certificate> certificate)
-    requires DIALING
+    requires(DIALING)
     : MinecraftConnection(endpoint, toString(address), Direction::Clientbound), logger_(LogManager::getLogger(*this)),
       socket_(std::make_shared<asio::ip::udp::socket>(eventLoop().getExecutor())), certificate_(std::move(certificate)),
       address_(address), timer_(eventLoop().getExecutor())
