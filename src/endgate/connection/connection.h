@@ -194,12 +194,12 @@ public:
      * @see io.netty.channel.ChannelOutboundInvoker#writeAndFlush
      */
     template <typename Message>
-    ChannelFuture writeAndFlush(Message message)
+    ChannelFuture writeAndFlush(Message &&message)
     {
         const auto self = shared_from_this();
         auto promise = newPromise();
         promise_ = promise;
-        pipeline_.writeAndFlush(std::move(message));
+        pipeline_.writeAndFlush(std::forward<Message>(message));
         std::exchange(promise_, voidPromise()).tryFailure(newClosedChannelException());
         return promise;
     }
