@@ -87,8 +87,8 @@ BackendServer::BackendServer(ServerInfo info) : info_(std::move(info)), logger_(
 Awaitable<TransportDetection> BackendServer::detectTransport(asio::io_context &io_context,
                                                              asio::ip::udp::endpoint address, PingOptions options)
 {
-    const auto connect_timeout = options.connect_timeout.count() > 0 ? options.connect_timeout : PingOptions::unbounded;
-    const auto request_timeout = options.read_timeout.count() > 0 ? options.read_timeout : PingOptions::unbounded;
+    const auto connect_timeout = options.connect_timeout.count() > 0 ? options.connect_timeout : PingOptions::UNBOUNDED;
+    const auto request_timeout = options.read_timeout.count() > 0 ? options.read_timeout : PingOptions::UNBOUNDED;
 
     if (const auto pinned = info_.getTransport()) {
         if (getProtocol()) {
@@ -154,8 +154,8 @@ Awaitable<TransportDetection> BackendServer::detectTransport(asio::io_context &i
 
 Awaitable<std::optional<ServerPing>> BackendServer::ping(asio::io_context &io_context, PingOptions options)
 {
-    const auto connect_timeout = options.connect_timeout.count() > 0 ? options.connect_timeout : PingOptions::unbounded;
-    const auto request_timeout = options.read_timeout.count() > 0 ? options.read_timeout : PingOptions::unbounded;
+    const auto connect_timeout = options.connect_timeout.count() > 0 ? options.connect_timeout : PingOptions::UNBOUNDED;
+    const auto request_timeout = options.read_timeout.count() > 0 ? options.read_timeout : PingOptions::UNBOUNDED;
 
     std::optional<asio::ip::udp::endpoint> address;
     asio::error_code ec;

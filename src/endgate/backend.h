@@ -62,7 +62,7 @@ private:
 }
 
 struct PingOptions {
-    static constexpr std::chrono::milliseconds unbounded{std::chrono::years{100}};
+    static constexpr std::chrono::milliseconds UNBOUNDED{std::chrono::years{100}};
 
     std::chrono::milliseconds connect_timeout{};
     std::chrono::milliseconds read_timeout{};

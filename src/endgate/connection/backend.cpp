@@ -57,7 +57,7 @@ Awaitable<ConnectionRequestBuilder::Result> ServerConnection::open(std::shared_p
     auto &endpoint = player.getConnection().getEndpoint();
     const auto result_future = std::make_shared<ConnectionResultFuture>(co_await asio::this_coro::executor);
 
-    const auto resolve_timeout = options.connect_timeout.count() > 0 ? options.connect_timeout : PingOptions::unbounded;
+    const auto resolve_timeout = options.connect_timeout.count() > 0 ? options.connect_timeout : PingOptions::UNBOUNDED;
     std::optional<asio::ip::udp::endpoint> address;
     asio::error_code ec;
     if (const auto literal = asio::ip::make_address(info.getHost(), ec); !ec) {
