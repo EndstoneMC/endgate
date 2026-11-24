@@ -19,7 +19,7 @@ public:
      */
     MetricsConfig(std::filesystem::path file, bool default_enabled);
 
-    [[nodiscard]] const std::string &getServerUUID() const { return *server_uuid_; }
+    [[nodiscard]] std::string getServerUUID() const { return server_uuid_.value_or(""); }
     [[nodiscard]] bool isEnabled() const { return enabled_; }
     [[nodiscard]] bool isLogErrorsEnabled() const { return log_errors_; }
     [[nodiscard]] bool isLogSentDataEnabled() const { return log_sent_data_; }
