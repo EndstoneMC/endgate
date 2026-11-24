@@ -3,7 +3,12 @@
 #include <array>
 #include <cstring>
 
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(_M_X64)
+#ifdef _MSC_VER
+#include <intrin.h>
+#else
+#include <cpuid.h>
+#endif
 #include <nmmintrin.h>
 #endif
 
@@ -50,7 +55,22 @@ std::uint32_t crc32cTable(std::span<const std::byte> data, std::uint32_t crc)
     return crc;
 }
 
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(_M_X64)
+bool hasSse42()
+{
+#ifdef _MSC_VER
+    std::array<int, 4> registers{};
+    __cpuid(registers.data(), 1);
+    return (static_cast<unsigned int>(registers[2]) & (1U << 20U)) != 0;
+#else
+    unsigned int eax = 0;
+    unsigned int ebx = 0;
+    unsigned int ecx = 0;
+    unsigned int edx = 0;
+    return __get_cpuid(1, &eax, &ebx, &ecx, &edx) != 0 && (ecx & bit_SSE4_2) != 0;
+#endif
+}
+
 [[gnu::target("sse4.2")]] std::uint32_t crc32cSse42(std::span<const std::byte> data, std::uint32_t crc)
 {
     std::uint64_t wide = crc;
@@ -73,15 +93,11 @@ std::uint32_t crc32cTable(std::span<const std::byte> data, std::uint32_t crc)
 
 std::uint32_t crc32c(std::span<const std::byte> data, std::uint32_t previous)
 {
-#ifdef __x86_64__
-#ifdef __SSE4_2__
-    return ~crc32cSse42(data, ~previous);
-#else
-    static const bool hardware = __builtin_cpu_supports("sse4.2");
+#if defined(__x86_64__) || defined(_M_X64)
+    static const bool hardware = hasSse42();
     if (hardware) {
         return ~crc32cSse42(data, ~previous);
     }
-#endif
 #endif
     return ~crc32cTable(data, ~previous);
 }
