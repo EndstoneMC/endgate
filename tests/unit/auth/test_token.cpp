@@ -118,7 +118,8 @@ private:
     Awaitable<void> serve()
     {
         while (acceptor_.is_open()) {
-            auto [error, socket] = co_await acceptor_.async_accept(AWAITABLE);
+            auto accepted = co_await acceptor_.async_accept(AWAITABLE);
+            auto &[error, socket] = accepted;
             if (error) {
                 co_return;
             }
