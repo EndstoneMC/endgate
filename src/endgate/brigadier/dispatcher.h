@@ -29,8 +29,8 @@ class ParseResults {
 public:
     using ExceptionMap = std::vector<std::pair<std::shared_ptr<CommandNode<S>>, CommandSyntaxException>>;
 
-    ParseResults(CommandContextBuilder<S> context, StringReader reader, ExceptionMap exceptions)
-        : context_(std::move(context)), exceptions_(std::move(exceptions)), reader_(std::move(reader))
+    ParseResults(CommandContextBuilder<S> context, const StringReader &reader, ExceptionMap exceptions)
+        : context_(std::move(context)), exceptions_(std::move(exceptions)), reader_(reader)
     {
     }
 
@@ -140,12 +140,12 @@ public:
         return result;
     }
 
-    Suggestions getCompletionSuggestions(const ParseResults<S> &parse) const
+    [[nodiscard]] Suggestions getCompletionSuggestions(const ParseResults<S> &parse) const
     {
         return getCompletionSuggestions(parse, parse.getReader().getTotalLength());
     }
 
-    Suggestions getCompletionSuggestions(const ParseResults<S> &parse, int cursor) const
+    [[nodiscard]] Suggestions getCompletionSuggestions(const ParseResults<S> &parse, int cursor) const
     {
         const CommandContextBuilder<S> &context = parse.getContext();
         const SuggestionContext<S> node_before_cursor = context.findSuggestionContext(cursor);
@@ -310,7 +310,7 @@ private:
             return std::nullopt;
         }
 
-        const std::string self =
+        std::string self =
             optional ? USAGE_OPTIONAL_OPEN + node.getUsageText() + USAGE_OPTIONAL_CLOSE : node.getUsageText();
         const bool child_optional = static_cast<bool>(node.getCommand());
         const std::string open = child_optional ? USAGE_OPTIONAL_OPEN : USAGE_REQUIRED_OPEN;

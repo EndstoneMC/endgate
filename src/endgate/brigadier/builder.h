@@ -101,6 +101,9 @@ protected:
     T &getThis() { return static_cast<T &>(*this); }
 
 private:
+    ArgumentBuilder() = default;
+    friend T;
+
     std::shared_ptr<RootCommandNode<S>> arguments_ = std::make_shared<RootCommandNode<S>>();
     Command<S> command_;
     Predicate<S> requirement_ = [](const S &) {
