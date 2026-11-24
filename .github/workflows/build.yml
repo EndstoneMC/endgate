@@ -16,13 +16,9 @@ jobs:
       matrix:
         include:
           - name: linux-x86_64
-            os: ubuntu-24.04
-            compilers: '{"c":"clang-22","cpp":"clang++-22"}'
-            compilers-scope: ''
+            os: ubuntu-26.04
           - name: windows-x86_64
             os: windows-2022
-            compilers: '{"c":"clang-cl","cpp":"clang-cl"}'
-            compilers-scope: '&:'
 
     defaults:
       run:
@@ -31,30 +27,6 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7
-
-      - name: Set up Clang (Linux)
-        if: runner.os == 'Linux'
-        env:
-          LLVM_VERSION: '22'
-        run: |
-          set -euo pipefail
-          CODENAME=$(. /etc/os-release && echo "${VERSION_CODENAME}")
-          curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors \
-            https://apt.llvm.org/llvm-snapshot.gpg.key \
-            | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
-          echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" \
-            | sudo tee /etc/apt/sources.list.d/llvm.list > /dev/null
-          sudo apt-get update -y -q -o Acquire::Retries=10
-          sudo apt-get install -y -q -o Acquire::Retries=10 \
-            build-essential \
-            clang-${LLVM_VERSION} \
-            libstdc++-14-dev
-
-      - name: Set up Clang (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          choco install llvm --version=22.1.8 --yes --no-progress
-          echo "C:\\Program Files\\LLVM\\bin" >> "$GITHUB_PATH"
 
       - name: Set up MSVC (Windows)
         if: runner.os == 'Windows'
@@ -82,15 +54,11 @@ jobs:
             ${{ runner.os }}-conan-RelWithDebInfo-
 
       - name: Install dependencies
-        env:
-          COMPILERS: ${{ matrix.compilers }}
-          COMPILERS_SCOPE: ${{ matrix.compilers-scope }}
         run: |
           conan install . \
             -s '&:build_type=RelWithDebInfo' \
             -s compiler.cppstd=23 \
             -c tools.cmake.cmaketoolchain:generator=Ninja \
-            -c "${COMPILERS_SCOPE}tools.build:compiler_executables=${COMPILERS}" \
             --build=missing
 
       - name: Configure
