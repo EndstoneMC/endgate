@@ -230,14 +230,16 @@ std::expected<ProxyConfig, std::string> ProxyConfig::read(const std::filesystem:
             config.attempt_connection_order_ = std::get<std::vector<std::string>>(entry);
         }
     }
-    for (const auto &[host, entry] : *document.forced_hosts) {
-        std::string lowered = host;
-        std::ranges::transform(lowered, lowered.begin(), [](unsigned char c) { return std::tolower(c); });
-        if (const auto *server = std::get_if<std::string>(&entry)) {
-            config.forced_hosts_[lowered] = {*server};
-        }
-        else {
-            config.forced_hosts_[lowered] = std::get<std::vector<std::string>>(entry);
+    if (document.forced_hosts) {
+        for (const auto &[host, entry] : *document.forced_hosts) {
+            std::string lowered = host;
+            std::ranges::transform(lowered, lowered.begin(), [](unsigned char c) { return std::tolower(c); });
+            if (const auto *server = std::get_if<std::string>(&entry)) {
+                config.forced_hosts_[lowered] = {*server};
+            }
+            else {
+                config.forced_hosts_[lowered] = std::get<std::vector<std::string>>(entry);
+            }
         }
     }
     config.compression_threshold_ = document.advanced.compression_threshold;
