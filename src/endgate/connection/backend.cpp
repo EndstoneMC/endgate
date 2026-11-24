@@ -65,9 +65,10 @@ Awaitable<ConnectionRequestBuilder::Result> ServerConnection::open(std::shared_p
     }
     else {
         asio::ip::udp::resolver resolver(co_await asio::this_coro::executor);
-        const auto [error, results] =
+        const auto resolved =
             co_await resolver.async_resolve(info.getHost(), std::to_string(info.getPort()),
                                             asio::cancel_after(resolve_timeout, asio::as_tuple(asio::use_awaitable)));
+        const auto &[error, results] = resolved;
         if (!error && !results.empty()) {
             address = results.begin()->endpoint();
         }

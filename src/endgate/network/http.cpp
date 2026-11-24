@@ -177,16 +177,18 @@ template <typename Stream>
 Awaitable<std::expected<std::string, std::string>> exchange(Stream &stream, const std::string &request,
                                                             const HttpClient::Config &config)
 {
-    const auto [write_error, written] =
+    const auto write =
         co_await asio::async_write(stream, asio::buffer(request), asio::cancel_after(config.timeout, AWAITABLE));
+    const auto &[write_error, written] = write;
     if (write_error) {
         co_return std::unexpected(write_error.message());
     }
     std::string raw;
     while (true) {
         std::array<char, 16384> chunk{};
-        const auto [error, received] =
+        const auto read =
             co_await stream.async_read_some(asio::buffer(chunk), asio::cancel_after(config.timeout, AWAITABLE));
+        const auto &[error, received] = read;
         raw.append(chunk.data(), received);
         if (raw.size() > config.max_response_bytes) {
             co_return std::unexpected("response too large");
@@ -226,8 +228,9 @@ Awaitable<std::expected<HttpResponse, std::string>> send(HttpRequest request, Ht
         co_return std::unexpected(resolve_error.message());
     }
     asio::ip::tcp::socket socket(executor);
-    const auto [connect_error, connected] =
+    const auto connection =
         co_await asio::async_connect(socket, endpoints, asio::cancel_after(config.timeout, AWAITABLE));
+    const auto &[connect_error, connected] = connection;
     if (connect_error) {
         co_return std::unexpected(connect_error.message());
     }
@@ -244,8 +247,9 @@ Awaitable<std::expected<HttpResponse, std::string>> send(HttpRequest request, Ht
             SSL_set_tlsext_host_name(stream.native_handle(), uri->host.c_str());
         }
         stream.set_verify_callback(asio::ssl::host_name_verification(uri->host));
-        const auto [handshake_error] = co_await stream.async_handshake(asio::ssl::stream_base::client,
-                                                                       asio::cancel_after(config.timeout, AWAITABLE));
+        const auto handshake = co_await stream.async_handshake(asio::ssl::stream_base::client,
+                                                               asio::cancel_after(config.timeout, AWAITABLE));
+        const auto &[handshake_error] = handshake;
         if (handshake_error) {
             co_return std::unexpected(handshake_error.message());
         }

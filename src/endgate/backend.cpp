@@ -164,9 +164,10 @@ Awaitable<std::optional<ServerPing>> BackendServer::ping(asio::io_context &io_co
     }
     else {
         asio::ip::udp::resolver resolver(co_await asio::this_coro::executor);
-        const auto [error, results] =
+        const auto resolved =
             co_await resolver.async_resolve(info_.getHost(), std::to_string(info_.getPort()),
                                             asio::cancel_after(connect_timeout, asio::as_tuple(asio::use_awaitable)));
+        const auto &[error, results] = resolved;
         if (!error && !results.empty()) {
             address = results.begin()->endpoint();
         }
@@ -263,8 +264,9 @@ Awaitable<BackendServer::Pong> BackendServer::ping(asio::ip::udp::endpoint addre
         }
         const auto deadline = bounded ? started + timeout * attempt / attempts : started + retry_interval * attempt;
         for (auto now = std::chrono::steady_clock::now(); now < deadline; now = std::chrono::steady_clock::now()) {
-            const auto [error, size] = co_await socket.async_receive(
+            const auto received = co_await socket.async_receive(
                 asio::buffer(response), asio::cancel_after(deadline - now, asio::as_tuple(asio::use_awaitable)));
+            const auto &[error, size] = received;
             if (error == asio::error::operation_aborted) {
                 break;
             }

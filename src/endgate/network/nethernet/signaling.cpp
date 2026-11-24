@@ -186,8 +186,9 @@ Awaitable<void> HttpSignalingServer::serve(std::shared_ptr<HttpSignalingServer> 
     std::ignore = socket.set_option(asio::ip::tcp::no_delay(true), ignored);
 
     std::array<std::uint8_t, 1> first{};
-    const auto [peek_error, peeked] = co_await socket.async_receive(
-        asio::buffer(first), asio::socket_base::message_peek, asio::cancel_after(remainingUntil(deadline), AWAITABLE));
+    const auto peek = co_await socket.async_receive(asio::buffer(first), asio::socket_base::message_peek,
+                                                    asio::cancel_after(remainingUntil(deadline), AWAITABLE));
+    const auto &[peek_error, peeked] = peek;
     if (peek_error || peeked == 0) {
         co_return;
     }
@@ -208,8 +209,9 @@ Awaitable<void> HttpSignalingServer::serve(std::shared_ptr<HttpSignalingServer> 
     }
 
     asio::ssl::stream<asio::ip::tcp::socket &> stream(socket, *self->tls_);
-    const auto [handshake_error] = co_await stream.async_handshake(
-        asio::ssl::stream_base::server, asio::cancel_after(remainingUntil(deadline), AWAITABLE));
+    const auto handshake = co_await stream.async_handshake(asio::ssl::stream_base::server,
+                                                           asio::cancel_after(remainingUntil(deadline), AWAITABLE));
+    const auto &[handshake_error] = handshake;
     if (handshake_error) {
         co_return;
     }
@@ -224,8 +226,9 @@ Awaitable<void> HttpSignalingServer::exchange(Stream &stream, std::chrono::stead
     std::optional<Request> request;
     while (!request) {
         std::array<char, 4096> chunk{};
-        const auto [error, received] = co_await stream.async_read_some(
-            asio::buffer(chunk), asio::cancel_after(remainingUntil(deadline), AWAITABLE));
+        const auto read = co_await stream.async_read_some(asio::buffer(chunk),
+                                                          asio::cancel_after(remainingUntil(deadline), AWAITABLE));
+        const auto &[error, received] = read;
         if (error || buffer.size() + received > config_.max_request_bytes) {
             co_return;
         }

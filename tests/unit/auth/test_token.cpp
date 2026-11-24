@@ -124,14 +124,15 @@ private:
                 co_return;
             }
             std::string request;
-            const auto [read_error, read] =
+            const auto read =
                 co_await asio::async_read_until(socket, asio::dynamic_buffer(request), "\r\n\r\n", AWAITABLE);
+            const auto &[read_error, length] = read;
             if (read_error) {
                 continue;
             }
             const auto path = request.substr(4, request.find(' ', 4) - 4);
-            const auto [write_error, written] =
-                co_await asio::async_write(socket, asio::buffer(respond(path)), AWAITABLE);
+            const auto write = co_await asio::async_write(socket, asio::buffer(respond(path)), AWAITABLE);
+            const auto &[write_error, written] = write;
         }
     }
 

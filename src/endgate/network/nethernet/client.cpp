@@ -62,8 +62,9 @@ template <typename Stream>
 Awaitable<std::optional<HttpResponse>> readExchange(Stream &stream, const std::string &request,
                                                     const SignalingClient::Config &config)
 {
-    const auto [write_error, written] = co_await asio::async_write(
-        stream, asio::buffer(request), asio::cancel_after(config.request_timeout, AWAITABLE));
+    const auto write = co_await asio::async_write(stream, asio::buffer(request),
+                                                  asio::cancel_after(config.request_timeout, AWAITABLE));
+    const auto &[write_error, written] = write;
     if (write_error) {
         co_return std::nullopt;
     }
@@ -72,8 +73,9 @@ Awaitable<std::optional<HttpResponse>> readExchange(Stream &stream, const std::s
     std::size_t header_end = std::string::npos;
     while (header_end == std::string::npos) {
         std::array<char, 4096> chunk{};
-        const auto [error, received] =
+        const auto read =
             co_await stream.async_read_some(asio::buffer(chunk), asio::cancel_after(config.request_timeout, AWAITABLE));
+        const auto &[error, received] = read;
         if (error || buffer.size() + received > config.max_response_bytes) {
             co_return std::nullopt;
         }
@@ -128,8 +130,9 @@ Awaitable<std::optional<HttpResponse>> readExchange(Stream &stream, const std::s
         }
         while (buffer.size() < body_start + *content_length) {
             std::array<char, 4096> chunk{};
-            const auto [error, received] = co_await stream.async_read_some(
-                asio::buffer(chunk), asio::cancel_after(config.request_timeout, AWAITABLE));
+            const auto read = co_await stream.async_read_some(asio::buffer(chunk),
+                                                              asio::cancel_after(config.request_timeout, AWAITABLE));
+            const auto &[error, received] = read;
             if (error || buffer.size() + received > config.max_response_bytes) {
                 co_return std::nullopt;
             }
@@ -141,8 +144,9 @@ Awaitable<std::optional<HttpResponse>> readExchange(Stream &stream, const std::s
 
     while (buffer.size() <= config.max_response_bytes) {
         std::array<char, 4096> chunk{};
-        const auto [error, received] =
+        const auto read =
             co_await stream.async_read_some(asio::buffer(chunk), asio::cancel_after(config.request_timeout, AWAITABLE));
+        const auto &[error, received] = read;
         buffer.append(chunk.data(), received);
         if (error) {
             break;
@@ -164,8 +168,9 @@ Awaitable<std::optional<HttpResponse>> httpExchange(asio::io_context &io_context
         co_return std::nullopt;
     }
     asio::ip::tcp::socket socket(io_context);
-    const auto [connect_error, endpoint] =
+    const auto connection =
         co_await asio::async_connect(socket, endpoints, asio::cancel_after(config.connect_timeout, AWAITABLE));
+    const auto &[connect_error, endpoint] = connection;
     if (connect_error) {
         co_return std::nullopt;
     }
@@ -190,8 +195,9 @@ Awaitable<std::optional<HttpResponse>> httpExchange(asio::io_context &io_context
     if (address_error) {
         SSL_set_tlsext_host_name(stream.native_handle(), host.c_str());
     }
-    const auto [handshake_error] = co_await stream.async_handshake(
-        asio::ssl::stream_base::client, asio::cancel_after(config.tls_handshake_timeout, AWAITABLE));
+    const auto handshake = co_await stream.async_handshake(asio::ssl::stream_base::client,
+                                                           asio::cancel_after(config.tls_handshake_timeout, AWAITABLE));
+    const auto &[handshake_error] = handshake;
     if (handshake_error) {
         co_return std::nullopt;
     }

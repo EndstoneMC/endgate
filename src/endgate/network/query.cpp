@@ -148,8 +148,9 @@ Awaitable<void> GameSpyQueryHandler::receive(std::shared_ptr<asio::ip::udp::sock
     std::array<std::byte, 2048> buffer{};
     asio::ip::udp::endpoint sender;
     for (;;) {
-        const auto [ec, size] =
+        const auto received =
             co_await socket->async_receive_from(asio::buffer(buffer), sender, asio::as_tuple(asio::use_awaitable));
+        const auto &[ec, size] = received;
         if (ec == asio::error::operation_aborted) {
             co_return;
         }

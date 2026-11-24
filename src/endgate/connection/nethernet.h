@@ -206,8 +206,9 @@ Awaitable<void> NetherNetConnection<Session>::read(std::shared_ptr<NetherNetConn
     std::array<std::byte, 65536> buffer{};
     asio::ip::udp::endpoint sender;
     for (;;) {
-        const auto [ec, size] = co_await self->socket_->async_receive_from(asio::buffer(buffer), sender,
-                                                                           asio::as_tuple(asio::use_awaitable));
+        const auto received = co_await self->socket_->async_receive_from(asio::buffer(buffer), sender,
+                                                                         asio::as_tuple(asio::use_awaitable));
+        const auto &[ec, size] = received;
         if (ec == asio::error::operation_aborted || !self->socket_->is_open()) {
             co_return;
         }

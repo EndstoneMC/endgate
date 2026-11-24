@@ -92,8 +92,9 @@ Awaitable<void> RakNetConnection::read(std::shared_ptr<RakNetConnection> self)
 {
     std::array<std::byte, raknet::MAXIMUM_MTU_SIZE> buffer{};
     for (;;) {
-        const auto [ec, size] =
+        const auto received =
             co_await self->socket_.async_receive(asio::buffer(buffer), asio::as_tuple(asio::use_awaitable));
+        const auto &[ec, size] = received;
         if (ec == asio::error::operation_aborted || !self->socket_.is_open()) {
             co_return;
         }

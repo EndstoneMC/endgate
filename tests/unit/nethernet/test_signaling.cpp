@@ -92,14 +92,16 @@ protected:
             client,
             [&]() -> Awaitable<void> {
                 asio::ip::tcp::socket socket(client);
-                const auto [connect_error] = co_await socket.async_connect(endpoint_, AWAITABLE);
+                const auto connection = co_await socket.async_connect(endpoint_, AWAITABLE);
+                const auto &[connect_error] = connection;
                 if (connect_error) {
                     co_return;
                 }
                 co_await asio::async_write(socket, asio::buffer(request), AWAITABLE);
                 std::array<char, 4096> chunk{};
                 for (;;) {
-                    const auto [error, received] = co_await socket.async_read_some(asio::buffer(chunk), AWAITABLE);
+                    const auto read = co_await socket.async_read_some(asio::buffer(chunk), AWAITABLE);
+                    const auto &[error, received] = read;
                     response.append(chunk.data(), received);
                     if (error) {
                         break;
@@ -278,7 +280,8 @@ TEST_F(HttpSignalingServerTest, ReadsARequestArrivingInPieces)
             co_await asio::async_write(socket, asio::buffer(OFFER), AWAITABLE);
             std::array<char, 4096> chunk{};
             for (;;) {
-                const auto [error, received] = co_await socket.async_read_some(asio::buffer(chunk), AWAITABLE);
+                const auto read = co_await socket.async_read_some(asio::buffer(chunk), AWAITABLE);
+                const auto &[error, received] = read;
                 response.append(chunk.data(), received);
                 if (error) {
                     break;
@@ -378,7 +381,8 @@ TEST_F(TlsSignalingServerTest, ServesHttpsAndHttpOnOnePort)
         [&]() -> Awaitable<void> {
             asio::ssl::stream<asio::ip::tcp::socket> stream(client, context);
             co_await stream.next_layer().async_connect(endpoint_, AWAITABLE);
-            const auto [handshake_error] = co_await stream.async_handshake(asio::ssl::stream_base::client, AWAITABLE);
+            const auto handshake = co_await stream.async_handshake(asio::ssl::stream_base::client, AWAITABLE);
+            const auto &[handshake_error] = handshake;
             if (handshake_error) {
                 co_return;
             }
@@ -386,7 +390,8 @@ TEST_F(TlsSignalingServerTest, ServesHttpsAndHttpOnOnePort)
             co_await asio::async_write(stream, asio::buffer(request), AWAITABLE);
             std::array<char, 4096> chunk{};
             for (;;) {
-                const auto [error, received] = co_await stream.async_read_some(asio::buffer(chunk), AWAITABLE);
+                const auto read = co_await stream.async_read_some(asio::buffer(chunk), AWAITABLE);
+                const auto &[error, received] = read;
                 response.append(chunk.data(), received);
                 if (error) {
                     break;
