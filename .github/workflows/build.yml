@@ -68,7 +68,7 @@ jobs:
         run: cmake --build --preset conan-relwithdebinfo
 
       - name: Run unit tests
-        run: ctest --test-dir build/RelWithDebInfo --output-on-failure -j
+        run: ctest --test-dir build/RelWithDebInfo --output-on-failure -j --timeout 300
 
       - name: Run integration tests
         run: uv run --project tests pytest tests/integration -q
