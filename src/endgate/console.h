@@ -22,7 +22,7 @@ class ProxyServer;
 class Console final : public CommandSource, public std::enable_shared_from_this<Console> {
 public:
     explicit Console(ProxyServer &server);
-    ~Console();
+    ~Console() override;
 
     void start();
     void sendMessage(std::string_view message) override;
