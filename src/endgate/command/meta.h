@@ -53,7 +53,7 @@ public:
         /**
          * @see com.velocitypowered.api.command.CommandMeta.Builder#build
          */
-        [[nodiscard]] CommandMeta build() const { return CommandMeta(aliases_, description_); }
+        [[nodiscard]] CommandMeta build() const { return {aliases_, description_}; }
 
     private:
         void add(std::string alias)

@@ -46,8 +46,9 @@ const HardNonTerminals &hardNonTerminals(int protocol)
         {2193, {.id = 0x100038, .message_root = 0x100044}},
         {2225, {.id = 0x100038, .message_root = 0x100044}},
     }};
-    const auto found = std::ranges::find(table, protocol, &std::pair<int, HardNonTerminals>::first);
-    if (found == table.end()) {
+    const auto *const end = table.data() + table.size();
+    const auto *const found = std::ranges::find(table.data(), end, protocol, &std::pair<int, HardNonTerminals>::first);
+    if (found == end) {
         throw std::invalid_argument(std::format("no hard non-terminals for protocol {}", protocol));
     }
     return found->second;

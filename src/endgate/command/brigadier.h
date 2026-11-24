@@ -64,7 +64,7 @@ public:
      */
     [[nodiscard]] static LiteralBuilder literalArgumentBuilder(const std::string &name)
     {
-        if (name.find(' ') != std::string::npos) {
+        if (name.contains(' ')) {
             throw std::invalid_argument("the argument name cannot contain spaces");
         }
         return LiteralBuilder::literal(name);
