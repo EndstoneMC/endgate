@@ -151,6 +151,9 @@ bool ProxyServer::reloadConfiguration()
         const std::scoped_lock lock(servers_mutex_);
         for (const auto &[name, address] : new_configuration->getServers()) {
             auto new_info = ServerInfo::parse(name, address);
+            if (!new_info) {
+                continue;
+            }
             const auto existing = servers_.find(name);
             if (existing == servers_.end()) {
                 servers_.try_emplace(name, std::make_unique<BackendServer>(std::move(*new_info)));
