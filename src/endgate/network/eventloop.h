@@ -40,6 +40,7 @@ private:
 
     EventLoop &event_loop_;
     asio::steady_timer timer_;
+    std::atomic<bool> cancelled_ = false;
 };
 
 /**
@@ -89,7 +90,7 @@ public:
         execute([future, task = std::forward<F>(task), delay]() mutable {
             future->timer_.expires_after(delay);
             future->timer_.async_wait([future, task = std::move(task)](const asio::error_code &ec) mutable {
-                if (!ec) {
+                if (!ec && !future->cancelled_) {
                     task();
                 }
             });

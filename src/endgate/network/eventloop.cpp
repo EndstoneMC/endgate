@@ -19,6 +19,7 @@ ScheduledFuture::ScheduledFuture(EventLoop &event_loop) : event_loop_(event_loop
 
 void ScheduledFuture::cancel()
 {
+    cancelled_ = true;
     event_loop_.execute([self = shared_from_this()] { self->timer_.cancel(); });
 }
 
