@@ -1,5 +1,6 @@
 #include "endgate/protocol/entity.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -26,34 +27,31 @@ namespace endgate {
 
 namespace {
 
-template <typename T>
+template <int Version>
+constexpr std::array ACTOR_ID_KEYS{
+    bp::ActorDataIDs_<Version>::Owner,       bp::ActorDataIDs_<Version>::Target,
+    bp::ActorDataIDs_<Version>::LeashHolder, bp::ActorDataIDs_<Version>::TargetA,
+    bp::ActorDataIDs_<Version>::TargetB,     bp::ActorDataIDs_<Version>::TargetC,
+    bp::ActorDataIDs_<Version>::TradeTarget, bp::ActorDataIDs_<Version>::BalloonAnchor,
+    bp::ActorDataIDs_<Version>::Agent,
+};
+
+template <int Version, typename T>
 consteval bool carriesActorIds();
 
-template <typename T>
-consteval bool isActorDataInt64()
-{
-    if constexpr (bp::Reflected<T>) {
-        return bp::struct_name<T>() == "DataItemInt64Payload";
-    }
-    else {
-        return false;
-    }
-}
-
-static_assert(isActorDataInt64<bp::DataItemInt64Payload_<MAXIMUM_VERSION.getProtocol()>>(),
-              "actor data's int64 item is no longer named DataItemInt64Payload, so its actor IDs go unrewritten");
-
-template <typename T>
+template <int Version, typename T>
 struct CarriesActorIds {
     static consteval bool get()
     {
         if constexpr (std::is_same_v<T, bp::ActorRuntimeID> || std::is_same_v<T, bp::ActorUniqueID> ||
-                      isActorDataInt64<T>()) {
+                      std::is_same_v<T, bp::DataItemEntry_<Version>>) {
             return true;
         }
         else if constexpr (bp::Reflected<T>) {
             return []<std::size_t... I>(std::index_sequence<I...>) {
-                return (carriesActorIds<std::remove_cvref_t<decltype(bp::field_get<I>(std::declval<T &>()))>>() || ...);
+                return (
+                    carriesActorIds<Version, std::remove_cvref_t<decltype(bp::field_get<I>(std::declval<T &>()))>>() ||
+                    ...);
             }(std::make_index_sequence<bp::field_count<T>()>{});
         }
         else {
@@ -62,75 +60,87 @@ struct CarriesActorIds {
     }
 };
 
-template <typename T>
-struct CarriesActorIds<std::optional<T>> {
-    static consteval bool get() { return carriesActorIds<T>(); }
+template <int Version, typename T>
+struct CarriesActorIds<Version, std::optional<T>> {
+    static consteval bool get() { return carriesActorIds<Version, T>(); }
 };
 
-template <typename T, typename A>
-struct CarriesActorIds<std::vector<T, A>> {
-    static consteval bool get() { return carriesActorIds<T>(); }
+template <int Version, typename T, typename A>
+struct CarriesActorIds<Version, std::vector<T, A>> {
+    static consteval bool get() { return carriesActorIds<Version, T>(); }
 };
 
-template <typename T, std::size_t N>
-struct CarriesActorIds<std::array<T, N>> {
-    static consteval bool get() { return carriesActorIds<T>(); }
+template <int Version, typename T, std::size_t N>
+struct CarriesActorIds<Version, std::array<T, N>> {
+    static consteval bool get() { return carriesActorIds<Version, T>(); }
 };
 
-template <typename K, typename V, typename C, typename A>
-struct CarriesActorIds<std::map<K, V, C, A>> {
-    static consteval bool get() { return carriesActorIds<V>(); }
+template <int Version, typename K, typename V, typename C, typename A>
+struct CarriesActorIds<Version, std::map<K, V, C, A>> {
+    static consteval bool get() { return carriesActorIds<Version, V>(); }
 };
 
-template <typename... T>
-struct CarriesActorIds<std::variant<T...>> {
-    static consteval bool get() { return (carriesActorIds<T>() || ...); }
+template <int Version, typename... T>
+struct CarriesActorIds<Version, std::variant<T...>> {
+    static consteval bool get() { return (carriesActorIds<Version, T>() || ...); }
 };
 
-template <typename T>
+template <int Version, typename T>
 consteval bool carriesActorIds()
 {
-    return CarriesActorIds<T>::get();
+    return CarriesActorIds<Version, T>::get();
 }
 
-template <typename T>
+template <int Version>
+void rewriteDataItem(bp::DataItemEntry_<Version> &item, const EntityMap &map)
+{
+    if (!std::ranges::contains(ACTOR_ID_KEYS<Version>, item.id,
+                               [](bp::ActorDataIDs_<Version> key) { return static_cast<std::uint32_t>(key); })) {
+        return;
+    }
+    if (auto *const payload = std::get_if<bp::DataItemInt64Payload_<Version>>(&item.payload)) {
+        payload->value = map.rewrite(bp::ActorUniqueID{payload->value});
+    }
+}
+
+template <int Version, typename T>
 void rewriteActorIds(T &value, const EntityMap &map)
 {
-    if constexpr (!carriesActorIds<T>()) {
+    if constexpr (!carriesActorIds<Version, T>()) {
         return;
     }
     else if constexpr (std::is_same_v<T, bp::ActorRuntimeID> || std::is_same_v<T, bp::ActorUniqueID>) {
         value = map.rewrite(value);
     }
-    else if constexpr (isActorDataInt64<T>()) {
-        value.value = map.rewrite(bp::ActorUniqueID{value.value});
+    else if constexpr (std::is_same_v<T, bp::DataItemEntry_<Version>>) {
+        rewriteDataItem<Version>(value, map);
     }
     else if constexpr (bp::Reflected<T>) {
-        bp::for_each_field(value, [&](auto &field) { rewriteActorIds(field, map); });
+        bp::for_each_field(value, [&](auto &field) { rewriteActorIds<Version>(field, map); });
     }
     else if constexpr (requires { value.index(); }) {
-        std::visit([&](auto &alternative) { rewriteActorIds(alternative, map); }, value);
+        std::visit([&](auto &alternative) { rewriteActorIds<Version>(alternative, map); }, value);
     }
     else if constexpr (requires { value.has_value(); }) {
         if (value.has_value()) {
-            rewriteActorIds(*value, map);
+            rewriteActorIds<Version>(*value, map);
         }
     }
     else if constexpr (requires { typename T::mapped_type; }) {
         for (auto &entry : value) {
-            rewriteActorIds(entry.second, map);
+            rewriteActorIds<Version>(entry.second, map);
         }
     }
     else {
         for (auto &element : value) {
-            rewriteActorIds(element, map);
+            rewriteActorIds<Version>(element, map);
         }
     }
 }
 
 using PacketRewriter = ByteBuf (*)(const EntityMap &map, std::uint32_t header, ByteBufView body);
 
-template <typename Packet>
+template <int Version, typename Packet>
 ByteBuf rewritePacket(const EntityMap &map, std::uint32_t header, ByteBufView body)
 {
     const auto bytes = body.nioBuffer();
@@ -142,7 +152,7 @@ ByteBuf rewritePacket(const EntityMap &map, std::uint32_t header, ByteBufView bo
     if (reader.getUnreadLength() != 0) {
         throw DecoderException(std::format("packet {} left {} bytes unread", Packet::Id, reader.getUnreadLength()));
     }
-    rewriteActorIds(*packet, map);
+    rewriteActorIds<Version>(*packet, map);
     std::string encoded;
     bp::BinaryWriter writer{encoded};
     bp::serialize(writer, *packet);
@@ -156,8 +166,8 @@ template <int Version, int Id>
 consteval PacketRewriter rewriterOf()
 {
     if constexpr (bp::has_packet_v<Version, Id>) {
-        if constexpr (carriesActorIds<bp::packet_of_t<Version, Id>>()) {
-            return &rewritePacket<bp::packet_of_t<Version, Id>>;
+        if constexpr (carriesActorIds<Version, bp::packet_of_t<Version, Id>>()) {
+            return &rewritePacket<Version, bp::packet_of_t<Version, Id>>;
         }
         else {
             return nullptr;

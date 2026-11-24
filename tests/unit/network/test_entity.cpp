@@ -126,6 +126,20 @@ TEST(EntityMap, RewritesOnlyTheInt64ItemsOfActorData)
     EXPECT_EQ(std::get<bp::DataItemIntPayload_<PROTOCOL>>(items[1].payload).value, 70);
 }
 
+TEST(EntityMap, LeavesAnInt64ItemOfActorDataWhoseKeyIsNotAnActorId)
+{
+    SetActorDataPacket packet{.id = bp::ActorRuntimeID{3}};
+    packet.packed_items.data.push_back({.id = static_cast<std::uint32_t>(bp::ActorDataIDs_<PROTOCOL>::Reserved0),
+                                        .payload = bp::DataItemInt64Payload_<PROTOCOL>{.value = 70}});
+
+    const auto rewritten = MAP.rewrite(PROTOCOL, encode(packet).slice());
+
+    ASSERT_TRUE(rewritten.has_value());
+    const auto items = decode<SetActorDataPacket>(*rewritten).packed_items.data;
+    ASSERT_EQ(items.size(), 1U);
+    EXPECT_EQ(std::get<bp::DataItemInt64Payload_<PROTOCOL>>(items[0].payload).value, 70);
+}
+
 TEST(EntityMap, RewritesTheCamerasTargetAndAttachIds)
 {
     CameraInstructionPacket packet;
