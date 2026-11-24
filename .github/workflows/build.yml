@@ -64,6 +64,10 @@ jobs:
       - name: Configure
         run: cmake --preset conan-relwithdebinfo
 
+      - name: Match MSVC diagnostics (Windows)
+        if: runner.os == 'Windows'
+        run: echo "::add-matcher::.github/problem-matchers/msvc.json"
+
       - name: Build
         run: cmake --build --preset conan-relwithdebinfo
 
