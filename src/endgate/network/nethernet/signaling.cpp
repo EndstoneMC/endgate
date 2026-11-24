@@ -166,7 +166,8 @@ void HttpSignalingServer::close()
 Awaitable<void> HttpSignalingServer::accept(std::shared_ptr<HttpSignalingServer> self)
 {
     while (self->acceptor_.is_open()) {
-        auto [error, socket] = co_await self->acceptor_.async_accept(AWAITABLE);
+        auto accepted = co_await self->acceptor_.async_accept(AWAITABLE);
+        auto &[error, socket] = accepted;
         if (error) {
             asio::steady_timer pause(self->event_loop_.getExecutor(), std::chrono::milliseconds{100});
             co_await pause.async_wait(AWAITABLE);

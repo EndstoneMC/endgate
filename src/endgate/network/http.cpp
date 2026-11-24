@@ -219,8 +219,9 @@ Awaitable<std::expected<HttpResponse, std::string>> send(HttpRequest request, Ht
 
     const auto executor = co_await asio::this_coro::executor;
     asio::ip::tcp::resolver resolver(executor);
-    const auto [resolve_error, endpoints] =
+    const auto resolved =
         co_await resolver.async_resolve(uri->host, uri->port, asio::cancel_after(config.timeout, AWAITABLE));
+    const auto &[resolve_error, endpoints] = resolved;
     if (resolve_error) {
         co_return std::unexpected(resolve_error.message());
     }

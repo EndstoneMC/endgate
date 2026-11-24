@@ -157,8 +157,9 @@ Awaitable<std::optional<HttpResponse>> httpExchange(asio::io_context &io_context
                                                     const SignalingClient::Config &config)
 {
     asio::ip::tcp::resolver resolver(io_context);
-    const auto [resolve_error, endpoints] = co_await resolver.async_resolve(
-        host, std::to_string(port), asio::cancel_after(config.connect_timeout, AWAITABLE));
+    const auto resolved = co_await resolver.async_resolve(host, std::to_string(port),
+                                                          asio::cancel_after(config.connect_timeout, AWAITABLE));
+    const auto &[resolve_error, endpoints] = resolved;
     if (resolve_error || endpoints.empty()) {
         co_return std::nullopt;
     }
