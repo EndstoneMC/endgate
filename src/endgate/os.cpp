@@ -2,8 +2,9 @@
 
 #include <algorithm>
 #include <bit>
+#include <charconv>
 #include <cmath>
-#include <cstdlib>
+#include <cstdint>
 #include <exception>
 #include <format>
 #include <fstream>
@@ -186,7 +187,7 @@ std::optional<std::string> firstLine(const std::string &path)
     return line;
 }
 
-std::optional<long long> parseLimit(const std::string &token)
+std::optional<std::int64_t> parseLimit(const std::string &token)
 {
     if (token == "max") {
         return -1;
@@ -194,7 +195,7 @@ std::optional<long long> parseLimit(const std::string &token)
     try {
         std::size_t used = 0;
         const auto value = std::stoll(token, &used);
-        return used == 0 ? std::nullopt : std::optional<long long>(value);
+        return used == 0 ? std::nullopt : std::optional<std::int64_t>(value);
     }
     catch (const std::exception &) {
         return std::nullopt;
@@ -307,7 +308,7 @@ void setControllerPaths(std::optional<MountInfo> &slot, const MountInfo &mount)
 
 std::optional<CgroupController> findCpuController()
 {
-    constexpr long cgroup2_super_magic = 0x63677270;
+    constexpr std::int64_t cgroup2_super_magic = 0x63677270;
 
     struct statfs fs{};
     const bool v2 = statfs("/sys/fs/cgroup", &fs) != -1 && fs.f_type == cgroup2_super_magic;
@@ -351,7 +352,8 @@ std::optional<CgroupController> findCpuController()
         if (second == std::string::npos) {
             continue;
         }
-        const auto hierarchy_id = std::atoi(line.substr(0, first).c_str());
+        int hierarchy_id = 0;
+        std::from_chars(line.data(), line.data() + first, hierarchy_id);
         const auto names = line.substr(first + 1, second - first - 1);
         const auto path = line.substr(second + 1);
         if (v2) {
