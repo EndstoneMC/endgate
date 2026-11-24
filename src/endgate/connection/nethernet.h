@@ -56,7 +56,7 @@ public:
 
     NetherNetConnection(Endpoint &endpoint, const asio::ip::udp::endpoint &address,
                         std::shared_ptr<const rtc::Certificate> certificate)
-        requires DIALING;
+        requires(DIALING);
 
     /**
      * Offers the backend a session over HTTP signalling, signed with the server's identity, and runs
