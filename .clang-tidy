@@ -9,22 +9,27 @@ Checks: >
   portability-*,
   readability-*,
   -bugprone-easily-swappable-parameters,
+  -bugprone-exception-copy-constructor-throws,
   -bugprone-exception-escape,
   -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-throwing-static-initialization,
   -bugprone-unused-raii,
   -misc-const-correctness,
   -misc-non-private-member-variables-in-classes,
   -misc-include-cleaner,
+  -misc-multiple-inheritance,
   -misc-no-recursion,
   -modernize-use-trailing-return-type,
   -modernize-avoid-c-arrays,
   -performance-enum-size,
+  -portability-template-virtual-member-function,
   -readability-identifier-length,
   -readability-isolate-declaration,
   -readability-function-cognitive-complexity,
   -readability-magic-numbers,
   -readability-math-missing-parentheses,
   -readability-named-parameter,
+  -readability-redundant-parentheses,
   -readability-simplify-boolean-expr,
   -portability-avoid-pragma-once
 
@@ -32,12 +37,14 @@ WarningsAsErrors: "*"
 HeaderFilterRegex: "src/.*"
 
 CheckOptions:
+  bugprone-empty-catch.AllowEmptyCatchForExceptions: '::endgate::brigadier::CommandSyntaxException'
   misc-unused-parameters.IgnoreVirtual: true
   modernize-type-traits.IgnoreMacros: true
   readability-implicit-bool-conversion.AllowPointerConditions: true
   readability-implicit-bool-conversion.AllowIntegerConditions: true
   readability-identifier-naming.AbstractClassCase: CamelCase
   readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.ClassIgnoredRegexp: '^logger$'
   readability-identifier-naming.ClassConstantCase: UPPER_CASE
   readability-identifier-naming.ClassConstantIgnoredRegexp: '^value$'
   readability-identifier-naming.GlobalConstantCase: UPPER_CASE
@@ -72,6 +79,7 @@ CheckOptions:
   readability-identifier-naming.PublicMemberCase: lower_case
   readability-identifier-naming.PublicMemberSuffix: ''
   readability-identifier-naming.PublicMethodCase: camelBack
+  readability-identifier-naming.PublicMethodIgnoredRegexp: '^requires_$'
   readability-identifier-naming.ScopedEnumConstantCase: CamelCase
   readability-identifier-naming.StaticConstantCase: lower_case
   readability-identifier-naming.StaticVariableCase: lower_case
