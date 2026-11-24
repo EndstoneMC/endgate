@@ -167,6 +167,8 @@ protected:
         bool log_response = false, std::chrono::milliseconds delay = 0ms,
         std::function<bool()> service_enabled = [] { return true; })
     {
+        std::promise<void> charted;
+        loop_.execute([added = charted.get_future()] { added.wait(); });
         auto metrics = std::make_unique<MetricsBase>(
             "server-implementation", "00000000-0000-4000-8000-000000000000", 42, enabled,
             [](JsonObject &builder) { builder["osName"] = "Test"; },
@@ -182,6 +184,7 @@ protected:
             log_errors, log_sent_data, log_response, HttpClient(loop_, {}),
             MetricsBase::Overrides{.report_url = server.url(), .initial_delay = delay});
         metrics->addCustomChart(std::make_unique<SimplePie>("chart", [] { return "value"; }));
+        charted.set_value();
         return metrics;
     }
 
