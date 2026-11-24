@@ -152,8 +152,8 @@ Awaitable<void> NetherNetConnection<Session>::dial(
     asio::ip::udp::endpoint local;
     if (!route.open(self->address_.protocol(), ec) && !route.connect(self->address_, ec) &&
         !self->socket_->open(self->address_.protocol(), ec) &&
-        !self->socket_->bind({self->address_.protocol(), 0}, ec) && !self->socket_->non_blocking(true, ec)) {
-        local = {route.local_endpoint(ec).address(), self->socket_->local_endpoint(ec).port()};
+        !self->socket_->bind({route.local_endpoint(ec).address(), 0}, ec) && !self->socket_->non_blocking(true, ec)) {
+        local = self->socket_->local_endpoint(ec);
     }
     if (ec) {
         self->logger_.error("{}: unable to connect: {}", self->getAssociation(), ec.message());

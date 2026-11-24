@@ -47,11 +47,18 @@ std::vector<std::byte> payloadOf(std::size_t size)
     return payload;
 }
 
+asio::ip::udp::socket boundTowards(asio::io_context &io_context, const std::string &host, std::uint16_t port)
+{
+    asio::ip::udp::socket route(io_context, asio::ip::udp::v4());
+    route.connect({asio::ip::make_address(host), port});
+    return {io_context, {route.local_endpoint().address(), 0}};
+}
+
 class Dialer : public DialerSession::Listener {
 public:
     Dialer(asio::io_context &io_context, std::string host, std::uint16_t port, std::string network_id)
         : io_context_(io_context), host_(std::move(host)), port_(port), network_id_(std::move(network_id)),
-          socket_(io_context, {asio::ip::udp::v4(), 0}), timer_(io_context), deadline_(io_context)
+          socket_(boundTowards(io_context, host_, port_)), timer_(io_context), deadline_(io_context)
     {
         socket_.non_blocking(true);
     }
