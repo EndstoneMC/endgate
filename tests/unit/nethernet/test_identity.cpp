@@ -81,7 +81,8 @@ TEST(IdentityAssertionTest, InjectsTheEnvelopeBeforeTheFirstMediaLine)
 
     const auto encoded = signed_sdp.substr(identity_at + 11, signed_sdp.find("\r\n", identity_at) - identity_at - 11);
     const auto envelope = base64Decoded(encoded);
-    EXPECT_TRUE(envelope.starts_with(R"({"assertion":"{\"fingerprints\":\")")) << envelope;
+    constexpr std::string_view prefix = R"({"assertion":"{\"fingerprints\":\")";
+    EXPECT_TRUE(envelope.starts_with(prefix)) << envelope;
     EXPECT_TRUE(envelope.ends_with(R"(","idp":{"domain":"endgate.test","protocol":"default"}})")) << envelope;
 }
 

@@ -17,6 +17,7 @@ paths:
 - `#include <...>` for the standard library and third-party headers, `"endgate/..."` for ours.
 - Coroutines return `Awaitable<T>` (`endgate/awaitable.h`), never `asio::awaitable<T>` directly.
 - In a coroutine, bind a `co_await` result to a named variable and destructure it by reference: GCC 15 never destroys a by-value structured binding's hidden object once a later suspension point in its scope has run.
+- Bind a raw string that holds `\"` to a named variable before passing it to a macro such as `EXPECT_EQ`: MSVC's default preprocessor misreads it inside a macro argument.
 - Spell atomics `std::atomic<T>`, not the `std::atomic_bool` family of aliases.
 - Initialise a member with `=`, never braces: `bool active_ = true;`, `int count_ = 0;`. A member whose default constructor gives what it needs takes no initialiser.
 - A `glz::object` list puts each key and its member on a line of their own, ended with an empty `//`, so clang-format keeps one pair per line: `"read-timeout", &T::read_timeout,  //`. The last pair closes the call instead. This line-break marker is the one empty comment allowed.

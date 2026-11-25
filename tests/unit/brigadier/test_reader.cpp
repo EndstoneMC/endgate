@@ -1,3 +1,5 @@
+#include <string>
+
 #include <gtest/gtest.h>
 
 #include "endgate/brigadier/exceptions.h"
@@ -203,9 +205,10 @@ TEST(StringReaderTest, readQuotedStringEmptyQuotedWithRemaining)
 
 TEST(StringReaderTest, readQuotedStringWithEscapedQuote)
 {
-    StringReader reader(R"("hello \"world\"")");
+    const std::string input = R"("hello \"world\"")";
+    StringReader reader(input);
     EXPECT_EQ(reader.readQuotedString(), "hello \"world\"");
-    EXPECT_EQ(reader.getRead(), R"("hello \"world\"")");
+    EXPECT_EQ(reader.getRead(), input);
     EXPECT_EQ(reader.getRemaining(), "");
 }
 

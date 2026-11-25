@@ -1,6 +1,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <glaze/json.hpp>
@@ -47,7 +48,8 @@ TEST(Charts, SimplePieSkipsAnEmptyValue)
 TEST(Charts, SimplePieEscapesItsValue)
 {
     const SimplePie chart("version", [] { return "a\"b\\c\nd"; });
-    EXPECT_EQ(requestOf(chart), R"json({"chartId":"version","data":{"value":"a\"b\\c\nd"}})json");
+    constexpr std::string_view expected = R"json({"chartId":"version","data":{"value":"a\"b\\c\nd"}})json";
+    EXPECT_EQ(requestOf(chart), expected);
 }
 
 TEST(Charts, SingleLineChartSendsItsValue)
