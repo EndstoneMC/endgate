@@ -69,7 +69,7 @@ jobs:
         run: echo "::add-matcher::.github/problem-matchers/msvc.json"
 
       - name: Build
-        run: cmake --build --preset conan-relwithdebinfo
+        run: cmake --build --preset conan-relwithdebinfo -- -k 0
 
       - name: Run unit tests
         run: ctest --test-dir build/RelWithDebInfo --output-on-failure -j --timeout 300
