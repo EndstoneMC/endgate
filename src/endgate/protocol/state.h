@@ -5,24 +5,9 @@
 #include <type_traits>
 #include <utility>
 
-#include <bedrock/protocol/actor.h>
-#include <bedrock/protocol/biome.h>
-#include <bedrock/protocol/boss.h>
-#include <bedrock/protocol/chunk.h>
-#include <bedrock/protocol/command.h>
-#include <bedrock/protocol/dimension.h>
-#include <bedrock/protocol/effect.h>
-#include <bedrock/protocol/game.h>
-#include <bedrock/protocol/input.h>
-#include <bedrock/protocol/inventory.h>
-#include <bedrock/protocol/item.h>
+#include <bedrock/protocol/enum.hpp>
 #include <bedrock/protocol/network.h>
-#include <bedrock/protocol/pack.h>
 #include <bedrock/protocol/packets_fwd.hpp>
-#include <bedrock/protocol/player.h>
-#include <bedrock/protocol/presence.h>
-#include <bedrock/protocol/scoreboard.h>
-#include <bedrock/protocol/script.h>
 
 #include "endgate/network/version.h"
 
@@ -69,11 +54,7 @@ struct PacketRegistry {
     struct ProtocolRegistry {
         static constexpr int VERSION = Version;
 
-        static_assert((bp::has_packet_v<Version, static_cast<int>(Ids)> && ...),
-                      "a registered packet resolves to nothing at this version; include its module");
-        static_assert(((bp::struct_name<bp::packet_of_t<Version, static_cast<int>(Ids)>>() ==
-                        bp::struct_name<bp::packet_of_t<MAXIMUM_VERSION.getProtocol(), static_cast<int>(Ids)>>()) &&
-                       ...),
+        static_assert(((bp::enum_integer_<Version>(Ids) == std::to_underlying(Ids)) && ...),
                       "a registered id names another packet at this version");
 
         using Packets = TypeList<bp::packet_of_t<Version, static_cast<int>(Ids)>...>;

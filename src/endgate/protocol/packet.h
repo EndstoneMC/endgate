@@ -8,6 +8,23 @@
 #include <type_traits>
 #include <utility>
 
+#include <bedrock/protocol/actor.h>
+#include <bedrock/protocol/biome.h>
+#include <bedrock/protocol/boss.h>
+#include <bedrock/protocol/chunk.h>
+#include <bedrock/protocol/command.h>
+#include <bedrock/protocol/dimension.h>
+#include <bedrock/protocol/effect.h>
+#include <bedrock/protocol/game.h>
+#include <bedrock/protocol/input.h>
+#include <bedrock/protocol/inventory.h>
+#include <bedrock/protocol/item.h>
+#include <bedrock/protocol/network.h>
+#include <bedrock/protocol/pack.h>
+#include <bedrock/protocol/player.h>
+#include <bedrock/protocol/presence.h>
+#include <bedrock/protocol/scoreboard.h>
+#include <bedrock/protocol/script.h>
 #include <bedrock/protocol/serializer.hpp>
 #include <bedrock/protocol/stream.hpp>
 
