@@ -44,7 +44,7 @@ def drain_datagrams_on_close():
                 fut.result()
             if self._buffer:
                 data, addr = self._buffer.popleft()
-                self._buffer_size -= len(data) + self._header_size
+                self._buffer_size -= len(data) + getattr(self, "_header_size", 0)
                 self._write_fut = self._loop._proactor.sendto(self._sock, data, addr=addr)
                 self._write_fut.add_done_callback(self._loop_writing)
                 return
