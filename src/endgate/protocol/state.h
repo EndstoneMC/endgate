@@ -18,7 +18,7 @@
 #include <bedrock/protocol/item.h>
 #include <bedrock/protocol/network.h>
 #include <bedrock/protocol/pack.h>
-#include <bedrock/protocol/packet.hpp>
+#include <bedrock/protocol/packets_fwd.hpp>
 #include <bedrock/protocol/player.h>
 #include <bedrock/protocol/presence.h>
 #include <bedrock/protocol/scoreboard.h>
@@ -67,6 +67,8 @@ struct PacketRegistry {
      */
     template <int Version>
     struct ProtocolRegistry {
+        static constexpr int VERSION = Version;
+
         static_assert((bp::has_packet_v<Version, static_cast<int>(Ids)> && ...),
                       "a registered packet resolves to nothing at this version; include its module");
         static_assert(((bp::struct_name<bp::packet_of_t<Version, static_cast<int>(Ids)>>() ==
@@ -165,13 +167,6 @@ bool getProtocolRegistry(StateRegistry state, Direction direction, int version, 
         }
         return false;
     });
-}
-
-template <typename Packet>
-bool isPacketOf(int version)
-{
-    return visitProtocolVersion(
-        version, []<int Version>() { return std::is_same_v<bp::packet_of_t<Version, Packet::Id>, Packet>; });
 }
 
 template <typename List, typename Packet>

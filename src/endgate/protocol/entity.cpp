@@ -16,7 +16,8 @@
 #include <vector>
 
 #include <bedrock/protocol.hpp>
-#include <bedrock/protocol/packet.hpp>
+#include <bedrock/protocol/enum.hpp>
+#include <bedrock/protocol/packets_fwd.hpp>
 #include <bedrock/protocol/serializer.hpp>
 #include <bedrock/protocol/stream.hpp>
 
@@ -94,8 +95,10 @@ consteval bool carriesActorIds()
 template <int Version>
 void rewriteDataItem(bp::DataItemEntry_<Version> &item, const EntityMap &map)
 {
-    if (!std::ranges::contains(ACTOR_ID_KEYS<Version>, item.id,
-                               [](bp::ActorDataIDs_<Version> key) { return static_cast<std::uint32_t>(key); })) {
+    if (!std::ranges::contains(ACTOR_ID_KEYS<Version>, std::optional<std::uint32_t>{item.id},
+                               [](bp::ActorDataIDs_<Version> key) -> std::optional<std::uint32_t> {
+                                   return bp::enum_integer_<Version>(key);
+                               })) {
         return;
     }
     if (auto *const payload = std::get_if<bp::DataItemInt64Payload_<Version>>(&item.payload)) {
@@ -145,17 +148,21 @@ ByteBuf rewritePacket(const EntityMap &map, std::uint32_t header, ByteBufView bo
 {
     const auto bytes = body.nioBuffer();
     bp::BinaryReader reader{std::string_view{reinterpret_cast<const char *>(bytes.data()), bytes.size()}};
-    auto packet = bp::deserialize<Packet>(reader);
+    auto packet = bp::decode_<Version, Packet>(reader);
     if (!packet) {
-        throw DecoderException(std::format("packet {} failed to decode: {}", Packet::Id, packet.error().message()));
-    }
-    if (reader.getUnreadLength() != 0) {
-        throw DecoderException(std::format("packet {} left {} bytes unread", Packet::Id, reader.getUnreadLength()));
+        const auto &error = packet.error();
+        if (error.reason == bp::Errc::trailing_bytes) {
+            throw DecoderException(
+                std::format("packet {} left {} bytes unread", Packet::Id, error.length - error.offset));
+        }
+        throw DecoderException(std::format("packet {} failed to decode: {}", Packet::Id, error));
     }
     rewriteActorIds<Version>(*packet, map);
     std::string encoded;
     bp::BinaryWriter writer{encoded};
-    bp::serialize(writer, *packet);
+    if (const auto written = bp::encode_<Version>(*packet, writer); !written) {
+        throw EncoderException(std::format("packet {} failed to encode: {}", Packet::Id, written.error()));
+    }
     auto out = Unpooled::buffer();
     out.writeUnsignedVarInt(header);
     out.writeBytes(std::as_bytes(std::span{encoded}));
@@ -185,8 +192,9 @@ consteval std::array<PacketRewriter, sizeof...(Ids)> rewritersOf(std::integer_se
 }
 
 template <int Version>
-constexpr auto REWRITERS =
-    rewritersOf<Version>(std::make_integer_sequence<int, static_cast<int>(bp::MinecraftPacketIds_<Version>::EndId)>{});
+constexpr auto REWRITERS = rewritersOf<Version>(
+    std::make_integer_sequence<int,
+                               std::to_underlying(std::ranges::max(bp::enum_values<bp::MinecraftPacketIds>())) + 1>{});
 
 }  // namespace
 

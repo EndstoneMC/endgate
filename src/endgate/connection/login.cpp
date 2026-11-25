@@ -7,6 +7,7 @@
 #include <memory>
 #include <span>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 #include <glaze/json.hpp>
@@ -132,7 +133,8 @@ bool InitialLoginSessionHandler::handle(const bp::LoginPacket &packet)
         return true;
     }
 
-    const auto request = ConnectionRequest::fromString(packet.connection_request);
+    const auto request = ConnectionRequest::fromString(std::string_view{
+        reinterpret_cast<const char *>(packet.connection_request.data()), packet.connection_request.size()});
     if (!request || (request->authentication_type != PlayerAuthenticationType::Full &&
                      request->authentication_type != PlayerAuthenticationType::SelfSigned)) {
         connection_->closeWith(DisconnectFailReason::NotAuthenticated);

@@ -7,6 +7,7 @@
 #include "endgate/config.h"
 #include "endgate/connection/login.h"
 #include "endgate/network/version.h"
+#include "endgate/protocol/state.h"
 #include "endgate/server.h"
 
 namespace endgate {
@@ -41,8 +42,11 @@ bool HandshakeSessionHandler::handle(const bp::RequestNetworkSettingsPacket &pac
     const auto threshold = server_.getConfiguration().getCompressionThreshold();
     const auto algorithm = threshold < 0 ? PacketCompressionAlgorithm::None : PacketCompressionAlgorithm::ZLib;
     const auto compression_threshold = static_cast<std::uint16_t>(std::max(threshold, 0));
-    connection_->write(
-        bp::NetworkSettingsPacket{.compression_threshold = compression_threshold, .compression_algorithm = algorithm});
+    visitProtocolVersion(version->getProtocol(), [&]<int Version>() {
+        connection_->write(PacketOf<Version, bp::MinecraftPacketIds::NetworkSettings>{
+            .compression_threshold = compression_threshold, .compression_algorithm = algorithm});
+        return true;
+    });
     connection_->setCompressionThreshold(compression_threshold, algorithm);
     connection_->setSessionHandler(
         std::make_shared<InitialLoginSessionHandler>(server_, connection_, std::move(offer_identity_)));

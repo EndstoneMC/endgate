@@ -154,7 +154,7 @@ public:
     }
 
     void connected() override;
-    bool handleEach(const bp::NetworkSettingsPacket &packet);
+    bool handleEach(const bp::NetworkSettingsPacket_<MAXIMUM_VERSION.getProtocol()> &packet);
     bool handleEach(const bp::ServerToClientHandshakePacket &packet);
     bool handleEach(const bp::PlayStatusPacket &packet);
 
@@ -404,9 +404,8 @@ public:
                           bp::MinecraftPacketIds::DimensionDataPacket>
     bool handleEach(const Packet &packet)
     {
-        std::string registry;
-        bp::BinaryWriter writer{registry};
-        bp::serialize(writer, packet);
+        auto registry =
+            encodePacket(server_connection_->getPlayer().getConnection().getProtocolVersion().getProtocol(), packet);
         auto &registries = player_session_handler_->getSessionRegistries();
         if (!player_session_handler_->hasSwitched()) {
             registries[Packet::Id] = std::move(registry);
@@ -520,9 +519,8 @@ public:
         if (!held_start_game_) {
             return false;
         }
-        std::string registry;
-        bp::BinaryWriter writer{registry};
-        bp::serialize(writer, packet);
+        const auto registry =
+            encodePacket(server_connection_->getPlayer().getConnection().getProtocolVersion().getProtocol(), packet);
         const auto &registries = getPlayHandler()->getSessionRegistries();
         if (const auto joined = registries.find(Packet::Id); joined == registries.end() || joined->second != registry) {
             refuse("it has other items than the server you joined");

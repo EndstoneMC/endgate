@@ -34,7 +34,7 @@ Packet decode(const ByteBuf &batch)
     std::ignore = view.readUnsignedVarInt();
     const auto body = view.nioBuffer();
     bp::BinaryReader reader{std::string_view{reinterpret_cast<const char *>(body.data()), body.size()}};
-    return bp::deserialize<Packet>(reader).value();
+    return bp::decode_<PROTOCOL, Packet>(reader).value();
 }
 
 std::vector<std::uint32_t> idsOf(const std::vector<ByteBuf> &batches)

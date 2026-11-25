@@ -546,7 +546,7 @@ void LoginSessionHandler::connected()
     backend->write(bp::RequestNetworkSettingsPacket{.client_network_version = version.getProtocol()});
 }
 
-bool LoginSessionHandler::handleEach(const bp::NetworkSettingsPacket &packet)
+bool LoginSessionHandler::handleEach(const bp::NetworkSettingsPacket_<MAXIMUM_VERSION.getProtocol()> &packet)
 {
     constexpr std::chrono::hours token_lifetime{1};
 
@@ -615,8 +615,9 @@ bool LoginSessionHandler::handleEach(const bp::NetworkSettingsPacket &packet)
     std::string request;
     appendLongString(request, authentication);
     appendLongString(request, *client_data);
+    const auto request_bytes = std::as_bytes(std::span{request});
     backend->write(bp::LoginPacket{.client_network_version = backend->getProtocolVersion().getProtocol(),
-                                   .connection_request = std::move(request)});
+                                   .connection_request = {request_bytes.begin(), request_bytes.end()}});
     return true;
 }
 

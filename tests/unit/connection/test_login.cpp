@@ -97,7 +97,9 @@ TEST_F(LoginTest, OfflineModeLogsInASelfSignedClientWithoutServiceKeys)
     const auto protocol = connection->getProtocolVersion().getProtocol();
     node_.call([&] {
         InitialLoginSessionHandler handler(server_, connection, std::nullopt);
-        EXPECT_TRUE(handler.handle(bp::LoginPacket{.client_network_version = protocol, .connection_request = request}));
+        const auto request_bytes = std::as_bytes(std::span{request});
+        EXPECT_TRUE(handler.handle(bp::LoginPacket{
+            .client_network_version = protocol, .connection_request = {request_bytes.begin(), request_bytes.end()}}));
         return 0;
     });
 
@@ -107,7 +109,7 @@ TEST_F(LoginTest, OfflineModeLogsInASelfSignedClientWithoutServiceKeys)
     std::ignore = view.readUnsignedVarInt();
     const auto body = view.nioBuffer();
     bp::BinaryReader reader{std::string_view{reinterpret_cast<const char *>(body.data()), body.size()}};
-    const auto disconnect = bp::deserialize<Disconnect>(reader).value();
+    const auto disconnect = bp::decode_<MINIMUM_VERSION.getProtocol(), Disconnect>(reader).value();
     const auto *const messages = std::get_if<bp::DisconnectPacketMessages>(&disconnect.messages);
     ASSERT_NE(messages, nullptr);
     EXPECT_EQ(messages->message,
@@ -129,7 +131,9 @@ TEST_F(LoginTest, OfflineModeRejectsClientDataSignedByAnotherKey)
     const auto protocol = connection->getProtocolVersion().getProtocol();
     node_.call([&] {
         InitialLoginSessionHandler handler(server_, connection, std::nullopt);
-        EXPECT_TRUE(handler.handle(bp::LoginPacket{.client_network_version = protocol, .connection_request = request}));
+        const auto request_bytes = std::as_bytes(std::span{request});
+        EXPECT_TRUE(handler.handle(bp::LoginPacket{
+            .client_network_version = protocol, .connection_request = {request_bytes.begin(), request_bytes.end()}}));
         return 0;
     });
 

@@ -35,14 +35,14 @@ PacketOf<Version, bp::MinecraftPacketIds::PlayerList> playerList(std::initialize
     return packet;
 }
 
-template <typename Packet>
+template <int Version, typename Packet>
 Packet decode(const ByteBuf &batch)
 {
     auto view = batch.slice();
     std::ignore = view.readUnsignedVarInt();
     const auto body = view.nioBuffer();
     bp::BinaryReader reader{std::string_view{reinterpret_cast<const char *>(body.data()), body.size()}};
-    return bp::deserialize<Packet>(reader).value();
+    return bp::decode_<Version, Packet>(reader).value();
 }
 
 class PlayerListTest : public testing::Test {
@@ -81,7 +81,7 @@ TEST_F(PlayerListTest, ClearAllRemovesTheEntriesTheBackendLeft)
     clearAll(player_list, *connection);
 
     ASSERT_EQ(connection->batches().size(), 1U);
-    const auto entries = decode<bp::PlayerListPacket>(connection->batches()[0]).entries;
+    const auto entries = decode<MAXIMUM_VERSION.getProtocol(), bp::PlayerListPacket>(connection->batches()[0]).entries;
     ASSERT_EQ(entries.size(), 1U);
     const auto &removed = std::get<bp::PlayerListPacket::RemoveEntry>(entries[0]);
     EXPECT_EQ(removed.action, bp::PlayerListPacketType::Remove);
@@ -99,7 +99,8 @@ TEST_F(PlayerListTest, ClearAllForgetsWhatItRemoved)
     clearAll(player_list, *connection);
 
     ASSERT_EQ(connection->batches().size(), 2U);
-    EXPECT_TRUE(decode<bp::PlayerListPacket>(connection->batches()[1]).entries.empty());
+    EXPECT_TRUE(
+        (decode<MAXIMUM_VERSION.getProtocol(), bp::PlayerListPacket>(connection->batches()[1]).entries.empty()));
 }
 
 TEST_F(PlayerListTest, ClearAllSpeaksTheClientsVersion)
@@ -113,7 +114,7 @@ TEST_F(PlayerListTest, ClearAllSpeaksTheClientsVersion)
     clearAll(player_list, *connection);
 
     ASSERT_EQ(connection->batches().size(), 1U);
-    EXPECT_EQ(decode<PlayerListPacket>(connection->batches()[0]).entries.size(), 1U);
+    EXPECT_EQ((decode<protocol, PlayerListPacket>(connection->batches()[0]).entries.size()), 1U);
 }
 
 TEST_F(PlayerListTest, ClearAllSilentSendsNothing)
@@ -130,7 +131,8 @@ TEST_F(PlayerListTest, ClearAllSilentSendsNothing)
     clearAll(player_list, *connection);
 
     ASSERT_EQ(connection->batches().size(), 1U);
-    EXPECT_TRUE(decode<bp::PlayerListPacket>(connection->batches()[0]).entries.empty());
+    EXPECT_TRUE(
+        (decode<MAXIMUM_VERSION.getProtocol(), bp::PlayerListPacket>(connection->batches()[0]).entries.empty()));
 }
 
 }  // namespace

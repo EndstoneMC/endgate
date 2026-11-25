@@ -442,7 +442,8 @@ public:
                 info.chunk_size = ResourcePackInfo::CHUNK_SIZE;
                 info.nb_chunks = pack->getChunkCount();
                 info.file_size = pack->getFile().size();
-                info.file_hash = pack->getHash();
+                const auto hash = std::as_bytes(std::span{pack->getHash()});
+                info.file_hash.assign(hash.begin(), hash.end());
                 info.pack_type = decltype(info.pack_type)::Resources;
                 client.write(std::move(info));
             }
@@ -473,7 +474,7 @@ public:
             chunk_data.resource_name = pack->getPackIdVersion();
             chunk_data.chunk_id = chunk;
             chunk_data.byte_offset = static_cast<std::uint64_t>(chunk) * ResourcePackInfo::CHUNK_SIZE;
-            chunk_data.data.assign(reinterpret_cast<const char *>(data.data()), data.size());
+            chunk_data.data.assign(data.begin(), data.end());
             client.write(std::move(chunk_data));
             return true;
         });
@@ -641,7 +642,7 @@ private:
     std::uint64_t block_registry_checksum_ = 0;
     bool block_network_ids_are_hashes_ = false;
     bool server_auth_block_breaking_ = false;
-    std::string experiments_;
+    bp::Experiments experiments_;
     std::map<std::int32_t, std::string> session_registries_;
 };
 

@@ -8,6 +8,7 @@
 #include <format>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -18,6 +19,7 @@
 #include <bedrock/protocol/block.h>
 #include <bedrock/protocol/camera.h>
 #include <bedrock/protocol/command.h>
+#include <bedrock/protocol/enum.hpp>
 #include <bedrock/protocol/level.h>
 #include <bedrock/protocol/movement.h>
 #include <bedrock/protocol/serializer.hpp>
@@ -525,8 +527,7 @@ void ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
         block_registry_checksum_ = start_game.server_block_type_registry_checksum;
         block_network_ids_are_hashes_ = start_game.block_network_ids_are_hashes;
         server_auth_block_breaking_ = start_game.movement_settings.server_auth_block_breaking;
-        bp::BinaryWriter experiments{experiments_};
-        bp::serialize(experiments, start_game.settings.experiments);
+        experiments_ = start_game.settings.experiments;
         auto first = start_game;
         first.server_enabled_client_side_generation = false;
         first.settings.seed = 0;
@@ -539,7 +540,8 @@ void ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
                   player_->getConnection().getAssociation(), server_chunks_.size());
     visitProtocolVersion(backend.getProtocolVersion().getProtocol(), [&]<int Version>() {
         PacketOf<Version, bp::MinecraftPacketIds::ServerboundLoadingScreenPacket> start;
-        start.loading_screen_packet_type = decltype(start.loading_screen_packet_type)::StartLoadingScreen;
+        start.serverbound_loading_screen_packet_type =
+            decltype(start.serverbound_loading_screen_packet_type)::StartLoadingScreen;
         backend.write(std::move(start));
         return true;
     });
@@ -588,9 +590,8 @@ void ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
         using SetHud = PacketOf<Version, bp::MinecraftPacketIds::SetHudPacket>;
         using HudElement = decltype(SetHud::hud_element)::value_type;
         SetHud hud;
-        for (auto element = 0; element < static_cast<int>(HudElement::Count); ++element) {
-            hud.hud_element.push_back(static_cast<HudElement>(element));
-        }
+        const auto elements = bp::enum_values_<Version, HudElement>();
+        hud.hud_element.assign(elements.begin(), elements.end());
         hud.hud_visible = decltype(hud.hud_visible)::Reset;
         client.delayedWrite(std::move(hud));
         client.delayedWrite(PacketOf<Version, bp::MinecraftPacketIds::PlayerFogSetting>{});
@@ -628,11 +629,12 @@ void ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
                 biomes.push_back('\x02');
             }
             biomes.push_back('\x00');
+            const auto biome_bytes = std::as_bytes(std::span{biomes});
             for (const auto &[x, z] : server_chunks_) {
                 PacketOf<Version, bp::MinecraftPacketIds::FullChunkData> chunk;
                 chunk.pos = {.x = x, .z = z};
                 chunk.dimension_id = static_cast<decltype(chunk.dimension_id)>(dimension_);
-                chunk.serialized_chunk = biomes;
+                chunk.serialized_chunk.assign(biome_bytes.begin(), biome_bytes.end());
                 client.delayedWrite(std::move(chunk));
             }
         }
@@ -650,7 +652,7 @@ void ClientPlaySessionHandler::handleBackendStartGame(const Packet &start_game, 
         difficulty.difficulty = static_cast<decltype(difficulty.difficulty)>(settings.game_difficulty);
         client.delayedWrite(std::move(difficulty));
         PacketOf<Version, bp::MinecraftPacketIds::GameRulesChanged> rules;
-        rules.rule_data = settings.rule_data;
+        rules.rule_data = settings.game_rules;
         client.delayedWrite(std::move(rules));
         client.delayedWrite(PacketOf<Version, bp::MinecraftPacketIds::SetCommandsEnabled>{
             .commands_enabled = settings.commands_enabled});
@@ -712,10 +714,7 @@ std::optional<std::string_view> ClientPlaySessionHandler::findIncompatibility(co
     if (start_game.movement_settings.server_auth_block_breaking != server_auth_block_breaking_) {
         return "it breaks blocks differently from the server you joined";
     }
-    std::string experiments;
-    bp::BinaryWriter writer{experiments};
-    bp::serialize(writer, start_game.settings.experiments);
-    if (experiments != experiments_) {
+    if (start_game.settings.experiments != experiments_) {
         return "it runs other experiments than the server you joined";
     }
     return std::nullopt;
@@ -736,7 +735,8 @@ void ClientPlaySessionHandler::handleBackendPlayerSpawn(ServerConnection &destin
     auto &backend = destination.ensureConnected();
     visitProtocolVersion(backend.getProtocolVersion().getProtocol(), [&]<int Version>() {
         PacketOf<Version, bp::MinecraftPacketIds::ServerboundLoadingScreenPacket> end;
-        end.loading_screen_packet_type = decltype(end.loading_screen_packet_type)::EndLoadingScreen;
+        end.serverbound_loading_screen_packet_type =
+            decltype(end.serverbound_loading_screen_packet_type)::EndLoadingScreen;
         backend.delayedWrite(std::move(end));
         backend.write(PacketOf<Version, bp::MinecraftPacketIds::SetLocalPlayerAsInit>{.player_id = runtime_id_});
         return true;

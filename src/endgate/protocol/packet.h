@@ -5,6 +5,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 #include <bedrock/protocol/serializer.hpp>
@@ -16,6 +17,30 @@
 #include "endgate/protocol/state.h"
 
 namespace endgate {
+
+template <typename Packet>
+std::string encodePacket(int protocol, const Packet &packet)
+{
+    std::string body;
+    const auto encoded = visitProtocolVersion(protocol, [&]<int Version>() {
+        if constexpr (std::is_same_v<bp::packet_of_t<Version, Packet::Id>, Packet>) {
+            bp::BinaryWriter writer{body};
+            const auto written = bp::encode_<Version>(packet, writer);
+            if (!written) {
+                throw EncoderException(
+                    std::format("{} failed to encode: {}", bp::struct_name<Packet>(), written.error()));
+            }
+            return true;
+        }
+        else {
+            return false;
+        }
+    });
+    if (!encoded) {
+        throw EncoderException(std::format("{} is not a packet of protocol {}", bp::struct_name<Packet>(), protocol));
+    }
+    return body;
+}
 
 template <typename Packet>
 struct DecodedPacket {
@@ -69,14 +94,14 @@ public:
             getProtocolRegistry(state_, direction_, version_.getProtocol(), [&]<typename Registry>() {
                 return Registry::createPacket(id, [&]<typename Packet>() {
                     bp::BinaryReader reader{std::string_view{reinterpret_cast<const char *>(body.data()), body.size()}};
-                    auto decoded = bp::deserialize<Packet>(reader);
+                    auto decoded = bp::decode_<Registry::VERSION, Packet>(reader);
                     if (!decoded) {
-                        throw DecoderException(
-                            std::format("packet {} failed to decode: {}", id, decoded.error().message()));
-                    }
-                    if (reader.getUnreadLength() != 0) {
-                        throw DecoderException(
-                            std::format("packet {} left {} bytes unread", id, reader.getUnreadLength()));
+                        const auto &error = decoded.error();
+                        if (error.reason == bp::Errc::trailing_bytes) {
+                            throw DecoderException(
+                                std::format("packet {} left {} bytes unread", id, error.length - error.offset));
+                        }
+                        throw DecoderException(std::format("packet {} failed to decode: {}", id, error));
                     }
                     ctx.fireChannelRead(DecodedPacket<Packet>{.packet = std::move(*decoded), .bytes = whole});
                 });
@@ -111,13 +136,7 @@ public:
         requires requires { Packet::Id; }
     void encode(Context &, const Packet &packet, ByteBuf &out)
     {
-        if (!isPacketOf<Packet>(version_.getProtocol())) {
-            throw EncoderException(
-                std::format("{} is not a packet of protocol {}", bp::struct_name<Packet>(), version_.getProtocol()));
-        }
-        std::string body;
-        bp::BinaryWriter writer{body};
-        bp::serialize(writer, packet);
+        const auto body = encodePacket(version_.getProtocol(), packet);
         out.writeUnsignedVarInt(static_cast<std::uint32_t>(Packet::Id));
         out.writeBytes(std::as_bytes(std::span{body}));
     }

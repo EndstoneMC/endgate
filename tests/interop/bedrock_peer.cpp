@@ -57,6 +57,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -83,7 +84,7 @@
 #include <bedrock/protocol/item.h>
 #include <bedrock/protocol/network.h>
 #include <bedrock/protocol/pack.h>
-#include <bedrock/protocol/packet.hpp>
+#include <bedrock/protocol/packets_fwd.hpp>
 #include <bedrock/protocol/player.h>
 #include <bedrock/protocol/presence.h>
 #include <bedrock/protocol/serializer.hpp>
@@ -409,7 +410,7 @@ public:
     {
         bp::LevelChunkPacket_<V> packet;
         packet.pos = {.x = x, .z = z};
-        packet.serialized_chunk = std::string(1, '\0');
+        packet.serialized_chunk = {std::byte{0}};
         send(packet);
     }
 
@@ -445,7 +446,7 @@ private:
     static Packet decode(std::string_view body)
     {
         bp::BinaryReader reader{body};
-        auto packet = bp::deserialize<Packet>(reader);
+        auto packet = bp::decode_<V, Packet>(reader);
         if (!packet || reader.getUnreadLength() != 0) {
             throw std::runtime_error("packet does not decode");
         }
@@ -457,7 +458,9 @@ private:
     {
         std::string body;
         bp::BinaryWriter writer{body};
-        bp::serialize(writer, packet);
+        if (!bp::encode_<V>(packet, writer)) {
+            throw std::runtime_error("packet does not encode");
+        }
         std::string frame;
         writeVarInt(frame, Packet::Id);
         frame += body;
@@ -553,8 +556,8 @@ private:
                 send(bp::PlayStatusPacket{.status = bp::PlayStatus::LoginFailedClientOld});
                 return;
             }
-            send(bp::NetworkSettingsPacket{.compression_threshold = options_.threshold,
-                                           .compression_algorithm = bp::PacketCompressionAlgorithm::ZLib});
+            send(bp::NetworkSettingsPacket_<V>{.compression_threshold = options_.threshold,
+                                               .compression_algorithm = bp::PacketCompressionAlgorithm::ZLib});
             compressing_ = true;
         }
         else if (id == bp::LoginPacket::Id) {
@@ -601,7 +604,8 @@ private:
         }
         else if (id == bp::ServerboundLoadingScreenPacket::Id) {
             std::cout << "loading-screen "
-                      << static_cast<int>(decode<bp::ServerboundLoadingScreenPacket>(packet).loading_screen_packet_type)
+                      << static_cast<int>(
+                             decode<bp::ServerboundLoadingScreenPacket>(packet).serverbound_loading_screen_packet_type)
                       << '\n';
         }
         else if (id == bp::RequestChunkRadiusPacket::Id) {
@@ -620,14 +624,16 @@ private:
 
     void dispatchClientbound(int id, std::string_view packet)
     {
-        if (id == bp::NetworkSettingsPacket::Id) {
-            const auto settings = decode<bp::NetworkSettingsPacket>(packet);
+        if (id == bp::NetworkSettingsPacket_<V>::Id) {
+            const auto settings = decode<bp::NetworkSettingsPacket_<V>>(packet);
             std::cout << "settings " << settings.compression_threshold << ' '
                       << static_cast<int>(settings.compression_algorithm) << '\n';
             options_.threshold = settings.compression_threshold;
             compressing_ = true;
+            const auto request = fromHex(options_.request);
+            const auto request_bytes = std::as_bytes(std::span{request});
             send(bp::LoginPacket{.client_network_version = options_.protocol,
-                                 .connection_request = fromHex(options_.request)});
+                                 .connection_request = {request_bytes.begin(), request_bytes.end()}});
         }
         else if (id == bp::ServerToClientHandshakePacket::Id) {
             const auto handshake = decode<bp::ServerToClientHandshakePacket>(packet);
@@ -649,7 +655,7 @@ private:
             std::cout << "play-status " << static_cast<int>(status) << '\n';
             if (status == bp::PlayStatus::PlayerSpawn && runtime_id_ && !initialized_) {
                 initialized_ = true;
-                send(bp::ServerboundLoadingScreenPacket{.loading_screen_packet_type =
+                send(bp::ServerboundLoadingScreenPacket{.serverbound_loading_screen_packet_type =
                                                             bp::ServerboundLoadingScreenPacketType::EndLoadingScreen});
                 send(bp::SetLocalPlayerAsInitializedPacket{.player_id = *runtime_id_});
             }
@@ -713,7 +719,7 @@ private:
                       << start_game.server_enabled_client_side_generation << ' ' << start_game.settings.seed << '\n';
             runtime_id_ = start_game.runtime_id;
             send(bp::RequestChunkRadiusPacket{.chunk_radius = 8, .max_chunk_radius = 12});
-            send(bp::ServerboundLoadingScreenPacket{.loading_screen_packet_type =
+            send(bp::ServerboundLoadingScreenPacket{.serverbound_loading_screen_packet_type =
                                                         bp::ServerboundLoadingScreenPacketType::StartLoadingScreen});
         }
         else if (id == bp::CameraInstructionPacket_<V>::Id) {
@@ -790,7 +796,8 @@ private:
 
     void onLogin(const bp::LoginPacket &login)
     {
-        std::string_view request = login.connection_request;
+        std::string_view request{reinterpret_cast<const char *>(login.connection_request.data()),
+                                 login.connection_request.size()};
         const auto authentication = readLongString(request);
         const auto client_data = endgate::JsonWebToken::decode(readLongString(request), 1U << 20);
         Authentication parsed;

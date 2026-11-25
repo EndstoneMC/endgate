@@ -406,7 +406,7 @@ TEST_F(InjectorTest, ARealPacketKeepsEveryTableApartFromTheAppendedEntries)
     const std::string bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     ASSERT_FALSE(bytes.empty());
     bp::BinaryReader reader{std::string_view{bytes}};
-    auto decoded = bp::deserialize<Packet>(reader);
+    auto decoded = bp::decode_<PROTOCOL, Packet>(reader);
     ASSERT_TRUE(decoded.has_value());
     ASSERT_EQ(reader.getUnreadLength(), 0U);
     const Packet &original = *decoded;

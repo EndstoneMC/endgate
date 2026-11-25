@@ -93,11 +93,14 @@ std::string requestNetworkSettings(std::uint32_t header, std::int32_t version)
 
 std::string startGame()
 {
+    using StartGamePacket = bp::StartGamePacket_<MAXIMUM_VERSION.getProtocol()>;
     std::string body;
     bp::BinaryWriter writer{body};
-    bp::serialize(writer, bp::StartGamePacket{});
+    if (!bp::encode_<MAXIMUM_VERSION.getProtocol()>(StartGamePacket{}, writer)) {
+        return {};
+    }
     auto packet = Unpooled::buffer();
-    packet.writeUnsignedVarInt(static_cast<std::uint32_t>(bp::StartGamePacket::Id));
+    packet.writeUnsignedVarInt(static_cast<std::uint32_t>(StartGamePacket::Id));
     packet.writeBytes(std::as_bytes(std::span{body}));
     const auto bytes = packet.nioBuffer();
     return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
@@ -369,10 +372,10 @@ TEST(MinecraftEncoder, RefusesAPacketOfAnotherVersion)
     auto chain = chainOf(wire);
     switchOn(chain);
 
-    chain.write(bp::DisconnectPacket_<800>{});
+    chain.write(bp::StartGamePacket_<800>{});
 
     EXPECT_TRUE(wire.sent.empty());
-    EXPECT_EQ(wire.errors, (std::vector<std::string>{"DisconnectPacket is not a packet of protocol 2168"}));
+    EXPECT_EQ(wire.errors, (std::vector<std::string>{"StartGamePacket is not a packet of protocol 2168"}));
 }
 
 TEST(Pipeline, AWrittenBatchComesBackAsTheSamePackets)

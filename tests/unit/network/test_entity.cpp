@@ -11,6 +11,8 @@
 #include <bedrock/protocol/actor.h>
 #include <bedrock/protocol/camera.h>
 #include <bedrock/protocol/level.h>
+#include <bedrock/protocol/movement.h>
+#include <bedrock/protocol/packets_fwd.hpp>
 #include <bedrock/protocol/serializer.hpp>
 #include <bedrock/protocol/stream.hpp>
 #include <bedrock/protocol/telemetry.h>
@@ -62,7 +64,9 @@ ByteBuf encode(const Packet &packet, std::uint32_t header = Packet::Id)
 {
     std::string body;
     bp::BinaryWriter writer{body};
-    bp::serialize(writer, packet);
+    if (!bp::encode_<PROTOCOL>(packet, writer)) {
+        throw EncoderException("packet does not encode");
+    }
     auto out = Unpooled::buffer();
     out.writeUnsignedVarInt(header);
     out.writeBytes(std::as_bytes(std::span{body}));
@@ -76,7 +80,7 @@ Packet decode(const ByteBuf &bytes)
     std::ignore = view.readUnsignedVarInt();
     const auto body = view.nioBuffer();
     bp::BinaryReader reader{std::string_view{reinterpret_cast<const char *>(body.data()), body.size()}};
-    return bp::deserialize<Packet>(reader).value();
+    return bp::decode_<PROTOCOL, Packet>(reader).value();
 }
 
 TEST(EntityMap, SwapsThePlayersIdsWithTheBackends)
